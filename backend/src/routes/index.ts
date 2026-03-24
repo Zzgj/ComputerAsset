@@ -11,6 +11,7 @@ import { dashboardRouter } from './dashboard'
 import { logsRouter } from './logs'
 import { excelRouter } from './excel'
 import { backupRouter } from './backup'
+import { recordsRouter } from './records'
 
 export const router = Router()
 
@@ -27,6 +28,7 @@ router.use('/users', usersRouter)
 router.use('/config', configRouter)
 router.use('/dashboard', dashboardRouter)
 router.use('/logs', logsRouter)
+router.use('/records', recordsRouter)
 router.use('/excel', excelRouter)
 router.use('/backup', backupRouter)
 

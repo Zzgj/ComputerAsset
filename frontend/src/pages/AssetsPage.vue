@@ -27,6 +27,12 @@
             {{ formatText(row.model) }}
           </template>
         </el-table-column>
+        <el-table-column label="设备模板">
+          <template #default="{ row }">
+            <el-tag v-if="row.template?.name" type="primary" effect="plain">{{ row.template.name }}</el-tag>
+            <el-tag v-else type="info" effect="plain">自定义</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="序列号">
           <template #default="{ row }">
             {{ formatSerial(row.serialNumber) }}

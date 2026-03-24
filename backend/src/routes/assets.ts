@@ -7,6 +7,7 @@ import { getEnv } from '../utils/env'
 import { AssetStatus, AssetRecordAction, DeviceType, RepairResult, Role, Prisma } from '@prisma/client'
 
 const adminRoles: Role[] = ['super_admin', 'admin']
+const superAdminRoles: Role[] = ['super_admin']
 
 function toInt(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value)
@@ -120,6 +121,22 @@ assetsRouter.get('/:id/repairs', requireAuth, async (req, res) => {
   })
 
   res.json({ repairs })
+})
+
+assetsRouter.get('/:id/change-logs', requireAuth, async (req, res) => {
+  const id = toInt(req.params.id)
+  if (!id) badRequest('Invalid asset id')
+
+  const logs = await prisma.operationLog.findMany({
+    where: {
+      targetType: 'Asset',
+      targetId: id,
+      action: { contains: '关键信息' },
+    },
+    orderBy: { createdAt: 'desc' },
+    include: { operator: { select: { id: true, username: true, realName: true } } },
+  })
+  res.json({ logs })
 })
 
 assetsRouter.post('/', requireAuth, requireRole(adminRoles), async (req, res) => {
@@ -246,7 +263,7 @@ assetsRouter.post('/', requireAuth, requireRole(adminRoles), async (req, res) =>
   res.json({ asset })
 })
 
-assetsRouter.put('/:id', requireAuth, requireRole(adminRoles), async (req, res) => {
+assetsRouter.put('/:id', requireAuth, requireRole(superAdminRoles), async (req, res) => {
   const authUser = (req as any).auth as { id: number }
   const id = toInt(req.params.id)
   if (!id) badRequest('Invalid asset id')
@@ -265,23 +282,53 @@ assetsRouter.put('/:id', requireAuth, requireRole(adminRoles), async (req, res) 
       : template?.deviceType
   const deviceType: DeviceType = deviceTypeCandidate ?? badRequest('deviceType is required (or templateId provides it)')
 
-  const updated = await prisma.asset.updateMany({
-    where: { id, version },
-    data: {
-      templateId: template?.id ?? null,
-      deviceType,
-      brand: typeof body.brand === 'string' ? body.brand : template?.brand,
-      model: typeof body.model === 'string' ? body.model : template?.model,
-      os: typeof body.os === 'string' ? body.os : template?.os,
-      cpu: typeof body.cpu === 'string' ? body.cpu : template?.cpu,
-      memory: typeof body.memory === 'string' ? body.memory : template?.memory,
-      storage: typeof body.storage === 'string' ? body.storage : template?.storage,
-      remark: typeof body.remark === 'string' ? body.remark : undefined,
-      currentUserName: typeof body.currentUserName === 'string' ? body.currentUserName : undefined,
-      departmentId: typeof body.departmentId === 'number' ? body.departmentId : undefined,
-      version: { increment: 1 },
-    },
-  })
+  const old = await prisma.asset.findUnique({ where: { id } })
+  if (!old) return res.status(404).json({ error: { message: 'Asset not found' } })
+
+  const forceCustom = Boolean(body.forceCustom)
+  const resolvedTemplateId =
+    forceCustom ? null : typeof body.templateId === 'undefined' ? old.templateId : (template?.id ?? null)
+
+  const nextData = {
+    assetCode: typeof body.assetCode === 'string' && body.assetCode.trim() ? body.assetCode.trim() : old.assetCode,
+    serialNumber:
+      typeof body.serialNumber === 'string' && body.serialNumber.trim() ? body.serialNumber.trim() : old.serialNumber,
+    templateId: resolvedTemplateId,
+    deviceType,
+    brand: typeof body.brand === 'string' ? body.brand : template?.brand,
+    model: typeof body.model === 'string' ? body.model : template?.model,
+    os: typeof body.os === 'string' ? body.os : template?.os,
+    cpu: typeof body.cpu === 'string' ? body.cpu : template?.cpu,
+    memory: typeof body.memory === 'string' ? body.memory : template?.memory,
+    storage: typeof body.storage === 'string' ? body.storage : template?.storage,
+    remark: typeof body.remark === 'string' ? body.remark : undefined,
+    currentUserName: typeof body.currentUserName === 'string' ? body.currentUserName : undefined,
+    departmentId: typeof body.departmentId === 'number' ? body.departmentId : undefined,
+  }
+
+  let updated
+  try {
+    updated = await prisma.asset.updateMany({
+      where: { id, version },
+      data: {
+        ...nextData,
+        version: { increment: 1 },
+      },
+    })
+  } catch (e: any) {
+    if (e?.code === 'P2002') {
+      const metaTarget = (e.meta as any)?.target
+      const targets = Array.isArray(metaTarget) ? metaTarget : metaTarget ? [metaTarget] : []
+      if (targets.some((t) => String(t).includes('assetCode'))) {
+        throw { statusCode: 400, code: 'DUPLICATE_ASSET_CODE', message: '电脑编号（assetCode）已存在，请勿重复' }
+      }
+      if (targets.some((t) => String(t).includes('serialNumber'))) {
+        throw { statusCode: 400, code: 'DUPLICATE_SERIAL_NUMBER', message: '序列号（serialNumber）已存在，请勿重复' }
+      }
+      throw { statusCode: 400, code: 'DUPLICATE_UNIQUE_FIELD', message: '唯一性校验失败：字段已存在' }
+    }
+    throw e
+  }
 
   if (updated.count === 0) {
     return res.status(409).json({ error: { message: 'Version conflict, please refresh and retry' } })
@@ -289,13 +336,41 @@ assetsRouter.put('/:id', requireAuth, requireRole(adminRoles), async (req, res) 
 
   const asset = await prisma.asset.findUnique({ where: { id }, include: { department: true, template: true } })
 
+  const before = {
+    templateId: old.templateId,
+    assetCode: old.assetCode,
+    serialNumber: old.serialNumber,
+    brand: old.brand,
+    model: old.model,
+    os: old.os,
+    cpu: old.cpu,
+    memory: old.memory,
+    storage: old.storage,
+  }
+  const after = {
+    templateId: asset?.templateId,
+    assetCode: asset?.assetCode,
+    serialNumber: asset?.serialNumber,
+    brand: asset?.brand,
+    model: asset?.model,
+    os: asset?.os,
+    cpu: asset?.cpu,
+    memory: asset?.memory,
+    storage: asset?.storage,
+  }
   await prisma.operationLog.create({
     data: {
       operatorId: authUser.id,
-      action: '编辑资产',
+      action: '编辑资产关键信息',
       targetType: 'Asset',
       targetId: id,
-      detail: { versionFrom: version, versionTo: version + 1 },
+      detail: {
+        versionFrom: version,
+        versionTo: version + 1,
+        before,
+        after,
+        detachedTemplate: old.templateId && asset?.templateId === null ? true : undefined,
+      },
       ipAddress: req.ip ?? 'unknown',
     },
   })

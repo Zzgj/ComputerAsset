@@ -23,8 +23,31 @@
         <el-table-column prop="targetType" label="对象类型" width="120" />
         <el-table-column prop="targetId" label="对象ID" width="80" />
         <el-table-column prop="ipAddress" label="IP" width="140" />
-        <el-table-column label="详情">
-          <template #default="{ row }">{{ row.detail ? JSON.stringify(row.detail) : '-' }}</template>
+        <el-table-column label="详情" min-width="320">
+          <template #default="{ row }">
+            <div style="display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; flex-wrap: nowrap">
+              <span
+                style="
+                  color: #606266;
+                  flex: 1;
+                  min-width: 0;
+                  overflow: hidden;
+                  text-overflow: ellipsis;
+                  white-space: nowrap;
+                "
+              >{{ detailSummary(row.detail) }}</span>
+              <el-button
+                v-if="row.detail && typeof row.detail === 'object'"
+                type="primary"
+                text
+                size="small"
+                style="flex: none"
+                @click="openDetail(row)"
+              >
+                查看详情
+              </el-button>
+            </div>
+          </template>
         </el-table-column>
       </el-table>
 
@@ -39,6 +62,26 @@
         />
       </div>
     </el-card>
+
+    <el-dialog v-model="detailVisible" title="操作详情" width="720px">
+      <pre
+        style="
+          margin: 0;
+          padding: 12px;
+          max-height: 420px;
+          overflow: auto;
+          background: #f7f8fa;
+          border: 1px solid #ebeef5;
+          border-radius: 8px;
+          line-height: 1.5;
+          font-size: 12px;
+          color: #2c3e50;
+        "
+      >{{ selectedDetailText }}</pre>
+      <template #footer>
+        <el-button type="primary" @click="detailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -50,6 +93,8 @@ import { actionLabel } from '../actionLabel'
 const loading = ref(false)
 const items = ref<any[]>([])
 const total = ref(0)
+const detailVisible = ref(false)
+const selectedDetailText = ref('')
 
 const query = reactive<any>({
   action: '',
@@ -75,6 +120,36 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+function detailSummary(detail: unknown): string {
+  if (!detail) return '-'
+  if (typeof detail === 'string') return detail
+  if (typeof detail !== 'object') return String(detail)
+
+  const obj = detail as Record<string, unknown>
+  const keys = Object.keys(obj)
+  if (!keys.length) return '-'
+
+  const first = keys.slice(0, 3).map((k) => `${k}: ${briefValue(obj[k])}`)
+  const more = keys.length > 3 ? ` 等${keys.length}项` : ''
+  return `${first.join(' | ')}${more}`
+}
+
+function briefValue(v: unknown): string {
+  if (v === null || v === undefined || v === '') return '-'
+  if (typeof v === 'object') return '[对象]'
+  return String(v)
+}
+
+function openDetail(row: any) {
+  const detail = row?.detail
+  try {
+    selectedDetailText.value = JSON.stringify(detail ?? {}, null, 2)
+  } catch {
+    selectedDetailText.value = String(detail ?? '')
+  }
+  detailVisible.value = true
 }
 
 onMounted(load)

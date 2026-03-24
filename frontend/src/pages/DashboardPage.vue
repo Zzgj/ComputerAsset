@@ -167,7 +167,13 @@ const barOption = computed(() => {
     tooltip: { trigger: 'axis' },
     legend: { data: ['使用中', '借用中'] },
     xAxis: { type: 'category', data: depts.map((d) => d.departmentName) },
-    yAxis: { type: 'value' },
+    yAxis: {
+      type: 'value',
+      minInterval: 1,
+      axisLabel: {
+        formatter: (value: number) => String(Math.round(value)),
+      },
+    },
     series: [
       { name: '使用中', type: 'bar', data: depts.map((d) => d.inUse) },
       { name: '借用中', type: 'bar', data: depts.map((d) => d.borrowed) },

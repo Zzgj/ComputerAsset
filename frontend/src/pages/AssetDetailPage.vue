@@ -18,7 +18,14 @@
           </div>
         </div>
         <div style="min-width: 280px">
+          <div style="display: flex; justify-content: flex-end; margin-bottom: 8px" v-if="isSuperAdmin">
+            <el-button type="warning" plain @click="openEditCore">编辑关键信息</el-button>
+          </div>
           <el-descriptions :column="1" size="small" border>
+            <el-descriptions-item label="设备模板">
+              <el-tag v-if="asset.template?.name" type="primary" effect="plain">{{ asset.template.name }}</el-tag>
+              <el-tag v-else type="info" effect="plain">自定义</el-tag>
+            </el-descriptions-item>
             <el-descriptions-item label="品牌">{{ formatText(asset.brand) }}</el-descriptions-item>
             <el-descriptions-item label="型号">{{ formatText(asset.model) }}</el-descriptions-item>
             <el-descriptions-item label="操作系统">{{ formatText(asset.os) }}</el-descriptions-item>
@@ -28,6 +35,18 @@
             <el-descriptions-item label="采购日期">{{ toDate(asset.purchaseDate) }}</el-descriptions-item>
             <el-descriptions-item label="保修到期">{{ asset.warrantyExpiry ? toDate(asset.warrantyExpiry) : '暂无' }}</el-descriptions-item>
           </el-descriptions>
+          <div
+            style="
+              margin-top: 10px;
+              padding: 10px 12px;
+              border: 1px dashed #e6a23c;
+              background: #fff9ec;
+              border-radius: 8px;
+            "
+          >
+            <div style="font-size: 12px; color: #a1731a; font-weight: 700; margin-bottom: 6px">资产备注</div>
+            <div style="color: #4e5969; line-height: 1.6; white-space: pre-wrap">{{ formatText(asset.remark) }}</div>
+          </div>
         </div>
       </div>
     </el-card>
@@ -81,11 +100,15 @@
 
     <el-card shadow="never" style="margin-top: 16px">
       <div style="font-weight: 700; margin-bottom: 10px">流转历史</div>
-      <el-timeline v-if="records.length">
-        <el-timeline-item v-for="r in sortedRecords" :key="r.id" :timestamp="new Date(r.actionDate).toLocaleString()">
-          <div style="font-weight: 600">{{ actionLabel(r.action) }}</div>
-          <div style="color:#666; margin-top: 4px">
-            用户：{{ r.userName || '-' }}，部门：{{ r.department?.name ?? '-' }}，备注：{{ r.remark ?? '-' }}
+      <el-timeline v-if="timelineItems.length">
+        <el-timeline-item v-for="r in timelineItems" :key="r.key" :timestamp="new Date(r.time).toLocaleString()">
+          <div style="font-weight: 600">{{ r.title }}</div>
+          <div style="color:#666; margin-top: 4px" v-if="r.kind === 'record'">
+            用户：{{ r.userName || '-' }}，部门：{{ r.departmentName ?? '-' }}，备注：{{ r.remark ?? '-' }}
+          </div>
+          <div style="color:#666; margin-top: 4px" v-else>
+            操作人：{{ r.operatorName }}，变更：
+            {{ r.changeSummary }}
           </div>
         </el-timeline-item>
       </el-timeline>
@@ -179,6 +202,50 @@
         <el-button type="danger" :loading="submittingRetire" @click="submitRetire">确认报废</el-button>
       </template>
     </el-dialog>
+
+    <!-- 关键信息编辑（仅 super_admin） -->
+    <el-dialog v-model="editCoreDialogVisible" title="编辑资产关键信息（高风险）" width="720px" :close-on-click-modal="false">
+      <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        title="此操作会影响资产标识与追溯，请确认变更依据（如重装、贴标调整）后再提交。"
+        style="margin-bottom: 12px"
+      />
+      <el-form :model="editCoreForm" label-width="100px">
+        <el-form-item label="电脑编号" required>
+          <el-input v-model="editCoreForm.assetCode" />
+        </el-form-item>
+        <el-form-item label="序列号" required>
+          <el-input v-model="editCoreForm.serialNumber" />
+        </el-form-item>
+        <el-form-item label="品牌">
+          <el-input v-model="editCoreForm.brand" />
+        </el-form-item>
+        <el-form-item label="型号">
+          <el-input v-model="editCoreForm.model" />
+        </el-form-item>
+        <el-form-item label="操作系统">
+          <el-input v-model="editCoreForm.os" />
+        </el-form-item>
+        <el-form-item label="CPU">
+          <el-input v-model="editCoreForm.cpu" />
+        </el-form-item>
+        <el-form-item label="内存">
+          <el-input v-model="editCoreForm.memory" />
+        </el-form-item>
+        <el-form-item label="存储">
+          <el-input v-model="editCoreForm.storage" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input type="textarea" v-model="editCoreForm.remark" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editCoreDialogVisible = false">取消</el-button>
+        <el-button type="danger" :loading="submittingEditCore" @click="submitEditCore">确认修改</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -201,6 +268,8 @@ const departments = ref<Array<{ id: number; name: string }>>([])
 
 const authStore = useAuthStore()
 const canAdmin = computed(() => authStore.me?.role === 'admin' || authStore.me?.role === 'super_admin')
+const isSuperAdmin = computed(() => authStore.me?.role === 'super_admin')
+const changeLogs = ref<any[]>([])
 
 function toDate(d: any) {
   if (!d) return '暂无'
@@ -242,6 +311,47 @@ const uniqueUsers = computed(() => {
 })
 
 const sortedRecords = computed(() => [...records.value].sort((a, b) => new Date(a.actionDate).getTime() - new Date(b.actionDate).getTime()))
+const timelineItems = computed(() => {
+  const flow = sortedRecords.value.map((r: any) => ({
+    key: `record-${r.id}`,
+    kind: 'record' as const,
+    time: r.actionDate,
+    title: actionLabel(r.action),
+    userName: r.userName,
+    departmentName: r.department?.name ?? '-',
+    remark: r.remark ?? '-',
+  }))
+  const edits = (changeLogs.value ?? []).map((l: any) => {
+    const before = l?.detail?.before ?? {}
+    const after = l?.detail?.after ?? {}
+    const keys = ['assetCode', 'serialNumber', 'brand', 'model', 'os', 'cpu', 'memory', 'storage'] as const
+    const labelMap: Record<(typeof keys)[number], string> = {
+      assetCode: '电脑编号',
+      serialNumber: '序列号',
+      brand: '品牌',
+      model: '型号',
+      os: '操作系统',
+      cpu: 'CPU',
+      memory: '内存',
+      storage: '存储',
+    }
+    const changed = keys.filter((k) => String(before?.[k] ?? '') !== String(after?.[k] ?? ''))
+    const fmt = (v: unknown) => {
+      const s = String(v ?? '').trim()
+      return s || '（空）'
+    }
+    const details = changed.map((k) => `${labelMap[k]}：${fmt(before?.[k])} -> ${fmt(after?.[k])}`)
+    return {
+      key: `log-${l.id}`,
+      kind: 'log' as const,
+      time: l.createdAt,
+      title: '关键信息修改',
+      operatorName: l.operator?.realName ?? l.operator?.username ?? '-',
+      changeSummary: details.length ? details.join('；') : '字段更新',
+    }
+  })
+  return [...flow, ...edits].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+})
 
 function uuid() {
   return (crypto as any).randomUUID ? (crypto as any).randomUUID() : String(Date.now())
@@ -253,14 +363,16 @@ async function loadDepartments() {
 }
 
 async function reload() {
-  const [a, r, rep] = await Promise.all([
+  const [a, r, rep, logs] = await Promise.all([
     apiRequest<any>(`/api/assets/${assetId}`),
     apiRequest<{ records: any[] }>(`/api/assets/${assetId}/records`),
     apiRequest<{ repairs: any[] }>(`/api/assets/${assetId}/repairs`),
+    apiRequest<{ logs: any[] }>(`/api/assets/${assetId}/change-logs`),
   ])
   asset.value = a.asset ?? a
   records.value = r.records ?? []
   repairs.value = rep.repairs ?? []
+  changeLogs.value = logs.logs ?? []
 }
 
 // ---- 对话框与表单状态 ----
@@ -273,6 +385,8 @@ const submittingTransfer = ref(false)
 const submittingRepair = ref(false)
 const submittingRepairDone = ref(false)
 const submittingRetire = ref(false)
+const editCoreDialogVisible = ref(false)
+const submittingEditCore = ref(false)
 
 const transferForm = reactive<any>({
   userName: '',
@@ -293,6 +407,17 @@ const repairDoneForm = reactive<any>({
 })
 
 const retireForm = reactive<any>({
+  remark: '',
+})
+const editCoreForm = reactive<any>({
+  assetCode: '',
+  serialNumber: '',
+  brand: '',
+  model: '',
+  os: '',
+  cpu: '',
+  memory: '',
+  storage: '',
   remark: '',
 })
 
@@ -320,6 +445,75 @@ function openRepairDone() {
 function openRetire() {
   retireForm.remark = ''
   retireDialogVisible.value = true
+}
+
+function openEditCore() {
+  if (!asset.value) return
+  Object.assign(editCoreForm, {
+    assetCode: asset.value.assetCode ?? '',
+    serialNumber: asset.value.serialNumber ?? '',
+    brand: asset.value.brand ?? '',
+    model: asset.value.model ?? '',
+    os: asset.value.os ?? '',
+    cpu: asset.value.cpu ?? '',
+    memory: asset.value.memory ?? '',
+    storage: asset.value.storage ?? '',
+    remark: asset.value.remark ?? '',
+  })
+  editCoreDialogVisible.value = true
+}
+
+async function submitEditCore() {
+  if (!asset.value) return
+  if (!editCoreForm.assetCode?.trim()) return ElMessage.error('电脑编号不能为空')
+  if (!editCoreForm.serialNumber?.trim()) return ElMessage.error('序列号不能为空')
+  const changed =
+    editCoreForm.assetCode.trim() !== String(asset.value.assetCode ?? '') ||
+    editCoreForm.serialNumber.trim() !== String(asset.value.serialNumber ?? '') ||
+    String(editCoreForm.brand ?? '') !== String(asset.value.brand ?? '') ||
+    String(editCoreForm.model ?? '') !== String(asset.value.model ?? '') ||
+    String(editCoreForm.os ?? '') !== String(asset.value.os ?? '') ||
+    String(editCoreForm.cpu ?? '') !== String(asset.value.cpu ?? '') ||
+    String(editCoreForm.memory ?? '') !== String(asset.value.memory ?? '') ||
+    String(editCoreForm.storage ?? '') !== String(asset.value.storage ?? '') ||
+    String(editCoreForm.remark ?? '') !== String(asset.value.remark ?? '')
+  if (!changed) return ElMessage.warning('未检测到变更')
+
+  // 高风险强提示：要求再次确认
+  const ok = window.confirm(
+    '高风险操作：你正在修改资产关键标识（编号/序列号/品牌等）。这会影响后续追溯与对账，确定继续吗？',
+  )
+  if (!ok) return
+
+  submittingEditCore.value = true
+  try {
+    await apiRequest(`/api/assets/${assetId}`, {
+      method: 'PUT',
+      body: {
+        version: asset.value.version,
+        forceCustom: true,
+        assetCode: editCoreForm.assetCode.trim(),
+        serialNumber: editCoreForm.serialNumber.trim(),
+        brand: editCoreForm.brand ?? '',
+        model: editCoreForm.model ?? '',
+        os: editCoreForm.os ?? '',
+        cpu: editCoreForm.cpu ?? '',
+        memory: editCoreForm.memory ?? '',
+        storage: editCoreForm.storage ?? '',
+        remark: editCoreForm.remark ?? '',
+        currentUserName: asset.value.currentUserName ?? '',
+        departmentId: asset.value.departmentId,
+        deviceType: asset.value.deviceType,
+      },
+    })
+    ElMessage.success('关键信息修改成功')
+    editCoreDialogVisible.value = false
+    await reload()
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '修改失败')
+  } finally {
+    submittingEditCore.value = false
+  }
 }
 
 async function submitTransfer() {
