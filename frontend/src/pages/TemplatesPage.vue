@@ -19,6 +19,7 @@
         <el-table-column prop="cpu" label="CPU" />
         <el-table-column prop="memory" label="内存" />
         <el-table-column prop="storage" label="存储" />
+        <el-table-column prop="assetCount" label="关联资产数" width="110" />
         <el-table-column prop="isActive" label="启用" width="90">
           <template #default="{ row }">
             <el-tag :type="row.isActive ? 'success' : 'info'">{{ row.isActive ? '启用' : '停用' }}</el-tag>

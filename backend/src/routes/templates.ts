@@ -26,16 +26,36 @@ templatesRouter.get('/', requireAuth, async (_req, res) => {
   const items = await prisma.assetTemplate.findMany({
     where: { isActive: true },
     orderBy: { sortOrder: 'asc' },
+    include: {
+      _count: {
+        select: { assets: true },
+      },
+    },
   })
-  res.json({ items })
+  res.json({
+    items: items.map((t) => ({
+      ...t,
+      assetCount: t._count.assets,
+    })),
+  })
 })
 
 // 管理页面：包含停用
 templatesRouter.get('/all', requireAuth, async (_req, res) => {
   const items = await prisma.assetTemplate.findMany({
     orderBy: { sortOrder: 'asc' },
+    include: {
+      _count: {
+        select: { assets: true },
+      },
+    },
   })
-  res.json({ items })
+  res.json({
+    items: items.map((t) => ({
+      ...t,
+      assetCount: t._count.assets,
+    })),
+  })
 })
 
 templatesRouter.post('/', requireAuth, requireRole(adminRoles), async (req, res) => {

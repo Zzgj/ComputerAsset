@@ -11,7 +11,7 @@
         <el-table-column prop="currentUserName" label="使用人" />
         <el-table-column label="状态">
           <template #default="{ row }">
-            <el-tag :type="row.status === 'borrowed' ? 'warning' : 'info'">{{ row.status }}</el-tag>
+            <el-tag :type="row.status === 'borrowed' ? 'warning' : 'info'">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="部门">
@@ -54,6 +54,19 @@ const dialogVisible = ref(false)
 const selected = ref<any | null>(null)
 const form = ref<any>({ remark: '' })
 const submitting = ref(false)
+
+function statusLabel(status: unknown): string {
+  const key = String(status ?? '')
+  const map: Record<string, string> = {
+    in_stock: '在库',
+    waiting_pickup: '待领用',
+    in_use: '使用中',
+    borrowed: '借用中',
+    in_repair: '维修中',
+    retired: '已报废',
+  }
+  return map[key] ?? key
+}
 
 async function load() {
   loading.value = true

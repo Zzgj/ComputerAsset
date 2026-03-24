@@ -12,6 +12,7 @@ import { AssetRecordAction, AssetStatus, DeviceType, Role } from '@prisma/client
 const excelRouter = Router()
 
 const adminRoles: Role[] = ['super_admin', 'admin']
+const USER_REQUIRED_STATUSES: AssetStatus[] = [AssetStatus.waiting_pickup, AssetStatus.in_use, AssetStatus.borrowed]
 
 function badRequest(message: string, details?: unknown, code?: string): never {
   throw { statusCode: 400, message, details, code }
@@ -44,6 +45,87 @@ type ImportSkipItem = {
   row: number
   reason: string
   assetCode?: string
+}
+type InvalidReasonStat = { reason: string; count: number }
+
+const IMPORT_RELATED_HEADERS = [
+  '电脑编号',
+  'assetCode',
+  '电脑编号(电脑编号)',
+  '电脑编号（电脑编号）',
+  '序列号',
+  'serialNumber',
+  '序列号（EX）',
+  '序列号(EX)',
+  '序列号（Ex）',
+  '序列号(Ex)',
+  'SN',
+  'sn',
+  '模板名称',
+  '型号模板',
+  'templateName',
+  '品牌',
+  'brand',
+  '型号',
+  'model',
+  '设备型号',
+  '规格型号',
+  '电脑型号',
+  '规格',
+  '设备类型',
+  'deviceType',
+  '操作系统',
+  'os',
+  'CPU',
+  'cpu',
+  '内存',
+  'memory',
+  '存储',
+  'storage',
+  '设备状态',
+  'status',
+  '现定人',
+  'currentUserName',
+  '现登记人',
+  '使用人',
+  '领用人',
+  '部门',
+  'department',
+  'departmentName',
+  '采购日期',
+  'purchaseDate',
+  '开始使用时间',
+  '启用日期',
+  'startDate',
+  '保修到期日',
+  'warrantyExpiry',
+  '预计归还日期',
+  'expectedReturnDate',
+  '备注',
+  'remark',
+  '配置',
+  '硬件配置',
+  'config',
+  '证明',
+  '凭证',
+  '曾用人信息',
+  '曾用人',
+] as const
+
+const IMPORT_RELATED_HEADER_SET = new Set(IMPORT_RELATED_HEADERS.map((h) => normalizeHeader(h)))
+
+function hasImportRelatedValue(row: Record<string, any>): boolean {
+  for (const [k, v] of Object.entries(row)) {
+    if (!IMPORT_RELATED_HEADER_SET.has(normalizeHeader(k))) continue
+    if (v === undefined || v === null) continue
+    if (typeof v === 'string') {
+      if (v.trim() !== '') return true
+      continue
+    }
+    // 数字/布尔/日期都视为有数据
+    return true
+  }
+  return false
 }
 
 function strRow(row: Record<string, any>, keys: string[]): string {
@@ -388,16 +470,22 @@ excelRouter.post(
 
     const unknownMap = new Map<string, UnknownTemplateItem>()
     let wouldImport = 0
+    let detectedRows = 0
     let skippedCount = 0
     const skippedRows: ImportSkipItem[] = []
+    const reasonCounter = new Map<string, number>()
+    const seenSerialToAssetCode = new Map<string, string>()
     const pushDrySkip = (item: ImportSkipItem) => {
       skippedCount++
+      reasonCounter.set(item.reason, (reasonCounter.get(item.reason) ?? 0) + 1)
       // 控制返回体大小，最多返回前 200 条明细
       if (skippedRows.length < 200) skippedRows.push(item)
     }
 
     for (let i = 0; i < rowsCount; i++) {
       const row = rows[i]
+      if (!hasImportRelatedValue(row)) continue
+      detectedRows++
       const assetCode = getRowCell(row, [
         '电脑编号',
         'assetCode',
@@ -417,12 +505,46 @@ excelRouter.post(
       }
       // 允许“序列号为空”：写入时使用唯一占位符（序列号字段在数据库里是 unique）
       if (!serialNumber) serialNumber = `暂无-${assetCode}`
-      wouldImport++
+
+      const seenAssetCode = seenSerialToAssetCode.get(serialNumber)
+      if (seenAssetCode && seenAssetCode !== assetCode) {
+        if (dryRun) {
+          pushDrySkip({
+            row: i + 2,
+            reason: `序列号重复（与同批导入的电脑编号 ${seenAssetCode} 冲突）`,
+            assetCode,
+          })
+        }
+        continue
+      }
+      seenSerialToAssetCode.set(serialNumber, assetCode)
+
+      const existedBySerial = await prisma.asset.findUnique({
+        where: { serialNumber },
+        select: { assetCode: true },
+      })
+      if (existedBySerial && existedBySerial.assetCode !== assetCode) {
+        if (dryRun) {
+          pushDrySkip({
+            row: i + 2,
+            reason: `序列号已存在（当前归属电脑编号 ${existedBySerial.assetCode}）`,
+            assetCode,
+          })
+        }
+        continue
+      }
       const { unknown } = classifyTemplateNeed(allTemplatesSnapshot, row, snapshotIndexes)
       if (unknown) mergeUnknown(unknownMap, unknown, i + 2)
 
       // dryRun 时也给出行级跳过原因（便于你在真正写入前先确认 Excel 有问题的行）
       if (dryRun) {
+        const status = mapStatus(row['设备状态'] ?? row['status'] ?? '在库') ?? AssetStatus.in_stock
+        const currentUserName = parseCurrentUserFromRow(row)
+        if (USER_REQUIRED_STATUSES.includes(status) && !currentUserName.trim()) {
+          pushDrySkip({ row: i + 2, reason: '设备状态为待领用/使用中/借用中时，现定人必填', assetCode })
+          continue
+        }
+
         const purchaseDate = parsePurchaseDateFromRow(row)
         if (!purchaseDate) {
           pushDrySkip({ row: i + 2, reason: '采购日期格式非法', assetCode })
@@ -434,12 +556,19 @@ excelRouter.post(
           continue
         }
       }
+      wouldImport++
     }
 
     if (dryRun) {
+      const invalidReasonStats: InvalidReasonStat[] = Array.from(reasonCounter.entries())
+        .map(([reason, count]) => ({ reason, count }))
+        .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason, 'zh-CN'))
       res.json({
         dryRun: true,
+        detectedRows,
         wouldImport,
+        invalidRows: skippedCount,
+        invalidReasonStats,
         unknownTemplates: Array.from(unknownMap.values()),
         skippedCount,
         skippedRows,
@@ -511,8 +640,11 @@ excelRouter.post(
       let imported = 0
       let skippedCount = 0
       const skippedRows: ImportSkipItem[] = []
+      const reasonCounter = new Map<string, number>()
+      const seenSerialToAssetCode = new Map<string, string>()
       const pushSkip = (item: ImportSkipItem) => {
         skippedCount++
+        reasonCounter.set(item.reason, (reasonCounter.get(item.reason) ?? 0) + 1)
         // 控制返回体大小，最多返回前 200 条明细
         if (skippedRows.length < 200) skippedRows.push(item)
       }
@@ -533,6 +665,7 @@ excelRouter.post(
 
       for (let i = 0; i < rowsCount; i++) {
         const row = rows[i]
+        if (!hasImportRelatedValue(row)) continue
 
         const assetCode = getRowCell(row, [
           '电脑编号',
@@ -552,6 +685,30 @@ excelRouter.post(
         }
         // 允许“序列号为空”：写入时使用唯一占位符（序列号字段在数据库里是 unique）
         if (!serialNumber) serialNumber = `暂无-${assetCode}`
+
+        const seenAssetCode = seenSerialToAssetCode.get(serialNumber)
+        if (seenAssetCode && seenAssetCode !== assetCode) {
+          pushSkip({
+            row: i + 2,
+            reason: `序列号重复（与同批导入的电脑编号 ${seenAssetCode} 冲突）`,
+            assetCode,
+          })
+          continue
+        }
+        seenSerialToAssetCode.set(serialNumber, assetCode)
+
+        const existedBySerial = await tx.asset.findUnique({
+          where: { serialNumber },
+          select: { assetCode: true },
+        })
+        if (existedBySerial && existedBySerial.assetCode !== assetCode) {
+          pushSkip({
+            row: i + 2,
+            reason: `序列号已存在（当前归属电脑编号 ${existedBySerial.assetCode}）`,
+            assetCode,
+          })
+          continue
+        }
 
         const deptName = String(row['部门'] ?? row['department'] ?? row['departmentName'] ?? '').trim() || '未分配'
         let dept = deptMap.get(deptName)
@@ -579,6 +736,10 @@ excelRouter.post(
         const storage = strRow(row, ['存储', 'storage']) || String(template?.storage ?? '')
         const remark = buildRemarkFromRow(row)
         const currentUserName = parseCurrentUserFromRow(row)
+        if (USER_REQUIRED_STATUSES.includes(status) && !currentUserName.trim()) {
+          pushSkip({ row: i + 2, reason: '设备状态为待领用/使用中/借用中时，现定人必填', assetCode })
+          continue
+        }
 
         const purchaseDate = parsePurchaseDateFromRow(row)
         if (!purchaseDate) {
@@ -592,44 +753,57 @@ excelRouter.post(
           continue
         }
 
-        const asset = await tx.asset.upsert({
-          where: { assetCode },
-          update: {
-            templateId: template?.id ?? null,
-            deviceType,
-            brand,
-            model,
-            serialNumber,
-            os,
-            cpu,
-            memory,
-            storage,
-            status,
-            currentUserName: status === AssetStatus.in_stock ? '' : currentUserName,
-            departmentId: dept.id,
-            purchaseDate,
-            warrantyExpiry: warrantyExpiry ?? undefined,
-            remark,
-          },
-          create: {
-            assetCode,
-            templateId: template?.id ?? null,
-            deviceType,
-            brand,
-            model,
-            serialNumber,
-            os,
-            cpu,
-            memory,
-            storage,
-            status,
-            currentUserName: status === AssetStatus.in_stock ? '' : currentUserName,
-            departmentId: dept.id,
-            purchaseDate,
-            warrantyExpiry: warrantyExpiry ?? undefined,
-            remark,
-          },
-        })
+        let asset: { id: number; status: AssetStatus; currentUserName: string; departmentId: number }
+        try {
+          asset = await tx.asset.upsert({
+            where: { assetCode },
+            update: {
+              templateId: template?.id ?? null,
+              deviceType,
+              brand,
+              model,
+              serialNumber,
+              os,
+              cpu,
+              memory,
+              storage,
+              status,
+              currentUserName: status === AssetStatus.in_stock ? '' : currentUserName,
+              departmentId: dept.id,
+              purchaseDate,
+              warrantyExpiry: warrantyExpiry ?? undefined,
+              remark,
+            },
+            create: {
+              assetCode,
+              templateId: template?.id ?? null,
+              deviceType,
+              brand,
+              model,
+              serialNumber,
+              os,
+              cpu,
+              memory,
+              storage,
+              status,
+              currentUserName: status === AssetStatus.in_stock ? '' : currentUserName,
+              departmentId: dept.id,
+              purchaseDate,
+              warrantyExpiry: warrantyExpiry ?? undefined,
+              remark,
+            },
+            select: { id: true, status: true, currentUserName: true, departmentId: true },
+          })
+        } catch (e: any) {
+          const code = String(e?.code ?? '')
+          const targets: unknown[] = Array.isArray(e?.meta?.target) ? e.meta.target : []
+          const bySerial = targets.some((t) => String(t).includes('serialNumber'))
+          if (code === 'P2002' && bySerial) {
+            pushSkip({ row: i + 2, reason: '序列号已存在（数据库唯一约束）', assetCode })
+            continue
+          }
+          throw e
+        }
 
         // 用于时间轴排序：先写入“入库”，再写入实际状态对应的流转记录
         const baseActionDate = new Date()
@@ -706,9 +880,16 @@ excelRouter.post(
         imported++
       }
 
+      const invalidReasonStats: InvalidReasonStat[] = Array.from(reasonCounter.entries())
+        .map(([reason, count]) => ({ reason, count }))
+        .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason, 'zh-CN'))
+
       return {
+        detectedRows,
         imported,
         createdTemplates: templatesCreated,
+        invalidRows: skippedCount,
+        invalidReasonStats,
         skippedCount,
         skippedRows,
       }

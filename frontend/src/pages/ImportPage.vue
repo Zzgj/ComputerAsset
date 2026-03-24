@@ -1,36 +1,57 @@
 <template>
-  <div style="padding: 20px">
+  <div class="page-wrap">
     <el-card shadow="never">
-      <div style="font-weight: 800; margin-bottom: 10px">导入导出</div>
-
-      <div style="display: grid; gap: 12px">
-        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
-          <el-button type="primary" plain @click="downloadTemplate">下载导入模板</el-button>
-          <span style="color: var(--el-text-color-secondary); font-size: 13px"
-            >按模板列名填写后上传，格式与系统一致</span
-          >
-        </div>
-        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
-          <input type="file" @change="onFileChange" accept=".xlsx,.xls,.csv" />
-          <el-button type="primary" :disabled="!file" :loading="importing" @click="doImport">
-            导入 Excel
-          </el-button>
-        </div>
-        <div style="color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.5">
-          导入前会检查「模板名称」或「品牌+型号」是否已在<strong>设备型号模板</strong>中登记。若有未登记型号，将弹出确认：可自动创建模板并导入，或仅写入资产（不建模板）。
-        </div>
-
-        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
-          <el-button type="success" @click="exportAssets">导出资产清单(分页)</el-button>
-          <span style="color: var(--el-text-color-secondary); font-size: 13px">页码</span>
-          <el-input-number v-model="assetsExportPage" :min="1" :max="100000" size="small" />
-          <span style="color: var(--el-text-color-secondary); font-size: 13px">每页</span>
-          <el-input-number v-model="assetsExportPageSize" :min="10" :max="10000" size="small" />
-          <span style="color: var(--el-text-color-secondary); font-size: 13px">条</span>
-          <el-button type="primary" @click="exportRecords">导出出入库记录</el-button>
-        </div>
-      </div>
+      <div class="page-title">导入导出</div>
+      <div class="page-subtitle">通过模板批量导入资产数据，或按需导出资产与出入库记录。</div>
     </el-card>
+
+    <div class="grid-wrap">
+      <el-card shadow="never">
+        <template #header>
+          <div class="section-title">导入资产</div>
+        </template>
+
+        <div class="block">
+          <el-button type="primary" plain @click="downloadTemplate">下载导入模板</el-button>
+          <span class="helper-text">按模板列名填写后上传，格式与系统保持一致</span>
+        </div>
+
+        <div class="block">
+          <input type="file" @change="onFileChange" accept=".xlsx,.xls,.csv" />
+          <el-button type="primary" :disabled="!file" :loading="importing" @click="doImport">导入 Excel</el-button>
+        </div>
+
+        <div class="hint-box">
+          <div style="font-weight: 600; margin-bottom: 6px">导入规则与限制</div>
+          <div>1. 必填：电脑编号（缺失将判为无效并跳过）。</div>
+          <div>2. 序列号：同一批导入内不可重复；若与库内其他资产重复也会跳过该行。</div>
+          <div>3. 状态校验：设备状态为“待领用/使用中/借用中”时，现定人必填。</div>
+          <div>4. 日期校验：采购日期、保修到期日格式非法会判为无效。</div>
+          <div>5. 模板匹配：优先按“模板名称”，其次按“品牌+型号”；未登记型号可选择自动创建模板。</div>
+          <div>6. 处理方式：导入前会预校验并显示总数/有效/无效；无效行会在明细中给出原因并跳过。</div>
+        </div>
+      </el-card>
+
+      <el-card shadow="never">
+        <template #header>
+          <div class="section-title">导出数据</div>
+        </template>
+
+        <div class="block export-params">
+          <span class="helper-text">资产清单分页导出</span>
+          <span class="helper-text">页码</span>
+          <el-input-number v-model="assetsExportPage" :min="1" :max="100000" size="small" />
+          <span class="helper-text">每页</span>
+          <el-input-number v-model="assetsExportPageSize" :min="10" :max="10000" size="small" />
+          <span class="helper-text">条</span>
+        </div>
+
+        <div class="block actions">
+          <el-button type="success" @click="exportAssets">导出资产清单</el-button>
+          <el-button type="primary" plain @click="exportRecords">导出出入库记录</el-button>
+        </div>
+      </el-card>
+    </div>
   </div>
 </template>
 
@@ -60,6 +81,10 @@ type SkippedRow = {
 }
 
 type ImportResult = {
+  invalidReasonStats?: Array<{ reason: string; count: number }>
+  detectedRows?: number
+  wouldImport?: number
+  invalidRows?: number
   imported?: number
   createdTemplates?: number
   skippedCount?: number
@@ -140,7 +165,18 @@ async function showSkippedRows(result: ImportResult) {
 
 function buildSkippedRowsHtml(result: ImportResult) {
   const skippedCount = Number(result?.skippedCount ?? 0)
+  const wouldImport = Number(result?.wouldImport ?? 0)
+  const invalidRows = Number(result?.invalidRows ?? skippedCount)
+  // 兼容旧后端：若未返回 detectedRows，则按 有效+无效 估算
+  const detectedRows = Number(result?.detectedRows ?? wouldImport + invalidRows)
   const rows = (result?.skippedRows ?? []).slice(0, 30)
+  const stats = (result?.invalidReasonStats ?? []).slice(0, 10)
+  const statsHtml = stats.length
+    ? `<div style="margin:10px 0 12px 0;padding:8px 10px;background:#fafafa;border:1px solid #f0f0f0;border-radius:6px">
+        <div style="margin-bottom:6px;font-weight:600">无效原因分组统计</div>
+        ${stats.map((s) => `<div>· ${escapeHtml(s.reason)}：${s.count} 条</div>`).join('')}
+      </div>`
+    : ''
   const rowsHtml = rows
     .map((r) => {
       const code = r.assetCode ? `，编号：${escapeHtml(r.assetCode)}` : ''
@@ -150,8 +186,12 @@ function buildSkippedRowsHtml(result: ImportResult) {
   const more =
     skippedCount > rows.length ? `<div style="margin-top:8px;color:#999">仅展示前 ${rows.length} 条，实际共 ${skippedCount} 条</div>` : ''
   return `
-    <div style="text-align:left;max-height:360px;overflow:auto">
-      <div style="margin-bottom:8px">预校验发现无效行（共 ${skippedCount} 条）：</div>
+    <div style="text-align:left;max-height:360px;overflow-y:auto;overflow-x:hidden;padding-right:4px">
+      <div style="margin-bottom:8px;line-height:1.6">
+        预校验结果：检测到 <strong>${detectedRows}</strong> 条，预计可导入 <strong>${wouldImport}</strong> 条，无效 <strong>${invalidRows}</strong> 条。
+      </div>
+      ${statsHtml}
+      <div style="margin-bottom:8px">无效行明细（共 ${skippedCount} 条）：</div>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead>
           <tr>
@@ -194,7 +234,15 @@ async function doImport() {
     }
 
     let previewShown = false
+    const wouldImport = Number(d0?.wouldImport ?? 0)
+    const invalidRows = Number(d0?.invalidRows ?? d0?.skippedCount ?? 0)
+    // 兼容旧后端：若未返回 detectedRows，则按 有效+无效 估算
+    const detectedRows = Number(d0?.detectedRows ?? wouldImport + invalidRows)
     const skipN0 = Number(d0?.skippedCount ?? 0)
+    ElMessage.info({
+      message: `预校验：检测到 ${detectedRows} 条，预计可导入 ${wouldImport} 条，无效 ${invalidRows} 条`,
+      duration: 6000,
+    })
     if (skipN0 > 0) {
       ElMessage.warning({ message: `导入预校验：将跳过 ${skipN0} 行无效数据`, duration: 6000 })
       try {
@@ -324,3 +372,62 @@ async function exportRecords() {
   }
 }
 </script>
+
+<style scoped>
+.page-wrap {
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.page-title {
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.page-subtitle {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.grid-wrap {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+}
+
+.section-title {
+  font-weight: 700;
+}
+
+.block {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.block + .block {
+  margin-top: 14px;
+}
+
+.helper-text {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.hint-box {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  line-height: 1.6;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+}
+
+.actions {
+  justify-content: flex-start;
+}
+</style>
