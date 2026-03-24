@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+*.tsbuildinfo
+
+# Environment & secrets（勿提交真实密钥）
+.env
+.env.*
+!.env.example
+
+# SQLite 数据库与本地备份（克隆后本地生成）
+backend/data/*.db
+*.db
+backup/
+backup_*/
+
+# Logs & cache
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.eslintcache
+coverage/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Vite
+*.timestamp-*-*.mjs
+frontend/.vite/
+
+# 根目录临时导出/测试用 Excel（按需保留或删除）
+/*.xlsx
+
+# 若曾将 `Cursor/` 复制为 `frontend/` 后残留旧目录，可忽略以免误提交重复代码；清理后请删除本行与 `Cursor/` 文件夹
+/Cursor/

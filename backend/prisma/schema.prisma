@@ -1,0 +1,181 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum Role {
+  super_admin
+  admin
+  viewer
+}
+
+enum DeviceType {
+  laptop
+  desktop
+  aio
+  server
+}
+
+enum AssetStatus {
+  in_stock
+  waiting_pickup
+  in_use
+  borrowed
+  in_repair
+  retired
+}
+
+enum AssetRecordAction {
+  stock_in
+  assign
+  cancel_assign
+  pick_up
+  check_out
+  lend
+  return
+  transfer
+  repair
+  repair_done
+  retire
+}
+
+enum RepairResult {
+  fixed
+  unfixable
+}
+
+model User {
+  id               Int              @id @default(autoincrement())
+  username         String           @unique
+  password         String
+  realName         String
+  role             Role
+  isActive         Boolean          @default(true)
+  mustChangePass   Boolean          @default(false)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  operatorLogs     OperationLog[]  @relation("OperatorLogs")
+  assetRecords     AssetRecord[]   @relation("RecordOperator")
+
+  @@index([username])
+}
+
+model Department {
+  id          Int           @id @default(autoincrement())
+  name        String        @unique
+  sortOrder   Int
+  isActive    Boolean       @default(true)
+
+  assets      Asset[]
+  records     AssetRecord[]
+
+  @@index([sortOrder])
+}
+
+model AssetTemplate {
+  id          Int         @id @default(autoincrement())
+  name        String      @unique
+  deviceType  DeviceType
+  brand       String
+  model       String
+  os          String
+  cpu         String
+  memory      String
+  storage     String
+  remark      String?
+  isActive    Boolean     @default(true)
+  sortOrder   Int
+
+  assets      Asset[]
+}
+
+model Asset {
+  id                Int              @id @default(autoincrement())
+  assetCode         String           @unique
+  templateId        Int?
+  template          AssetTemplate?  @relation(fields: [templateId], references: [id])
+
+  deviceType        DeviceType
+  brand             String
+  model             String
+  serialNumber      String          @unique
+  os                String
+  cpu               String
+  memory            String
+  storage           String
+
+  status            AssetStatus
+  currentUserName  String
+  departmentId      Int
+  department        Department      @relation(fields: [departmentId], references: [id])
+
+  purchaseDate      DateTime
+  warrantyExpiry    DateTime?
+  remark            String?
+  version           Int              @default(1)
+
+  records           AssetRecord[]
+  repairRecords    RepairRecord[]
+}
+
+model AssetRecord {
+  id                    Int                 @id @default(autoincrement())
+  assetId               Int
+  asset                 Asset               @relation(fields: [assetId], references: [id])
+
+  action                AssetRecordAction
+  userName              String
+  departmentId          Int
+  department            Department         @relation(fields: [departmentId], references: [id])
+  actionDate            DateTime
+  expectedReturnDate   DateTime?
+  proofImage            String?
+  remark                String?
+
+  operatorId            Int
+  operator              User                @relation(fields: [operatorId], references: [id], name: "RecordOperator")
+
+  requestId            String             @unique
+  createdAt            DateTime           @default(now())
+}
+
+model RepairRecord {
+  id              Int           @id @default(autoincrement())
+  assetId         Int
+  asset           Asset         @relation(fields: [assetId], references: [id])
+
+  faultDescription String
+  repairVendor     String
+  repairCost       Float
+  repairResult     RepairResult
+  startDate        DateTime
+  endDate          DateTime
+  remark           String?
+}
+
+model SystemConfig {
+  configKey     String   @id
+  configValue   String
+  description   String?
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+}
+
+model OperationLog {
+  id           Int      @id @default(autoincrement())
+  operatorId   Int
+  operator     User     @relation(fields: [operatorId], references: [id], name: "OperatorLogs")
+
+  action       String
+  targetType   String
+  targetId     Int
+  detail       Json
+  ipAddress    String
+  createdAt    DateTime @default(now())
+}
+
