@@ -1,10 +1,14 @@
-# Dependencies
+﻿# Dependencies
 node_modules/
 
 # Build output
 dist/
 dist-ssr/
 *.tsbuildinfo
+
+# Prisma generated artifacts
+backend/.prisma/
+backend/prisma/.prisma/
 
 # Environment & secrets（勿提交真实密钥）
 .env
