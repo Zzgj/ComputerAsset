@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { DeviceType, Role } from '@prisma/client'
+import { DeviceType, Role, Prisma } from '@prisma/client'
 
 import { prisma } from '../prisma'
 import { requireAuth, requireRole } from '../middleware/auth'
@@ -65,21 +65,32 @@ templatesRouter.post('/', requireAuth, requireRole(adminRoles), async (req, res)
   if (typeof body.name !== 'string' || body.name.trim() === '') badRequest('name is required')
   if (!Object.values(DeviceType).includes(body.deviceType)) badRequest('deviceType is invalid')
 
-  const created = await prisma.assetTemplate.create({
-    data: {
-      name: body.name,
-      deviceType: body.deviceType as DeviceType,
-      brand: String(body.brand ?? ''),
-      model: String(body.model ?? ''),
-      os: String(body.os ?? ''),
-      cpu: String(body.cpu ?? ''),
-      memory: String(body.memory ?? ''),
-      storage: String(body.storage ?? ''),
-      remark: typeof body.remark === 'string' ? body.remark : undefined,
-      isActive: typeof body.isActive === 'boolean' ? body.isActive : true,
-      sortOrder: typeof body.sortOrder === 'number' ? body.sortOrder : Number(body.sortOrder ?? 0),
-    },
-  })
+  let created
+  try {
+    created = await prisma.assetTemplate.create({
+      data: {
+        name: body.name,
+        deviceType: body.deviceType as DeviceType,
+        brand: String(body.brand ?? ''),
+        model: String(body.model ?? ''),
+        os: String(body.os ?? ''),
+        cpu: String(body.cpu ?? ''),
+        memory: String(body.memory ?? ''),
+        storage: String(body.storage ?? ''),
+        remark: typeof body.remark === 'string' ? body.remark : undefined,
+        isActive: typeof body.isActive === 'boolean' ? body.isActive : true,
+        sortOrder: typeof body.sortOrder === 'number' ? body.sortOrder : Number(body.sortOrder ?? 0),
+      },
+    })
+  } catch (e: any) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      const targets: string[] = Array.isArray(e.meta?.target) ? (e.meta?.target as string[]) : []
+      if (targets.some((t) => String(t).includes('name'))) {
+        badRequest('模板名称已存在，请更换后再保存。')
+      }
+    }
+    throw e
+  }
 
   await prisma.operationLog.create({
     data: {

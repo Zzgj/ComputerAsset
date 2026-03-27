@@ -1,78 +1,160 @@
 <template>
-  <div style="padding: 20px">
-    <el-card shadow="never">
-      <div style="font-weight: 800; margin-bottom: 4px">出库/借用</div>
-      <div style="color: #666; font-size: 13px; margin-bottom: 12px">包含出库（直接领用）、分配待领用、借出，以及待领用确认/取消。</div>
+  <div class="page-wrap">
+    <el-card shadow="never" class="intro-card">
+      <div class="page-title">出库 / 借用</div>
+      <div class="page-subtitle">
+        办理在库设备的直接领用、分配待领用、临时借出，以及待领用确认与取消分配。按下方页签切换流程。
+      </div>
+    </el-card>
 
-      <el-tabs v-model="activeTab">
+    <el-card shadow="never" class="main-card">
+      <el-alert
+        v-if="onePersonOneDeviceEnabled"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="policy-alert"
+        title="已开启「一人一机」规则：出库与借出时，若使用人名下已有在领用/借用等状态的电脑，系统将提示冲突；您仍可选择继续办理。"
+      />
+
+      <el-tabs v-model="activeTab" class="stock-tabs">
         <el-tab-pane label="出库（直接领用）" name="check_out">
-          <div style="display: grid; gap: 12px; margin-top: 10px">
-            <el-select v-model="checkOut.assetId" placeholder="选择在库电脑" filterable style="width: 420px">
-              <el-option v-for="a in inStockAssets" :key="a.id" :label="`${a.assetCode} - ${a.brand}/${a.model}`" :value="a.id" />
-            </el-select>
-            <el-input v-model="checkOut.userName" placeholder="领用人姓名" style="width: 420px" />
-            <el-select v-model="checkOut.departmentId" placeholder="部门" style="width: 420px">
-              <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
-            </el-select>
-            <el-input type="textarea" v-model="checkOut.remark" placeholder="备注（可选）" :rows="3" style="width: 560px" />
-            <el-button type="primary" :loading="submitting" @click="doCheckOut" :disabled="!checkOut.assetId || !checkOut.userName || !checkOut.departmentId">
-              确认出库
-            </el-button>
+          <div class="tab-panel">
+            <p class="tab-desc">从在库状态直接变为使用中，适用于当场领走设备。</p>
+            <el-form label-width="100px" class="op-form">
+              <el-form-item label="在库电脑" required>
+                <el-select v-model="checkOut.assetId" placeholder="搜索电脑编号或配置" filterable class="field-full">
+                  <el-option v-for="a in inStockAssets" :key="a.id" :label="`${a.assetCode} · ${a.brand}/${a.model}`" :value="a.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="领用人" required>
+                <el-input v-model="checkOut.userName" placeholder="姓名" class="field-full" clearable />
+              </el-form-item>
+              <el-form-item label="部门" required>
+                <el-select v-model="checkOut.departmentId" placeholder="选择部门" filterable class="field-full">
+                  <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="备注">
+                <el-input type="textarea" v-model="checkOut.remark" placeholder="可选" :rows="3" class="field-wide" />
+              </el-form-item>
+              <el-form-item>
+                <el-button
+                  type="primary"
+                  size="large"
+                  :loading="submitting"
+                  @click="doCheckOut"
+                  :disabled="!checkOut.assetId || !checkOut.userName || !checkOut.departmentId"
+                >
+                  确认出库
+                </el-button>
+              </el-form-item>
+            </el-form>
           </div>
         </el-tab-pane>
 
         <el-tab-pane label="分配（待领用）" name="assign">
-          <div style="display: grid; gap: 12px; margin-top: 10px">
-            <el-select v-model="assign.assetId" placeholder="选择在库电脑" filterable style="width: 420px">
-              <el-option v-for="a in inStockAssets" :key="a.id" :label="`${a.assetCode} - ${a.brand}/${a.model}`" :value="a.id" />
-            </el-select>
-            <el-input v-model="assign.userName" placeholder="领用人姓名" style="width: 420px" />
-            <el-select v-model="assign.departmentId" placeholder="部门" style="width: 420px">
-              <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
-            </el-select>
-            <el-input type="textarea" v-model="assign.remark" placeholder="备注（可选）" :rows="3" style="width: 560px" />
-            <el-button
-              type="primary"
-              :loading="submitting"
-              @click="doAssign"
-              :disabled="!assign.assetId || !assign.userName || !assign.departmentId"
-            >
-              确认分配
-            </el-button>
+          <div class="tab-panel">
+            <p class="tab-desc">设备先进入待领用，指定领用人与部门；对方在「待领用操作」中确认领用后变为使用中。</p>
+            <el-form label-width="100px" class="op-form">
+              <el-form-item label="在库电脑" required>
+                <el-select v-model="assign.assetId" placeholder="搜索电脑编号或配置" filterable class="field-full">
+                  <el-option v-for="a in inStockAssets" :key="a.id" :label="`${a.assetCode} · ${a.brand}/${a.model}`" :value="a.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="领用人" required>
+                <el-input v-model="assign.userName" placeholder="姓名" class="field-full" clearable />
+              </el-form-item>
+              <el-form-item label="部门" required>
+                <el-select v-model="assign.departmentId" placeholder="选择部门" filterable class="field-full">
+                  <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="备注">
+                <el-input type="textarea" v-model="assign.remark" placeholder="可选" :rows="3" class="field-wide" />
+              </el-form-item>
+              <el-form-item>
+                <el-button
+                  type="primary"
+                  size="large"
+                  :loading="submitting"
+                  @click="doAssign"
+                  :disabled="!assign.assetId || !assign.userName || !assign.departmentId"
+                >
+                  确认分配
+                </el-button>
+              </el-form-item>
+            </el-form>
           </div>
         </el-tab-pane>
 
         <el-tab-pane label="借出" name="lend">
-          <div style="display: grid; gap: 12px; margin-top: 10px">
-            <el-select v-model="lend.assetId" placeholder="选择在库电脑" filterable style="width: 420px">
-              <el-option v-for="a in inStockAssets" :key="a.id" :label="`${a.assetCode} - ${a.brand}/${a.model}`" :value="a.id" />
-            </el-select>
-            <el-input v-model="lend.userName" placeholder="借用人姓名" style="width: 420px" />
-            <el-select v-model="lend.departmentId" placeholder="部门" style="width: 420px">
-              <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
-            </el-select>
-            <el-date-picker v-model="lend.expectedReturnDate" type="date" placeholder="预计归还日期" value-format="YYYY-MM-DD" />
-            <el-input type="textarea" v-model="lend.remark" placeholder="备注（可选）" :rows="3" style="width: 560px" />
-            <el-button type="primary" :loading="submitting" @click="doLend" :disabled="!lend.assetId || !lend.userName || !lend.departmentId || !lend.expectedReturnDate">
-              确认借出
-            </el-button>
+          <div class="tab-panel">
+            <p class="tab-desc">临时借出至借用中状态，需填写预计归还日期（默认按系统配置的借用天数推算，可在系统配置中修改）。</p>
+            <el-form label-width="100px" class="op-form">
+              <el-form-item label="在库电脑" required>
+                <el-select v-model="lend.assetId" placeholder="搜索电脑编号或配置" filterable class="field-full">
+                  <el-option v-for="a in inStockAssets" :key="a.id" :label="`${a.assetCode} · ${a.brand}/${a.model}`" :value="a.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="借用人" required>
+                <el-input v-model="lend.userName" placeholder="姓名" class="field-full" clearable />
+              </el-form-item>
+              <el-form-item label="部门" required>
+                <el-select v-model="lend.departmentId" placeholder="选择部门" filterable class="field-full">
+                  <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="预计归还" required>
+                <el-date-picker
+                  v-model="lend.expectedReturnDate"
+                  type="date"
+                  placeholder="选择日期"
+                  value-format="YYYY-MM-DD"
+                  class="field-date"
+                />
+              </el-form-item>
+              <el-form-item label="备注">
+                <el-input type="textarea" v-model="lend.remark" placeholder="可选" :rows="3" class="field-wide" />
+              </el-form-item>
+              <el-form-item>
+                <el-button
+                  type="primary"
+                  size="large"
+                  :loading="submitting"
+                  @click="doLend"
+                  :disabled="!lend.assetId || !lend.userName || !lend.departmentId || !lend.expectedReturnDate"
+                >
+                  确认借出
+                </el-button>
+              </el-form-item>
+            </el-form>
           </div>
         </el-tab-pane>
 
         <el-tab-pane label="待领用操作" name="pickup">
-          <div style="display: grid; gap: 12px; margin-top: 10px">
-            <el-select v-model="pickup.assetId" placeholder="选择待领用电脑" filterable style="width: 420px">
-              <el-option v-for="a in waitingPickupAssets" :key="a.id" :label="`${a.assetCode} - ${a.currentUserName}`" :value="a.id" />
-            </el-select>
-            <el-input type="textarea" v-model="pickup.remark" placeholder="备注（可选）" :rows="3" style="width: 560px" />
-            <div style="display: flex; gap: 12px; flex-wrap: wrap">
-              <el-button type="primary" :loading="submitting" @click="doPickUp" :disabled="!pickup.assetId">
-                确认领用
-              </el-button>
-              <el-button type="danger" :loading="submitting" @click="doCancelAssign" :disabled="!pickup.assetId">
-                取消分配
-              </el-button>
-            </div>
+          <div class="tab-panel">
+            <p class="tab-desc">对「待领用」资产确认领用（变为使用中）或取消分配（退回在库）。</p>
+            <el-form label-width="100px" class="op-form">
+              <el-form-item label="待领用电脑" required>
+                <el-select v-model="pickup.assetId" placeholder="搜索编号或领用人" filterable class="field-full">
+                  <el-option v-for="a in waitingPickupAssets" :key="a.id" :label="`${a.assetCode} → ${a.currentUserName || '—'}`" :value="a.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="备注">
+                <el-input type="textarea" v-model="pickup.remark" placeholder="可选" :rows="3" class="field-wide" />
+              </el-form-item>
+              <el-form-item>
+                <div class="btn-group">
+                  <el-button type="primary" size="large" :loading="submitting" @click="doPickUp" :disabled="!pickup.assetId">
+                    确认领用
+                  </el-button>
+                  <el-button type="danger" plain size="large" :loading="submitting" @click="doCancelAssign" :disabled="!pickup.assetId">
+                    取消分配
+                  </el-button>
+                </div>
+              </el-form-item>
+            </el-form>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -124,7 +206,6 @@ async function loadConfig() {
     const days = Number(map.get('default_borrow_days') ?? '7')
     defaultBorrowDays.value = Number.isFinite(days) ? days : 7
   } catch (_e) {
-    // 以兜底默认值保证管理员页面可用
     onePersonOneDeviceEnabled.value = false
     defaultBorrowDays.value = 7
   }
@@ -136,7 +217,6 @@ async function ensureDefaultLendDate() {
 }
 
 async function findUserAssetsConflicts(userName: string) {
-  // 仅用于“提示警告/继续取消”场景，因此这里走前端聚合查询即可
   const [inUse, waiting, borrowed] = await Promise.all([
     apiRequest<{ items: any[] }>(`/api/assets?status=in_use&page=1&pageSize=100`),
     apiRequest<{ items: any[] }>(`/api/assets?status=waiting_pickup&page=1&pageSize=100`),
@@ -241,7 +321,7 @@ async function doCheckOut() {
         checkOut.departmentId = null
         checkOut.remark = ''
       } catch {
-        // 用户取消：不做任何处理
+        // 用户取消
       }
       return
     }
@@ -259,7 +339,7 @@ async function doAssign() {
       body: {
         requestId: uuid(),
         assetId: assign.assetId,
-        userName: assign.userName,
+        userName: String(assign.userName ?? '').trim(),
         departmentId: assign.departmentId,
         remark: assign.remark || undefined,
       },
@@ -359,7 +439,7 @@ async function doLend() {
         lend.expectedReturnDate = null
         lend.remark = ''
       } catch {
-        // 用户取消：不做任何处理
+        // 用户取消
       }
       return
     }
@@ -409,3 +489,90 @@ onMounted(async () => {
 })
 </script>
 
+<style scoped>
+.page-wrap {
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+  max-width: 960px;
+}
+
+.intro-card {
+  border-radius: 10px;
+}
+
+.page-title {
+  font-weight: 800;
+  font-size: 18px;
+  margin-bottom: 6px;
+  letter-spacing: 0.02em;
+}
+
+.page-subtitle {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.main-card {
+  border-radius: 10px;
+}
+
+.policy-alert {
+  margin-bottom: 16px;
+}
+
+.stock-tabs :deep(.el-tabs__header) {
+  margin-bottom: 0;
+}
+
+.stock-tabs :deep(.el-tabs__nav-wrap::after) {
+  height: 1px;
+  background-color: var(--el-border-color-light);
+}
+
+.stock-tabs :deep(.el-tabs__item) {
+  font-weight: 600;
+}
+
+.tab-panel {
+  padding: 20px 4px 8px;
+  max-width: 560px;
+}
+
+.tab-desc {
+  margin: 0 0 18px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.55;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+}
+
+.op-form :deep(.el-form-item) {
+  margin-bottom: 18px;
+}
+
+.field-full {
+  width: 100%;
+  max-width: 420px;
+}
+
+.field-wide {
+  width: 100%;
+  max-width: 480px;
+}
+
+.field-date {
+  width: 100%;
+  max-width: 260px;
+}
+
+.btn-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+</style>

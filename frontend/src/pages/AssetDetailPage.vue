@@ -101,14 +101,39 @@
     <el-card shadow="never" style="margin-top: 16px">
       <div style="font-weight: 700; margin-bottom: 10px">流转历史</div>
       <el-timeline v-if="timelineItems.length">
-        <el-timeline-item v-for="r in timelineItems" :key="r.key" :timestamp="new Date(r.time).toLocaleString()">
-          <div style="font-weight: 600">{{ r.title }}</div>
-          <div style="color:#666; margin-top: 4px" v-if="r.kind === 'record'">
-            用户：{{ r.userName || '-' }}，部门：{{ r.departmentName ?? '-' }}，备注：{{ r.remark ?? '-' }}
+        <el-timeline-item
+          v-for="r in timelineItems"
+          :key="r.key"
+          :timestamp="new Date(r.time).toLocaleString()"
+          :type="r.kind === 'record' && r.action === 'return' ? 'success' : 'primary'"
+          placement="top"
+        >
+          <div class="timeline-title">{{ r.title }}</div>
+          <div class="timeline-body" v-if="r.kind === 'record'">
+            <div class="timeline-meta">
+              <el-tag effect="plain" size="small">
+                {{ r.action === 'return' ? '原使用人' : '用户' }}：{{ formatText(r.userName) }}
+              </el-tag>
+              <el-tag type="info" effect="plain" size="small">
+                部门：{{ formatText(r.departmentName) }}
+              </el-tag>
+              <el-tag v-if="r.recordOperatorName" type="warning" effect="plain" size="small">
+                操作人：{{ r.recordOperatorName }}
+              </el-tag>
+            </div>
+            <div class="timeline-remark">
+              <span class="timeline-label">备注</span>
+              <span class="timeline-value">{{ formatText(r.remark) }}</span>
+            </div>
           </div>
-          <div style="color:#666; margin-top: 4px" v-else>
-            操作人：{{ r.operatorName }}，变更：
-            {{ r.changeSummary }}
+          <div class="timeline-body" v-else>
+            <div class="timeline-meta">
+              <el-tag type="warning" effect="plain" size="small">操作人：{{ r.operatorName }}</el-tag>
+            </div>
+            <div class="timeline-remark">
+              <span class="timeline-label">变更</span>
+              <span class="timeline-value">{{ r.changeSummary }}</span>
+            </div>
           </div>
         </el-timeline-item>
       </el-timeline>
@@ -310,16 +335,21 @@ const uniqueUsers = computed(() => {
   return Array.from(set)
 })
 
-const sortedRecords = computed(() => [...records.value].sort((a, b) => new Date(a.actionDate).getTime() - new Date(b.actionDate).getTime()))
+/** 流转时间线：最新在前，便于看到刚发生的归还等操作 */
+const sortedRecords = computed(() =>
+  [...records.value].sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime()),
+)
 const timelineItems = computed(() => {
   const flow = sortedRecords.value.map((r: any) => ({
     key: `record-${r.id}`,
     kind: 'record' as const,
     time: r.actionDate,
     title: actionLabel(r.action),
+    action: String(r.action ?? ''),
     userName: r.userName,
     departmentName: r.department?.name ?? '-',
     remark: r.remark ?? '-',
+    recordOperatorName: r.operator?.realName?.trim() || r.operator?.username?.trim() || '',
   }))
   const edits = (changeLogs.value ?? []).map((l: any) => {
     const before = l?.detail?.before ?? {}
@@ -350,7 +380,7 @@ const timelineItems = computed(() => {
       changeSummary: details.length ? details.join('；') : '字段更新',
     }
   })
-  return [...flow, ...edits].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+  return [...flow, ...edits].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
 })
 
 function uuid() {
@@ -621,4 +651,44 @@ onMounted(async () => {
   if (canAdmin.value) await loadDepartments()
 })
 </script>
+
+<style scoped>
+.timeline-title {
+  font-weight: 700;
+}
+
+.timeline-body {
+  margin-top: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--el-fill-color-extra-light);
+}
+
+.timeline-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.timeline-remark {
+  margin-top: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--el-text-color-regular);
+  line-height: 1.6;
+}
+
+.timeline-label {
+  flex: 0 0 auto;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.timeline-value {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+</style>
 

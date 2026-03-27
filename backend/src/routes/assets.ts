@@ -9,6 +9,14 @@ import { AssetStatus, AssetRecordAction, DeviceType, RepairResult, Role, Prisma 
 const adminRoles: Role[] = ['super_admin', 'admin']
 const superAdminRoles: Role[] = ['super_admin']
 
+/** 名下持有资产计数用：与 dashboard「多人多机」一致 */
+const HOLDER_STATUSES: AssetStatus[] = [
+  AssetStatus.in_use,
+  AssetStatus.waiting_pickup,
+  AssetStatus.borrowed,
+  AssetStatus.in_repair,
+]
+
 function toInt(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value)
   if (typeof value === 'string' && value.trim() !== '') {
@@ -27,19 +35,35 @@ export const assetsRouter = Router()
 assetsRouter.get('/', requireAuth, async (req, res) => {
   const q = typeof req.query.q === 'string' ? req.query.q : ''
   const status = typeof req.query.status === 'string' ? req.query.status : undefined
+  const statusInRaw = typeof req.query.statusIn === 'string' ? req.query.statusIn.trim() : ''
+  const assetCodeFilter = typeof req.query.assetCode === 'string' ? req.query.assetCode.trim() : ''
+  const userNameFilter = typeof req.query.userName === 'string' ? req.query.userName.trim() : ''
   const departmentId = toInt(req.query.departmentId)
 
   const page = Math.max(1, toInt(req.query.page) ?? 1)
   const pageSize = Math.min(100, Math.max(1, toInt(req.query.pageSize) ?? 20))
 
   const where: any = {}
-  if (status && Object.values(AssetStatus).includes(status as AssetStatus)) {
+  if (statusInRaw) {
+    const parts = statusInRaw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    const valid = parts.filter((s) => Object.values(AssetStatus).includes(s as AssetStatus)) as AssetStatus[]
+    if (valid.length) where.status = { in: valid }
+    else where.id = -1
+  } else if (status && Object.values(AssetStatus).includes(status as AssetStatus)) {
     where.status = status
   }
   if (departmentId) {
     where.departmentId = departmentId
   }
-  if (q) {
+
+  const scoped = assetCodeFilter.length > 0 || userNameFilter.length > 0
+  if (scoped) {
+    if (assetCodeFilter) where.assetCode = { contains: assetCodeFilter }
+    if (userNameFilter) where.currentUserName = { contains: userNameFilter }
+  } else if (q) {
     where.OR = [
       { assetCode: { contains: q } },
       { brand: { contains: q } },
@@ -61,7 +85,19 @@ assetsRouter.get('/', requireAuth, async (req, res) => {
     },
   })
 
-  res.json({ items, total, page, pageSize })
+  const multiGroups = await prisma.asset.groupBy({
+    by: ['currentUserName'],
+    where: {
+      currentUserName: { not: '' },
+      status: { in: HOLDER_STATUSES },
+    },
+    _count: { _all: true },
+  })
+  const multiHolderUserNames = multiGroups
+    .filter((g) => g._count._all >= 2 && g.currentUserName.trim() !== '')
+    .map((g) => g.currentUserName)
+
+  res.json({ items, total, page, pageSize, multiHolderUserNames })
 })
 
 assetsRouter.get('/generate-code', requireAuth, requireRole(adminRoles), async (_req, res) => {

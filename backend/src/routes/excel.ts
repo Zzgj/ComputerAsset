@@ -22,6 +22,7 @@ type AssetTemplateRow = AssetTemplate
 type TemplateIndexes = {
   byName: Map<string, AssetTemplateRow>
   byBrandModel: Map<string, AssetTemplateRow>
+  byBrandModelLoose: Map<string, AssetTemplateRow>
   byCompact: Map<string, AssetTemplateRow>
 }
 
@@ -253,20 +254,43 @@ function brandModelKey(brand: string, model: string): string {
   return `${normKeyPart(brand)}|${normKeyPart(model)}`
 }
 
+/**
+ * 宽松型号归一化：尽量忽略内存/存储等细微规格差异，
+ * 让同一机型（如 7010）不会因 8G/16G、256G/512G 被拆成多个模板。
+ */
+function looseModelKey(model: string): string {
+  let s = model.toLowerCase()
+  s = s
+    .replace(/（/g, '(')
+    .replace(/）/g, ')')
+    .replace(/[【】\[\]\(\)_\-\/\\,+]/g, ' ')
+    .replace(/\b\d+(\.\d+)?\s*(tb|t|gb|g|mb|m)\b/gi, ' ')
+    .replace(/\b(ddr\d?|lpddr\d?|ram|rom|ssd|hdd|nvme|pcie|sata|m\.2)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return compactNorm(s)
+}
+
 function buildTemplateIndexes(all: AssetTemplateRow[]): TemplateIndexes {
   const byName = new Map<string, AssetTemplateRow>()
   const byBrandModel = new Map<string, AssetTemplateRow>()
+  const byBrandModelLoose = new Map<string, AssetTemplateRow>()
   const byCompact = new Map<string, AssetTemplateRow>()
 
   for (const t of all) {
     byName.set(normKeyPart(t.name), t)
     byBrandModel.set(brandModelKey(t.brand, t.model), t)
+    const b = normKeyPart(t.brand)
+    const loose = looseModelKey(t.model)
+    if (b && loose && !byBrandModelLoose.has(`${b}|${loose}`)) {
+      byBrandModelLoose.set(`${b}|${loose}`, t)
+    }
     byCompact.set(compactNorm(t.model), t)
     byCompact.set(compactNorm(t.name), t)
     byCompact.set(compactNorm(`${t.brand}${t.model}`), t)
     byCompact.set(compactNorm(`${t.brand} ${t.model}`), t)
   }
-  return { byName, byBrandModel, byCompact }
+  return { byName, byBrandModel, byBrandModelLoose, byCompact }
 }
 
 function findMatchingTemplate(
@@ -288,6 +312,15 @@ function findMatchingTemplate(
       indexes?.byBrandModel.get(`${b}|${m}`) ??
       all.find((t) => normKeyPart(t.brand) === b && normKeyPart(t.model) === m)
     if (hit) return hit
+
+    // 宽松匹配：忽略型号中的内存/存储规格差异
+    const lm = looseModelKey(m)
+    if (lm) {
+      const looseHit =
+        indexes?.byBrandModelLoose.get(`${b}|${lm}`) ??
+        all.find((t) => normKeyPart(t.brand) === b && looseModelKey(t.model) === lm)
+      if (looseHit) return looseHit
+    }
   }
   // 台账常把「品牌+型号」写在同一列且无独立品牌列：按型号/模板名紧凑匹配
   if (!b && m) {

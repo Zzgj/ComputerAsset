@@ -6,6 +6,14 @@ import { requireAuth } from '../middleware/auth'
 
 const adminRoles: Role[] = ['super_admin', 'admin']
 
+/** 与「一人一机」一致：这些状态下资产记在某人名下 */
+const HOLDER_STATUSES: AssetStatus[] = [
+  AssetStatus.in_use,
+  AssetStatus.waiting_pickup,
+  AssetStatus.borrowed,
+  AssetStatus.in_repair,
+]
+
 function badRequest(message: string, details?: unknown): never {
   throw { statusCode: 400, message, details }
 }
@@ -96,6 +104,64 @@ dashboardRouter.get('/stats', requireAuth, async (_req, res) => {
     count: x._count._all,
   }))
 
+  const multiGroups = await prisma.asset.groupBy({
+    by: ['currentUserName'],
+    where: {
+      currentUserName: { not: '' },
+      status: { in: HOLDER_STATUSES },
+    },
+    _count: { _all: true },
+  })
+  const multiNameRows = multiGroups.filter((g) => g._count._all >= 2 && g.currentUserName.trim() !== '')
+  const multiUserNames = multiNameRows.map((g) => g.currentUserName)
+
+  let multiDeviceHolders: Array<{
+    userName: string
+    count: number
+    assets: Array<{
+      id: number
+      assetCode: string
+      status: AssetStatus
+      departmentName: string
+    }>
+  }> = []
+
+  if (multiUserNames.length > 0) {
+    const holderAssets = await prisma.asset.findMany({
+      where: {
+        currentUserName: { in: multiUserNames },
+        status: { in: HOLDER_STATUSES },
+      },
+      select: {
+        id: true,
+        assetCode: true,
+        currentUserName: true,
+        status: true,
+        department: { select: { name: true } },
+      },
+      orderBy: [{ currentUserName: 'asc' }, { assetCode: 'asc' }],
+    })
+    const byUser = new Map<string, typeof holderAssets>()
+    for (const a of holderAssets) {
+      const key = a.currentUserName
+      const list = byUser.get(key)
+      if (list) list.push(a)
+      else byUser.set(key, [a])
+    }
+    multiDeviceHolders = multiNameRows
+      .map((g) => ({
+        userName: g.currentUserName,
+        count: g._count._all,
+        assets: (byUser.get(g.currentUserName) ?? []).map((a) => ({
+          id: a.id,
+          assetCode: a.assetCode,
+          status: a.status,
+          departmentName: a.department?.name ?? '',
+        })),
+      }))
+      .sort((a, b) => b.count - a.count || a.userName.localeCompare(b.userName, 'zh-CN'))
+  }
+
   res.json({
     totalCount,
     inStockCount,
@@ -106,6 +172,7 @@ dashboardRouter.get('/stats', requireAuth, async (_req, res) => {
     statusPie,
     departments,
     deviceTypeDistribution,
+    multiDeviceHolders,
   })
 })
 

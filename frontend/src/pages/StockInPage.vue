@@ -1,42 +1,74 @@
 <template>
-  <div style="padding: 20px">
-    <el-card shadow="never">
-      <div style="font-weight: 800; margin-bottom: 10px">入库登记</div>
+  <div class="page-wrap">
+    <el-card shadow="never" class="intro-card">
+      <div class="page-title">入库登记</div>
+      <div class="page-subtitle">新设备首次入账：关联型号模板、生成或填写电脑编号与序列号，并指定归属部门。</div>
+    </el-card>
 
-      <el-form :model="form" label-width="120px" label-position="left">
-        <el-form-item label="设备型号模板">
-          <el-select v-model="form.templateId" placeholder="选择模板" style="width: 420px">
+    <el-card shadow="never" class="main-card" v-loading="pageLoading">
+      <template #header>
+        <div class="card-head">
+          <span class="section-title">入库信息</span>
+          <el-tag type="info" effect="plain" size="small">在库</el-tag>
+        </div>
+      </template>
+
+      <el-form :model="form" class="in-form" label-width="112px" label-position="right">
+        <div class="form-section-label">资产标识</div>
+        <el-form-item label="设备型号模板" required>
+          <el-select v-model="form.templateId" placeholder="选择已登记的型号模板" class="field-lg" filterable>
             <el-option v-for="t in templates" :key="t.id" :label="t.name" :value="t.id" />
           </el-select>
         </el-form-item>
-
-        <el-form-item label="电脑编号">
-          <el-input v-model="form.assetCode" style="width: 300px" />
-          <el-button style="margin-left: 12px" @click="genCode" :loading="genLoading">生成编号</el-button>
+        <el-form-item label="电脑编号" required>
+          <div class="inline-row">
+            <el-input v-model="form.assetCode" class="field-md" placeholder="可点击右侧生成" clearable />
+            <el-button @click="genCode" :loading="genLoading">生成编号</el-button>
+          </div>
+        </el-form-item>
+        <el-form-item label="序列号" required>
+          <el-input v-model="form.serialNumber" class="field-lg" placeholder="设备机身序列号，需唯一" clearable />
         </el-form-item>
 
-        <el-form-item label="序列号">
-          <el-input v-model="form.serialNumber" style="width: 420px" />
-        </el-form-item>
+        <el-divider class="section-divider" />
 
-        <el-form-item label="所属部门">
-          <el-select v-model="form.departmentId" placeholder="选择部门" style="width: 420px">
+        <div class="form-section-label">归属与时间</div>
+        <el-form-item label="所属部门" required>
+          <el-select v-model="form.departmentId" placeholder="选择部门" class="field-lg" filterable>
             <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
           </el-select>
         </el-form-item>
-
         <el-form-item label="采购日期">
-          <el-date-picker v-model="form.purchaseDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" />
+          <el-date-picker
+            v-model="form.purchaseDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="不选则按服务端默认"
+            class="field-date"
+          />
         </el-form-item>
 
+        <el-divider class="section-divider" />
+
+        <div class="form-section-label">其他</div>
         <el-form-item label="备注">
-          <el-input type="textarea" v-model="form.remark" :rows="3" style="width: 560px" />
+          <el-input type="textarea" v-model="form.remark" :rows="3" class="field-xl" placeholder="可选：用途、供应商等说明" />
         </el-form-item>
 
-        <el-form-item>
-          <el-button type="primary" @click="submit" :loading="submitting">确认入库</el-button>
+        <el-form-item class="submit-row">
+          <el-button type="primary" size="large" @click="submit" :loading="submitting">确认入库</el-button>
+          <el-button size="large" @click="router.push('/assets')">返回资产列表</el-button>
         </el-form-item>
       </el-form>
+
+      <div class="hint-box">
+        <div class="hint-title">填写说明</div>
+        <ul class="hint-list">
+          <li>模板决定默认品牌、型号、配置等；入库后仍可由超级管理员调整关键字段（会解除模板关联）。</li>
+          <li>电脑编号在系统内唯一；序列号在系统内唯一，请与实物一致。</li>
+          <li>提交成功后资产状态为「在库」，可在出库/借用页办理领用或借出。</li>
+        </ul>
+      </div>
     </el-card>
   </div>
 </template>
@@ -53,6 +85,7 @@ const templates = ref<any[]>([])
 const departments = ref<any[]>([])
 const genLoading = ref(false)
 const submitting = ref(false)
+const pageLoading = ref(true)
 
 const form = reactive<any>({
   templateId: null as number | null,
@@ -64,10 +97,15 @@ const form = reactive<any>({
 })
 
 async function load() {
-  const t = await apiRequest<{ items: any[] }>('/api/templates')
-  templates.value = t.items ?? []
-  const d = await apiRequest<{ items: any[] }>('/api/departments')
-  departments.value = d.items ?? []
+  pageLoading.value = true
+  try {
+    const t = await apiRequest<{ items: any[] }>('/api/templates')
+    templates.value = t.items ?? []
+    const d = await apiRequest<{ items: any[] }>('/api/departments')
+    departments.value = d.items ?? []
+  } finally {
+    pageLoading.value = false
+  }
 }
 
 async function genCode() {
@@ -116,3 +154,123 @@ onMounted(async () => {
 })
 </script>
 
+<style scoped>
+.page-wrap {
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+  max-width: 920px;
+}
+
+.intro-card {
+  border-radius: 10px;
+}
+
+.page-title {
+  font-weight: 800;
+  font-size: 18px;
+  margin-bottom: 6px;
+  letter-spacing: 0.02em;
+}
+
+.page-subtitle {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.main-card {
+  border-radius: 10px;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-title {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.form-section-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--el-text-color-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 12px 2px;
+}
+
+.section-divider {
+  margin: 8px 0 20px;
+}
+
+.in-form {
+  max-width: 640px;
+}
+
+.inline-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.field-md {
+  width: 260px;
+  max-width: 100%;
+}
+
+.field-lg {
+  width: 100%;
+  max-width: 420px;
+}
+
+.field-xl {
+  width: 100%;
+  max-width: 520px;
+}
+
+.field-date {
+  width: 100%;
+  max-width: 240px;
+}
+
+.submit-row {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.submit-row :deep(.el-form-item__content) {
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.hint-box {
+  margin-top: 20px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  line-height: 1.55;
+}
+
+.hint-title {
+  font-weight: 600;
+  color: var(--el-text-color-regular);
+  margin-bottom: 8px;
+}
+
+.hint-list {
+  margin: 0;
+  padding-left: 1.1em;
+}
+
+.hint-list li + li {
+  margin-top: 4px;
+}
+</style>

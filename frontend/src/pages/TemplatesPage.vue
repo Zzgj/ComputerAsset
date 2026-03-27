@@ -58,9 +58,15 @@
         </el-form-item>
         <el-form-item label="内存">
           <el-input v-model="form.memory" />
+          <div style="color: #909399; font-size: 12px; margin-top: 4px">
+            支持多个可选值（如：8GB / 16GB / 32GB），可用「/、,，」分隔
+          </div>
         </el-form-item>
         <el-form-item label="存储">
           <el-input v-model="form.storage" />
+          <div style="color: #909399; font-size: 12px; margin-top: 4px">
+            支持多个可选值（如：256GB / 512GB / 1TB），可用「/、,，」分隔
+          </div>
         </el-form-item>
         <el-form-item label="排序号">
           <el-input-number v-model="form.sortOrder" :min="0" style="width: 100%" />
@@ -75,7 +81,7 @@
 
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="save">保存</el-button>
+        <el-button type="primary" :loading="saving" @click="save">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -90,6 +96,7 @@ import { useAuthStore } from '../stores/auth'
 const authStore = useAuthStore()
 const templates = ref<any[]>([])
 const loading = ref(false)
+const saving = ref(false)
 
 const deviceTypeOptions = [
   { label: '笔记本', value: 'laptop' },
@@ -149,7 +156,7 @@ function openEdit(row: any) {
 
 async function save() {
   const payload = {
-    name: form.name,
+    name: String(form.name ?? '').trim(),
     deviceType: form.deviceType,
     brand: form.brand,
     model: form.model,
@@ -162,14 +169,26 @@ async function save() {
     sortOrder: form.sortOrder,
   }
 
-  if (form.id) {
-    await apiRequest(`/api/templates/${form.id}`, { method: 'PUT', body: payload })
-  } else {
-    await apiRequest('/api/templates', { method: 'POST', body: payload })
+  if (!payload.name) {
+    ElMessage.error('请填写模板名称')
+    return
   }
-  ElMessage.success('保存成功')
-  dialogVisible.value = false
-  await load()
+
+  saving.value = true
+  try {
+    if (form.id) {
+      await apiRequest(`/api/templates/${form.id}`, { method: 'PUT', body: payload })
+    } else {
+      await apiRequest('/api/templates', { method: 'POST', body: payload })
+    }
+    ElMessage.success('保存成功')
+    dialogVisible.value = false
+    await load()
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '保存失败')
+  } finally {
+    saving.value = false
+  }
 }
 
 async function remove(row: any) {
