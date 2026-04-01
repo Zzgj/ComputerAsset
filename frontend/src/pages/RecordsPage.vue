@@ -34,8 +34,11 @@
         </el-table-column>
         <el-table-column prop="asset.assetCode" label="电脑编号" />
         <el-table-column prop="userName" label="用户" />
-        <el-table-column label="部门">
-          <template #default="{ row }">{{ row.department?.name ?? '-' }}</template>
+        <el-table-column label="园区" min-width="88">
+          <template #default="{ row }">{{ row.department?.campus?.name ?? '-' }}</template>
+        </el-table-column>
+        <el-table-column label="归属部门" min-width="220">
+          <template #default="{ row }">{{ row.department?.displayPath ?? row.department?.name ?? '-' }}</template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" />
         <el-table-column label="时间">

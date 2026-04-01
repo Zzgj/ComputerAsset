@@ -1,8 +1,7 @@
 import { Router } from 'express'
-import { Role } from '@prisma/client'
 
 import { prisma } from '../prisma'
-import { requireAuth } from '../middleware/auth'
+import { requireAuth, requirePermission } from '../middleware/auth'
 
 function badRequest(message: string, details?: unknown): never {
   throw { statusCode: 400, message, details }
@@ -19,7 +18,7 @@ function toInt(value: unknown): number | null {
 
 export const logsRouter = Router()
 
-logsRouter.get('/', requireAuth, async (req, res) => {
+logsRouter.get('/', requireAuth, requirePermission('logs.read'), async (req, res) => {
   const qAction = typeof req.query.action === 'string' ? req.query.action : undefined
   const startDate = typeof req.query.startDate === 'string' ? new Date(req.query.startDate) : undefined
   const endDate = typeof req.query.endDate === 'string' ? new Date(req.query.endDate) : undefined
@@ -48,7 +47,14 @@ logsRouter.get('/', requireAuth, async (req, res) => {
     skip: (page - 1) * pageSize,
     take: pageSize,
     include: {
-      operator: { select: { id: true, username: true, realName: true, role: true } },
+      operator: {
+        select: {
+          id: true,
+          username: true,
+          realName: true,
+          accessRole: { select: { name: true, slug: true } },
+        },
+      },
     },
   })
 

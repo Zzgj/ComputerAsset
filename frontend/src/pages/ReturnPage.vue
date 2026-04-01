@@ -54,8 +54,13 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="部门" min-width="120">
-          <template #default="{ row }">{{ row.department?.name ?? '—' }}</template>
+        <el-table-column label="园区" min-width="96">
+          <template #default="{ row }">{{ row.department?.campus?.name ?? '—' }}</template>
+        </el-table-column>
+        <el-table-column label="部门" min-width="160">
+          <template #default="{ row }">{{
+            row.department?.deptPathOnly ?? row.department?.name ?? '—'
+          }}</template>
         </el-table-column>
         <el-table-column label="品牌/型号" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ [row.brand, row.model].filter(Boolean).join(' / ') || '—' }}</template>
@@ -86,7 +91,13 @@
             {{ statusLabel(selected.status) }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="部门">{{ selected.department?.name ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="园区">{{ selected.department?.campus?.name ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="部门">{{
+          selected.department?.deptPathOnly ?? selected.department?.name ?? '—'
+        }}</el-descriptions-item>
+        <el-descriptions-item v-if="selected.department?.displayPath" label="全路径" :span="1">
+          {{ selected.department.displayPath }}
+        </el-descriptions-item>
       </el-descriptions>
 
       <el-form :model="form" label-width="72px" class="dialog-form">

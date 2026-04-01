@@ -1,13 +1,19 @@
 import { Router } from 'express'
 
+import { assertCampusAccess, applyCampusScopeToAssetWhere } from '../auth/accessContext'
+import type { AccessAuth } from '../auth/accessContext'
 import { prisma } from '../prisma'
-import { requireAuth, requireRole } from '../middleware/auth'
+import { requireAuth, requirePermission } from '../middleware/auth'
 import { getEnv } from '../utils/env'
 
-import { AssetStatus, AssetRecordAction, DeviceType, RepairResult, Role, Prisma } from '@prisma/client'
-
-const adminRoles: Role[] = ['super_admin', 'admin']
-const superAdminRoles: Role[] = ['super_admin']
+import { AssetStatus, AssetRecordAction, DeviceType, RepairResult, Prisma } from '@prisma/client'
+import {
+  attachDepartmentPathFields,
+  buildDepartmentPathMap,
+  computeDepartmentDisplayPath,
+  departmentPathWithoutCampus,
+  type DepartmentWithCampus,
+} from '../utils/departmentDisplay'
 
 /** 名下持有资产计数用：与 dashboard「多人多机」一致 */
 const HOLDER_STATUSES: AssetStatus[] = [
@@ -32,13 +38,15 @@ function badRequest(message: string, details?: unknown): never {
 
 export const assetsRouter = Router()
 
-assetsRouter.get('/', requireAuth, async (req, res) => {
+assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const q = typeof req.query.q === 'string' ? req.query.q : ''
   const status = typeof req.query.status === 'string' ? req.query.status : undefined
   const statusInRaw = typeof req.query.statusIn === 'string' ? req.query.statusIn.trim() : ''
   const assetCodeFilter = typeof req.query.assetCode === 'string' ? req.query.assetCode.trim() : ''
   const userNameFilter = typeof req.query.userName === 'string' ? req.query.userName.trim() : ''
   const departmentId = toInt(req.query.departmentId)
+  const campusId = toInt(req.query.campusId)
 
   const page = Math.max(1, toInt(req.query.page) ?? 1)
   const pageSize = Math.min(100, Math.max(1, toInt(req.query.pageSize) ?? 20))
@@ -58,6 +66,9 @@ assetsRouter.get('/', requireAuth, async (req, res) => {
   if (departmentId) {
     where.departmentId = departmentId
   }
+  if (campusId) {
+    where.department = { ...(typeof where.department === 'object' && where.department ? where.department : {}), campusId }
+  }
 
   const scoped = assetCodeFilter.length > 0 || userNameFilter.length > 0
   if (scoped) {
@@ -73,6 +84,8 @@ assetsRouter.get('/', requireAuth, async (req, res) => {
     ]
   }
 
+  applyCampusScopeToAssetWhere(where, access)
+
   const total = await prisma.asset.count({ where })
   const items = await prisma.asset.findMany({
     where,
@@ -80,27 +93,44 @@ assetsRouter.get('/', requireAuth, async (req, res) => {
     skip: (page - 1) * pageSize,
     take: pageSize,
     include: {
-      department: true,
+      department: { include: { campus: true } },
       template: true,
     },
   })
 
+  const pathRows = await prisma.department.findMany({ include: { campus: true } })
+  const listPathMap = buildDepartmentPathMap(pathRows)
+  const itemsWithPath = items.map((a) => {
+    if (!a.department) return a
+    const displayPath = computeDepartmentDisplayPath(a.department as DepartmentWithCampus, listPathMap)
+    return {
+      ...a,
+      department: {
+        ...a.department,
+        displayPath,
+        deptPathOnly: departmentPathWithoutCampus(displayPath),
+      },
+    }
+  })
+
+  const multiWhere: Record<string, unknown> = {
+    currentUserName: { not: '' },
+    status: { in: HOLDER_STATUSES },
+  }
+  applyCampusScopeToAssetWhere(multiWhere, access)
   const multiGroups = await prisma.asset.groupBy({
     by: ['currentUserName'],
-    where: {
-      currentUserName: { not: '' },
-      status: { in: HOLDER_STATUSES },
-    },
+    where: multiWhere as any,
     _count: { _all: true },
   })
   const multiHolderUserNames = multiGroups
     .filter((g) => g._count._all >= 2 && g.currentUserName.trim() !== '')
     .map((g) => g.currentUserName)
 
-  res.json({ items, total, page, pageSize, multiHolderUserNames })
+  res.json({ items: itemsWithPath, total, page, pageSize, multiHolderUserNames })
 })
 
-assetsRouter.get('/generate-code', requireAuth, requireRole(adminRoles), async (_req, res) => {
+assetsRouter.get('/generate-code', requireAuth, requirePermission('assets.write'), async (_req, res) => {
   const { YEAR, MONTH } = (() => {
     const d = new Date()
     const year = String(d.getFullYear()).slice(-2)
@@ -121,35 +151,68 @@ assetsRouter.get('/generate-code', requireAuth, requireRole(adminRoles), async (
   res.json({ assetCode: `${prefix}${nextSeq}` })
 })
 
-assetsRouter.get('/:id', requireAuth, async (req, res) => {
+assetsRouter.get('/:id', requireAuth, requirePermission('assets.read'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const id = toInt(req.params.id)
   if (!id) badRequest('Invalid asset id')
 
   const asset = await prisma.asset.findUnique({
     where: { id },
-    include: { department: true, template: true },
+    include: { department: { include: { campus: true } }, template: true },
   })
   if (!asset) return res.status(404).json({ error: { message: 'Asset not found' } })
+  if (asset.department) assertCampusAccess(access, asset.department.campusId)
 
-  res.json({ asset })
+  const pathRows = await prisma.department.findMany({ include: { campus: true } })
+  const listPathMap = buildDepartmentPathMap(pathRows)
+
+  res.json({
+    asset: {
+      ...asset,
+      department: attachDepartmentPathFields(asset.department as DepartmentWithCampus | null, listPathMap) ?? null,
+    },
+  })
 })
 
-assetsRouter.get('/:id/records', requireAuth, async (req, res) => {
+assetsRouter.get('/:id/records', requireAuth, requirePermission('assets.read'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const id = toInt(req.params.id)
   if (!id) badRequest('Invalid asset id')
+
+  const a = await prisma.asset.findUnique({
+    where: { id },
+    include: { department: { select: { campusId: true } } },
+  })
+  if (!a) return res.status(404).json({ error: { message: 'Asset not found' } })
+  if (a.department) assertCampusAccess(access, a.department.campusId)
 
   const records = await prisma.assetRecord.findMany({
     where: { assetId: id },
     orderBy: { actionDate: 'desc' },
-    include: { department: true, operator: true },
+    include: { department: { include: { campus: true } }, operator: true },
   })
 
-  res.json({ records })
+  const pathRows = await prisma.department.findMany({ include: { campus: true } })
+  const listPathMap = buildDepartmentPathMap(pathRows)
+  const enriched = records.map((rec) => ({
+    ...rec,
+    department: attachDepartmentPathFields(rec.department as DepartmentWithCampus | null, listPathMap) ?? null,
+  }))
+
+  res.json({ records: enriched })
 })
 
-assetsRouter.get('/:id/repairs', requireAuth, async (req, res) => {
+assetsRouter.get('/:id/repairs', requireAuth, requirePermission('assets.read'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const id = toInt(req.params.id)
   if (!id) badRequest('Invalid asset id')
+
+  const a = await prisma.asset.findUnique({
+    where: { id },
+    include: { department: { select: { campusId: true } } },
+  })
+  if (!a) return res.status(404).json({ error: { message: 'Asset not found' } })
+  if (a.department) assertCampusAccess(access, a.department.campusId)
 
   const repairs = await prisma.repairRecord.findMany({
     where: { assetId: id },
@@ -159,9 +222,17 @@ assetsRouter.get('/:id/repairs', requireAuth, async (req, res) => {
   res.json({ repairs })
 })
 
-assetsRouter.get('/:id/change-logs', requireAuth, async (req, res) => {
+assetsRouter.get('/:id/change-logs', requireAuth, requirePermission('assets.read'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const id = toInt(req.params.id)
   if (!id) badRequest('Invalid asset id')
+
+  const a = await prisma.asset.findUnique({
+    where: { id },
+    include: { department: { select: { campusId: true } } },
+  })
+  if (!a) return res.status(404).json({ error: { message: 'Asset not found' } })
+  if (a.department) assertCampusAccess(access, a.department.campusId)
 
   const logs = await prisma.operationLog.findMany({
     where: {
@@ -175,7 +246,8 @@ assetsRouter.get('/:id/change-logs', requireAuth, async (req, res) => {
   res.json({ logs })
 })
 
-assetsRouter.post('/', requireAuth, requireRole(adminRoles), async (req, res) => {
+assetsRouter.post('/', requireAuth, requirePermission('assets.write'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }
 
   // 这里用 `any` 是为了避免 TypeScript 对 req.body 的重载/unknown 过度收紧。
@@ -225,6 +297,13 @@ assetsRouter.post('/', requireAuth, requireRole(adminRoles), async (req, res) =>
   const currentUserName = typeof body.currentUserName === 'string' ? body.currentUserName : ''
 
   const departmentId: number = body.departmentId
+
+  const deptRow = await prisma.department.findUnique({
+    where: { id: departmentId },
+    select: { campusId: true },
+  })
+  if (!deptRow) badRequest('departmentId is invalid')
+  assertCampusAccess(access, deptRow.campusId)
 
   let asset: any
   try {
@@ -299,7 +378,8 @@ assetsRouter.post('/', requireAuth, requireRole(adminRoles), async (req, res) =>
   res.json({ asset })
 })
 
-assetsRouter.put('/:id', requireAuth, requireRole(superAdminRoles), async (req, res) => {
+assetsRouter.put('/:id', requireAuth, requirePermission('assets.write'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }
   const id = toInt(req.params.id)
   if (!id) badRequest('Invalid asset id')
@@ -318,8 +398,12 @@ assetsRouter.put('/:id', requireAuth, requireRole(superAdminRoles), async (req, 
       : template?.deviceType
   const deviceType: DeviceType = deviceTypeCandidate ?? badRequest('deviceType is required (or templateId provides it)')
 
-  const old = await prisma.asset.findUnique({ where: { id } })
+  const old = await prisma.asset.findUnique({
+    where: { id },
+    include: { department: { select: { campusId: true } } },
+  })
   if (!old) return res.status(404).json({ error: { message: 'Asset not found' } })
+  if (old.department) assertCampusAccess(access, old.department.campusId)
 
   const forceCustom = Boolean(body.forceCustom)
   const resolvedTemplateId =
@@ -340,6 +424,16 @@ assetsRouter.put('/:id', requireAuth, requireRole(superAdminRoles), async (req, 
     remark: typeof body.remark === 'string' ? body.remark : undefined,
     currentUserName: typeof body.currentUserName === 'string' ? body.currentUserName : undefined,
     departmentId: typeof body.departmentId === 'number' ? body.departmentId : undefined,
+  }
+
+  const targetDeptId = nextData.departmentId ?? old.departmentId
+  if (targetDeptId !== old.departmentId) {
+    const d2 = await prisma.department.findUnique({
+      where: { id: targetDeptId },
+      select: { campusId: true },
+    })
+    if (!d2) badRequest('departmentId is invalid')
+    assertCampusAccess(access, d2.campusId)
   }
 
   let updated
@@ -370,7 +464,10 @@ assetsRouter.put('/:id', requireAuth, requireRole(superAdminRoles), async (req, 
     return res.status(409).json({ error: { message: 'Version conflict, please refresh and retry' } })
   }
 
-  const asset = await prisma.asset.findUnique({ where: { id }, include: { department: true, template: true } })
+  const asset = await prisma.asset.findUnique({
+    where: { id },
+    include: { department: { include: { campus: true } }, template: true },
+  })
 
   const before = {
     templateId: old.templateId,
@@ -414,13 +511,18 @@ assetsRouter.put('/:id', requireAuth, requireRole(superAdminRoles), async (req, 
   res.json({ asset })
 })
 
-assetsRouter.delete('/:id', requireAuth, requireRole(['super_admin']), async (req, res) => {
+assetsRouter.delete('/:id', requireAuth, requirePermission('assets.delete'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }
   const id = toInt(req.params.id)
   if (!id) badRequest('Invalid asset id')
 
-  const asset = await prisma.asset.findUnique({ where: { id } })
+  const asset = await prisma.asset.findUnique({
+    where: { id },
+    include: { department: { select: { campusId: true } } },
+  })
   if (!asset) return res.status(404).json({ error: { message: 'Asset not found' } })
+  if (asset.department) assertCampusAccess(access, asset.department.campusId)
 
   if (asset.status !== AssetStatus.in_stock && asset.status !== AssetStatus.retired) {
     badRequest('Only assets in_stock or retired can be deleted')

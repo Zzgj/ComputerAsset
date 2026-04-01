@@ -1,8 +1,15 @@
 import { Router } from 'express'
 import { AssetRecordAction } from '@prisma/client'
 
+import type { AccessAuth } from '../auth/accessContext'
+import { applyCampusScopeToRecordWhere } from '../auth/accessContext'
 import { prisma } from '../prisma'
-import { requireAuth } from '../middleware/auth'
+import { requireAuth, requirePermission } from '../middleware/auth'
+import {
+  attachDepartmentPathFields,
+  buildDepartmentPathMap,
+  type DepartmentWithCampus,
+} from '../utils/departmentDisplay'
 
 function badRequest(message: string, details?: unknown): never {
   throw { statusCode: 400, message, details }
@@ -19,7 +26,8 @@ function toInt(value: unknown): number | null {
 
 export const recordsRouter = Router()
 
-recordsRouter.get('/', requireAuth, async (req, res) => {
+recordsRouter.get('/', requireAuth, requirePermission('records.read'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const assetCode = typeof req.query.assetCode === 'string' ? req.query.assetCode.trim() : ''
   const action = typeof req.query.action === 'string' ? req.query.action.trim() : ''
   const userName = typeof req.query.userName === 'string' ? req.query.userName.trim() : ''
@@ -51,6 +59,8 @@ recordsRouter.get('/', requireAuth, async (req, res) => {
     }
   }
 
+  applyCampusScopeToRecordWhere(where, access)
+
   const total = await prisma.assetRecord.count({ where })
   const items = await prisma.assetRecord.findMany({
     where,
@@ -59,11 +69,18 @@ recordsRouter.get('/', requireAuth, async (req, res) => {
     take: pageSize,
     include: {
       asset: { select: { id: true, assetCode: true } },
-      department: { select: { id: true, name: true } },
+      department: { include: { campus: true } },
       operator: { select: { id: true, username: true, realName: true } },
     },
   })
 
-  res.json({ items, total, page, pageSize })
+  const pathRows = await prisma.department.findMany({ include: { campus: true } })
+  const listPathMap = buildDepartmentPathMap(pathRows)
+  const enriched = items.map((rec) => ({
+    ...rec,
+    department: attachDepartmentPathFields(rec.department as DepartmentWithCampus | null, listPathMap) ?? null,
+  }))
+
+  res.json({ items: enriched, total, page, pageSize })
 })
 

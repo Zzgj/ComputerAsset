@@ -5,7 +5,11 @@
     <div style="display: grid; gap: 12px">
       <label>
         <div style="font-size: 14px; margin-bottom: 6px">用户名</div>
-        <input v-model="username" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px" />
+        <input
+          v-model="username"
+          autocomplete="username"
+          style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px"
+        />
       </label>
 
       <label>
@@ -13,6 +17,7 @@
         <input
           v-model="password"
           type="password"
+          autocomplete="current-password"
           style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px"
         />
       </label>
@@ -38,8 +43,8 @@ import { useAuthStore } from '../stores/auth'
 const router = useRouter()
 const authStore = useAuthStore()
 
-const username = ref('admin')
-const password = ref('admin123')
+const username = ref('')
+const password = ref('')
 const loading = ref(false)
 const error = ref<string | null>(null)
 

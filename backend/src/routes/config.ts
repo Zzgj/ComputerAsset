@@ -1,11 +1,7 @@
 import { Router } from 'express'
-import { Role } from '@prisma/client'
 
 import { prisma } from '../prisma'
-import { requireAuth, requireRole } from '../middleware/auth'
-
-const superAdminRoles: Role[] = ['super_admin']
-const readRoles: Role[] = ['super_admin', 'admin']
+import { requireAuth, requirePermission } from '../middleware/auth'
 
 function badRequest(message: string, details?: unknown): never {
   throw { statusCode: 400, message, details }
@@ -13,12 +9,12 @@ function badRequest(message: string, details?: unknown): never {
 
 export const configRouter = Router()
 
-configRouter.get('/', requireAuth, requireRole(readRoles), async (_req, res) => {
+configRouter.get('/', requireAuth, requirePermission('config.manage'), async (_req, res) => {
   const items = await prisma.systemConfig.findMany()
   res.json({ items })
 })
 
-configRouter.put('/', requireAuth, requireRole(superAdminRoles), async (req, res) => {
+configRouter.put('/', requireAuth, requirePermission('config.manage'), async (req, res) => {
   const authUser = (req as any).auth as { id: number }
   const body = req.body as any
 

@@ -145,7 +145,9 @@
             </el-table-column>
             <el-table-column prop="asset.assetCode" label="电脑编号" />
             <el-table-column prop="userName" label="用户" />
-            <el-table-column prop="department.name" label="部门" />
+            <el-table-column label="园区 / 部门" min-width="200">
+              <template #default="{ row }">{{ row.department?.displayPath ?? row.department?.name ?? '—' }}</template>
+            </el-table-column>
             <el-table-column label="时间">
               <template #default="{ row }">{{ new Date(row.actionDate).toLocaleString() }}</template>
             </el-table-column>

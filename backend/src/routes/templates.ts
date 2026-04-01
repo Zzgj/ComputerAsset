@@ -1,10 +1,8 @@
 import { Router } from 'express'
-import { DeviceType, Role, Prisma } from '@prisma/client'
+import { DeviceType, Prisma } from '@prisma/client'
 
 import { prisma } from '../prisma'
-import { requireAuth, requireRole } from '../middleware/auth'
-
-const adminRoles: Role[] = ['super_admin', 'admin']
+import { requireAuth, requirePermission } from '../middleware/auth'
 
 function badRequest(message: string, details?: unknown): never {
   throw { statusCode: 400, message, details }
@@ -40,9 +38,32 @@ templatesRouter.get('/', requireAuth, async (_req, res) => {
   })
 })
 
-// 管理页面：包含停用
-templatesRouter.get('/all', requireAuth, async (_req, res) => {
+// 管理页面：包含停用；q 模糊匹配名称/品牌/型号/配置/备注，并支持按设备类型关键词筛选
+templatesRouter.get('/all', requireAuth, async (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : ''
+
+  const where: Prisma.AssetTemplateWhereInput = {}
+  if (q) {
+    const or: Prisma.AssetTemplateWhereInput[] = [
+      { name: { contains: q } },
+      { brand: { contains: q } },
+      { model: { contains: q } },
+      { os: { contains: q } },
+      { cpu: { contains: q } },
+      { memory: { contains: q } },
+      { storage: { contains: q } },
+      { remark: { contains: q } },
+    ]
+    const ql = q.toLowerCase()
+    if (q.includes('笔记本') || ql.includes('laptop')) or.push({ deviceType: DeviceType.laptop })
+    if (q.includes('台式机') || ql.includes('desktop')) or.push({ deviceType: DeviceType.desktop })
+    if (q.includes('一体机') || ql.includes('aio')) or.push({ deviceType: DeviceType.aio })
+    if (q.includes('服务器') || ql.includes('server')) or.push({ deviceType: DeviceType.server })
+    where.OR = or
+  }
+
   const items = await prisma.assetTemplate.findMany({
+    where,
     orderBy: { sortOrder: 'asc' },
     include: {
       _count: {
@@ -58,7 +79,7 @@ templatesRouter.get('/all', requireAuth, async (_req, res) => {
   })
 })
 
-templatesRouter.post('/', requireAuth, requireRole(adminRoles), async (req, res) => {
+templatesRouter.post('/', requireAuth, requirePermission('templates.manage'), async (req, res) => {
   const authUser = (req as any).auth as { id: number }
   const body = req.body as any
 
@@ -106,7 +127,7 @@ templatesRouter.post('/', requireAuth, requireRole(adminRoles), async (req, res)
   res.json({ template: created })
 })
 
-templatesRouter.put('/:id', requireAuth, requireRole(adminRoles), async (req, res) => {
+templatesRouter.put('/:id', requireAuth, requirePermission('templates.manage'), async (req, res) => {
   const authUser = (req as any).auth as { id: number }
   const id = toInt(req.params.id)
   if (!id) badRequest('Invalid template id')
@@ -221,7 +242,7 @@ templatesRouter.put('/:id', requireAuth, requireRole(adminRoles), async (req, re
   res.json({ template: updated })
 })
 
-templatesRouter.delete('/:id', requireAuth, requireRole(['super_admin']), async (req, res) => {
+templatesRouter.delete('/:id', requireAuth, requirePermission('templates.manage'), async (req, res) => {
   const authUser = (req as any).auth as { id: number }
   const id = toInt(req.params.id)
   if (!id) badRequest('Invalid template id')

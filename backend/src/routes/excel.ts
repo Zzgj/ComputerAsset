@@ -5,13 +5,71 @@ import xlsx from 'xlsx'
 import { randomUUID } from 'crypto'
 
 import { prisma } from '../prisma'
-import { requireAuth, requireRole } from '../middleware/auth'
-import type { AssetTemplate } from '@prisma/client'
-import { AssetRecordAction, AssetStatus, DeviceType, Role } from '@prisma/client'
+import { requireAuth, requirePermission } from '../middleware/auth'
+import type { AssetTemplate, Department } from '@prisma/client'
+import { AssetRecordAction, AssetStatus, DeviceType } from '@prisma/client'
+import {
+  buildDepartmentPathMap,
+  computeDepartmentDisplayPath,
+  departmentPathWithoutCampus,
+  type DepartmentWithCampus,
+} from '../utils/departmentDisplay'
+
+type ImportTx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
+
+async function ensureCampusByName(tx: ImportTx, nameRaw: string) {
+  const name = (nameRaw || '泰鼎').trim() || '泰鼎'
+  let c = await tx.campus.findUnique({ where: { name } })
+  if (!c) {
+    const maxSort = await tx.campus.findFirst({ orderBy: { sortOrder: 'desc' }, select: { sortOrder: true } })
+    const sortOrder = (maxSort?.sortOrder ?? -1) + 1
+    c = await tx.campus.create({ data: { name, sortOrder, isActive: true } })
+    await tx.department.create({
+      data: { name: '未分配', campusId: c.id, parentId: null, sortOrder: 0, isActive: true },
+    })
+  }
+  return c
+}
+
+function splitDeptPathSegments(raw: string): string[] {
+  const r = raw.trim()
+  if (!r) return []
+  if (/[\/／\\]/.test(r)) return r.split(/[/／\\]+/).map((s) => s.trim()).filter(Boolean)
+  return r.split(/\s*-\s*/).map((s) => s.trim()).filter(Boolean)
+}
+
+/** 按「一级/二级」或「一级 - 二级」解析或创建部门链 */
+async function resolveDepartmentForImport(tx: ImportTx, campusId: number, deptCellRaw: string, sortRef: { n: number }) {
+  const raw = (deptCellRaw || '未分配').trim() || '未分配'
+  const segments = splitDeptPathSegments(raw)
+  if (!segments.length) {
+    const d = await tx.department.findFirst({
+      where: { name: '未分配', campusId, parentId: null },
+    })
+    if (!d) badRequest('该园区缺少「未分配」部门，请先完成系统数据初始化')
+    return d
+  }
+  let parentId: number | null = null
+  let current: { id: number } | null = null
+  for (const seg of segments) {
+    let node: Department | null = await tx.department.findFirst({
+      where: { campusId, parentId, name: seg },
+      orderBy: { sortOrder: 'asc' },
+    })
+    if (!node) {
+      sortRef.n += 1
+      node = await tx.department.create({
+        data: { campusId, parentId, name: seg, sortOrder: sortRef.n, isActive: true },
+      })
+    }
+    current = node
+    parentId = node.id
+  }
+  return current!
+}
 
 const excelRouter = Router()
 
-const adminRoles: Role[] = ['super_admin', 'admin']
 const USER_REQUIRED_STATUSES: AssetStatus[] = [AssetStatus.waiting_pickup, AssetStatus.in_use, AssetStatus.borrowed]
 
 function badRequest(message: string, details?: unknown, code?: string): never {
@@ -93,6 +151,8 @@ const IMPORT_RELATED_HEADERS = [
   '部门',
   'department',
   'departmentName',
+  '园区',
+  'campus',
   '采购日期',
   'purchaseDate',
   '开始使用时间',
@@ -456,6 +516,286 @@ function normalizeHeader(h: string): string {
     .replace(/）/g, ')')
 }
 
+const RECORD_EXPORT_ACTION_ZH: Record<string, string> = {
+  stock_in: '入库',
+  assign: '待领用',
+  cancel_assign: '取消分配',
+  pick_up: '领用',
+  check_out: '出库/领用',
+  lend: '借出',
+  return: '归还',
+  transfer: '调拨',
+  repair: '送修',
+  repair_done: '维修完成',
+  retire: '报废',
+}
+
+function pickFirstExistingSheet(sheetNames: string[], candidates: string[]): string | null {
+  for (const c of candidates) {
+    if (sheetNames.includes(c)) return c
+  }
+  return null
+}
+
+function sheetRows(workbook: xlsx.WorkBook, sheetName: string): Record<string, any>[] {
+  const ws = workbook.Sheets[sheetName]
+  if (!ws) return []
+  return xlsx.utils.sheet_to_json<Record<string, any>>(ws, { defval: '' })
+}
+
+function parseRecordActionFromRow(row: Record<string, any>): AssetRecordAction | null {
+  const en = getRowCell(row, ['action', '操作枚举'])
+  if (en) {
+    const v = en.trim()
+    if ((Object.values(AssetRecordAction) as string[]).includes(v)) return v as AssetRecordAction
+  }
+  const cn = getRowCell(row, ['操作类型'])
+  if (!cn) return null
+  const s = cn.trim()
+  const map: Record<string, AssetRecordAction> = {
+    入库: AssetRecordAction.stock_in,
+    待领用: AssetRecordAction.assign,
+    取消分配: AssetRecordAction.cancel_assign,
+    领用: AssetRecordAction.pick_up,
+    '出库/领用': AssetRecordAction.check_out,
+    出库: AssetRecordAction.check_out,
+    借出: AssetRecordAction.lend,
+    归还: AssetRecordAction.return,
+    调拨: AssetRecordAction.transfer,
+    送修: AssetRecordAction.repair,
+    维修完成: AssetRecordAction.repair_done,
+    报废: AssetRecordAction.retire,
+  }
+  return map[s] ?? map[s.replace(/\s+/g, '')] ?? null
+}
+
+function recordRowLooksLikeData(row: Record<string, any>): boolean {
+  const code = getRowCell(row, ['电脑编号', 'assetCode'])
+  const rid = getRowCell(row, ['requestId', '请求ID'])
+  return Boolean(code || rid)
+}
+
+async function resolveRecordOperatorId(
+  tx: ImportTx,
+  row: Record<string, any>,
+  fallbackId: number,
+): Promise<number> {
+  const username = getRowCell(row, ['操作人账号', 'operatorUsername', 'operator.username'])
+  if (username) {
+    const u = await tx.user.findUnique({ where: { username }, select: { id: true } })
+    if (u) return u.id
+  }
+  const realName = getRowCell(row, ['操作人', 'operatorRealName'])
+  if (realName) {
+    const u = await tx.user.findFirst({ where: { realName }, select: { id: true } })
+    if (u) return u.id
+  }
+  return fallbackId
+}
+
+type RecordImportAccum = {
+  imported: number
+  skippedCount: number
+  skippedRows: ImportSkipItem[]
+  reasonCounter: Map<string, number>
+}
+
+function makeRecordImportAccum(): RecordImportAccum {
+  return {
+    imported: 0,
+    skippedCount: 0,
+    skippedRows: [],
+    reasonCounter: new Map(),
+  }
+}
+
+function pushRecordSkip(acc: RecordImportAccum, item: ImportSkipItem) {
+  acc.skippedCount++
+  acc.reasonCounter.set(item.reason, (acc.reasonCounter.get(item.reason) ?? 0) + 1)
+  if (acc.skippedRows.length < 200) acc.skippedRows.push(item)
+}
+
+async function dryRunImportBackupRecords(
+  recordRows: Record<string, any>[],
+  assetCodesOkInSameFile: Set<string>,
+): Promise<RecordImportAccum> {
+  const acc = makeRecordImportAccum()
+  const seenReq = new Set<string>()
+  for (let i = 0; i < recordRows.length; i++) {
+    const row = recordRows[i]
+    if (!recordRowLooksLikeData(row)) continue
+    const assetCode = getRowCell(row, ['电脑编号', 'assetCode'])
+    if (!assetCode) {
+      pushRecordSkip(acc, { row: i + 2, reason: '流转记录缺少电脑编号' })
+      continue
+    }
+    const action = parseRecordActionFromRow(row)
+    if (!action) {
+      pushRecordSkip(acc, { row: i + 2, reason: '流转记录操作类型无法识别', assetCode })
+      continue
+    }
+    const actionRaw = row['操作时间'] ?? row['actionDate'] ?? ''
+    const actionDate = parseExcelDate(actionRaw)
+    if (!actionDate) {
+      pushRecordSkip(acc, { row: i + 2, reason: '流转记录操作时间格式非法', assetCode })
+      continue
+    }
+    const asset = await prisma.asset.findUnique({ where: { assetCode }, select: { id: true } })
+    if (!asset && !assetCodesOkInSameFile.has(assetCode)) {
+      pushRecordSkip(acc, {
+        row: i + 2,
+        reason: '流转记录：电脑编号在库中不存在（且本表资产页未包含可导入的该编号）',
+        assetCode,
+      })
+      continue
+    }
+    const reqRaw = getRowCell(row, ['requestId', '请求ID'])
+    if (reqRaw) {
+      if (seenReq.has(reqRaw)) {
+        pushRecordSkip(acc, { row: i + 2, reason: '流转记录 requestId 在同文件内重复', assetCode })
+        continue
+      }
+      seenReq.add(reqRaw)
+      const exists = await prisma.assetRecord.findUnique({
+        where: { requestId: reqRaw },
+        select: { id: true },
+      })
+      if (exists) {
+        pushRecordSkip(acc, { row: i + 2, reason: '流转记录 requestId 已存在（将跳过）', assetCode })
+        continue
+      }
+    }
+    acc.imported++
+  }
+  return acc
+}
+
+async function importBackupRecordsInTx(
+  tx: ImportTx,
+  recordRows: Record<string, any>[],
+  authUserId: number,
+  deptSortRef: { n: number },
+): Promise<RecordImportAccum> {
+  const acc = makeRecordImportAccum()
+  const indexed = recordRows
+    .map((row, i) => ({ row, excelRow: i + 2 }))
+    .filter(({ row }) => recordRowLooksLikeData(row))
+
+  const parsed: {
+    row: Record<string, any>
+    excelRow: number
+    assetCode: string
+    action: AssetRecordAction
+    actionDate: Date
+    requestId: string
+    userName: string
+    deptLine: string
+    campusName: string
+    expectedReturnDate: Date | null
+    proofImage: string | undefined
+    remark: string | undefined
+  }[] = []
+
+  const seenReq = new Set<string>()
+  for (const { row, excelRow } of indexed) {
+    const assetCode = getRowCell(row, ['电脑编号', 'assetCode'])
+    if (!assetCode) {
+      pushRecordSkip(acc, { row: excelRow, reason: '流转记录缺少电脑编号' })
+      continue
+    }
+    const action = parseRecordActionFromRow(row)
+    if (!action) {
+      pushRecordSkip(acc, { row: excelRow, reason: '流转记录操作类型无法识别', assetCode })
+      continue
+    }
+    const actionDate = parseExcelDate(row['操作时间'] ?? row['actionDate'] ?? '')
+    if (!actionDate) {
+      pushRecordSkip(acc, { row: excelRow, reason: '流转记录操作时间格式非法', assetCode })
+      continue
+    }
+    let requestId = getRowCell(row, ['requestId', '请求ID'])
+    if (!requestId) requestId = `restore-${randomUUID()}`
+    if (seenReq.has(requestId)) {
+      pushRecordSkip(acc, { row: excelRow, reason: '流转记录 requestId 在同文件内重复', assetCode })
+      continue
+    }
+    seenReq.add(requestId)
+
+    const userName = getRowCell(row, ['用户', 'userName'])
+    const campusName = String(row['园区'] ?? row['campus'] ?? '').trim() || '泰鼎'
+    const deptLine = String(row['部门'] ?? row['department'] ?? row['departmentName'] ?? '').trim() || '未分配'
+    const expectedRaw = row['预计归还日期'] ?? row['expectedReturnDate'] ?? ''
+    let expectedReturnDate: Date | null = null
+    if (expectedRaw !== undefined && expectedRaw !== null && String(expectedRaw).trim() !== '') {
+      const ed = parseExcelDate(expectedRaw)
+      if (ed) expectedReturnDate = ed
+    }
+    const proofRaw = getRowCell(row, ['凭证图片', 'proofImage'])
+    const proofImage = proofRaw || undefined
+    const remarkRaw = getRowCell(row, ['备注', 'remark'])
+    const remark = remarkRaw || undefined
+
+    parsed.push({
+      row,
+      excelRow,
+      assetCode,
+      action,
+      actionDate,
+      requestId,
+      userName,
+      deptLine,
+      campusName,
+      expectedReturnDate,
+      proofImage,
+      remark,
+    })
+  }
+
+  parsed.sort((a, b) => a.actionDate.getTime() - b.actionDate.getTime())
+
+  for (const p of parsed) {
+    const asset = await tx.asset.findUnique({ where: { assetCode: p.assetCode }, select: { id: true } })
+    if (!asset) {
+      pushRecordSkip(acc, { row: p.excelRow, reason: '流转记录：电脑编号在库中不存在', assetCode: p.assetCode })
+      continue
+    }
+    const existing = await tx.assetRecord.findUnique({
+      where: { requestId: p.requestId },
+      select: { id: true },
+    })
+    if (existing) {
+      pushRecordSkip(acc, {
+        row: p.excelRow,
+        reason: '流转记录 requestId 已存在',
+        assetCode: p.assetCode,
+      })
+      continue
+    }
+
+    const campusRow = await ensureCampusByName(tx, p.campusName)
+    const dept = await resolveDepartmentForImport(tx, campusRow.id, p.deptLine, deptSortRef)
+    const operatorId = await resolveRecordOperatorId(tx, p.row, authUserId)
+
+    await tx.assetRecord.create({
+      data: {
+        assetId: asset.id,
+        action: p.action,
+        userName: p.userName,
+        departmentId: dept.id,
+        actionDate: p.actionDate,
+        expectedReturnDate: p.expectedReturnDate ?? undefined,
+        proofImage: p.proofImage,
+        remark: p.remark,
+        operatorId,
+        requestId: p.requestId,
+      },
+    })
+    acc.imported++
+  }
+
+  return acc
+}
+
 /**
  * Excel 导入单文件上限（默认 20MB）
  * - 设置 EXCEL_IMPORT_MAX_MB=0 可取消限制（不推荐，大文件会占用大量内存）
@@ -479,29 +819,48 @@ const upload = multer({
 excelRouter.post(
   '/import',
   requireAuth,
-  requireRole(adminRoles),
+  requirePermission('excel.import'),
   upload.single('file'),
   async (req, res) => {
     const authUser = (req as any).auth as { id: number }
     if (!req.file) badRequest('file is required')
 
     const workbook = xlsx.read(req.file.buffer, { type: 'buffer', cellDates: true })
-    const sheetName = workbook.SheetNames[0]
-    const worksheet = workbook.Sheets[sheetName]
-    const rows = xlsx.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' })
+    const allSheetNames = workbook.SheetNames
+    const assetSheetName =
+      pickFirstExistingSheet(allSheetNames, ['资产清单', '资产导入']) ?? allSheetNames[0]
+    if (!assetSheetName) badRequest('Excel 工作簿为空')
 
-    if (!rows.length) badRequest('Empty excel file')
+    const rows = sheetRows(workbook, assetSheetName)
 
     const body = req.body as Record<string, unknown>
     const dryRun = parseBoolField(body?.dryRun)
     const createMissing = parseBoolField(body?.createMissingTemplates)
     const allowMissing = parseBoolField(body?.allowMissingTemplates)
+    const skipDefaultFlowRecords = parseBoolField(body?.skipDefaultFlowRecords)
+    const importBackupRecords = parseBoolField(body?.importBackupRecords)
+
+    const recordSheetName = importBackupRecords
+      ? pickFirstExistingSheet(allSheetNames, ['流转记录', '出入库记录'])
+      : null
+    const recordRows = recordSheetName ? sheetRows(workbook, recordSheetName) : []
+
+    if (importBackupRecords && !recordSheetName) {
+      badRequest('已勾选导入流转记录，但文件中未找到「流转记录」或「出入库记录」工作表')
+    }
+
+    const hasAssetData = rows.some((r) => hasImportRelatedValue(r))
+    const hasRecordData = recordRows.some((r) => recordRowLooksLikeData(r))
+    if (!hasAssetData && !(importBackupRecords && hasRecordData)) {
+      badRequest('Empty excel file')
+    }
 
     const rowsCount = rows.length
     const allTemplatesSnapshot = await prisma.assetTemplate.findMany()
     const snapshotIndexes = buildTemplateIndexes(allTemplatesSnapshot)
 
     const unknownMap = new Map<string, UnknownTemplateItem>()
+    const dryRunAssetCodesOk = new Set<string>()
     let wouldImport = 0
     let detectedRows = 0
     let skippedCount = 0
@@ -588,6 +947,7 @@ excelRouter.post(
           pushDrySkip({ row: i + 2, reason: '保修到期日格式非法', assetCode })
           continue
         }
+        dryRunAssetCodesOk.add(assetCode)
       }
       wouldImport++
     }
@@ -596,6 +956,24 @@ excelRouter.post(
       const invalidReasonStats: InvalidReasonStat[] = Array.from(reasonCounter.entries())
         .map(([reason, count]) => ({ reason, count }))
         .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason, 'zh-CN'))
+
+      let backupRecordsPayload: Record<string, unknown> | undefined
+      if (importBackupRecords && recordSheetName) {
+        const recordDetected = recordRows.filter((r) => recordRowLooksLikeData(r)).length
+        const recAcc = await dryRunImportBackupRecords(recordRows, dryRunAssetCodesOk)
+        const recStats: InvalidReasonStat[] = Array.from(recAcc.reasonCounter.entries())
+          .map(([reason, count]) => ({ reason, count }))
+          .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason, 'zh-CN'))
+        backupRecordsPayload = {
+          sheetName: recordSheetName,
+          detectedRows: recordDetected,
+          wouldImport: recAcc.imported,
+          skippedCount: recAcc.skippedCount,
+          skippedRows: recAcc.skippedRows,
+          invalidReasonStats: recStats,
+        }
+      }
+
       res.json({
         dryRun: true,
         detectedRows,
@@ -605,6 +983,9 @@ excelRouter.post(
         unknownTemplates: Array.from(unknownMap.values()),
         skippedCount,
         skippedRows,
+        importBackupRecords,
+        skipDefaultFlowRecords,
+        backupRecords: backupRecordsPayload,
       })
       return
     }
@@ -681,17 +1062,8 @@ excelRouter.post(
         // 控制返回体大小，最多返回前 200 条明细
         if (skippedRows.length < 200) skippedRows.push(item)
       }
-      const deptRows = await tx.department.findMany({
-        select: { id: true, name: true, sortOrder: true, isActive: true },
-      })
-      const deptMap = new Map(deptRows.map((d) => [d.name, d]))
-      let deptSort = deptRows.reduce((m, d) => Math.max(m, d.sortOrder ?? 0), 0)
-      if (!deptMap.has('未分配')) {
-        const d = await tx.department.create({
-          data: { name: '未分配', sortOrder: 0, isActive: true },
-        })
-        deptMap.set(d.name, d)
-      }
+      const maxDeptSort = await tx.department.aggregate({ _max: { sortOrder: true } })
+      const deptSortRef = { n: maxDeptSort._max.sortOrder ?? 0 }
 
       // 避免重复导入时重复补“入库”台账：缓存哪些资产已存在过 stock_in
       const stockInAssetsCache = new Set<number>()
@@ -743,13 +1115,10 @@ excelRouter.post(
           continue
         }
 
-        const deptName = String(row['部门'] ?? row['department'] ?? row['departmentName'] ?? '').trim() || '未分配'
-        let dept = deptMap.get(deptName)
-        if (!dept) {
-          deptSort += 1
-          dept = await tx.department.create({ data: { name: deptName, sortOrder: deptSort, isActive: true } })
-          deptMap.set(deptName, dept)
-        }
+        const campusName = String(row['园区'] ?? row['campus'] ?? '').trim() || '泰鼎'
+        const campusRow = await ensureCampusByName(tx, campusName)
+        const deptLine = String(row['部门'] ?? row['department'] ?? row['departmentName'] ?? '').trim() || '未分配'
+        const dept = await resolveDepartmentForImport(tx, campusRow.id, deptLine, deptSortRef)
 
         const templateName = parseTemplateNameFromRow(row)
         const { brand: rb, model: rm } = parseBrandModelFromRow(row)
@@ -838,93 +1207,117 @@ excelRouter.post(
           throw e
         }
 
-        // 用于时间轴排序：先写入“入库”，再写入实际状态对应的流转记录
-        const baseActionDate = new Date()
+        if (!skipDefaultFlowRecords) {
+          // 用于时间轴排序：先写入“入库”，再写入实际状态对应的流转记录
+          const baseActionDate = new Date()
 
-        let finalAction: AssetRecordAction = AssetRecordAction.stock_in
-        let recordUserName = asset.currentUserName
-        const recordDeptId = asset.departmentId
-        let expectedReturnDate: Date | undefined = undefined
+          let finalAction: AssetRecordAction = AssetRecordAction.stock_in
+          let recordUserName = asset.currentUserName
+          const recordDeptId = asset.departmentId
+          let expectedReturnDate: Date | undefined = undefined
 
-        if (status === AssetStatus.waiting_pickup) finalAction = AssetRecordAction.assign
-        if (status === AssetStatus.in_use) finalAction = AssetRecordAction.check_out
-        if (status === AssetStatus.borrowed) {
-          finalAction = AssetRecordAction.lend
-          const expectedRaw = row['预计归还日期'] ?? row['expectedReturnDate'] ?? ''
-          if (expectedRaw) {
-            const d = new Date(expectedRaw)
-            if (!Number.isNaN(d.getTime())) expectedReturnDate = d
-          }
-        }
-        if (status === AssetStatus.in_repair) finalAction = AssetRecordAction.repair
-        if (status === AssetStatus.retired) finalAction = AssetRecordAction.retire
-
-        if (status === AssetStatus.in_stock) {
-          recordUserName = ''
-        }
-
-        // Excel 导入来源标记：让你在“流转历史”里确认这些记录确实来自表格导入
-        const excelSourceRemark = remark ? `${remark}\n来源：Excel导入` : '来源：Excel导入'
-
-        if (status !== AssetStatus.in_stock) {
-          // 先补一条入库（避免出现“只有领用没有入库”的观感问题）
-          if (!stockInAssetsCache.has(asset.id)) {
-            const hasStockIn = await tx.assetRecord.findFirst({
-              where: { assetId: asset.id, action: AssetRecordAction.stock_in },
-              select: { id: true },
-            })
-            if (hasStockIn) {
-              stockInAssetsCache.add(asset.id)
-            } else {
-              await tx.assetRecord.create({
-                data: {
-                  assetId: asset.id,
-                  action: AssetRecordAction.stock_in,
-                  userName: '',
-                  departmentId: recordDeptId,
-                  actionDate: new Date(baseActionDate.getTime() - 1),
-                  expectedReturnDate: undefined,
-                  proofImage: undefined,
-                  remark: excelSourceRemark,
-                  operatorId: authUser.id,
-                  requestId: `import-${randomUUID()}-${i}-stock_in`,
-                },
-              })
-              stockInAssetsCache.add(asset.id)
+          if (status === AssetStatus.waiting_pickup) finalAction = AssetRecordAction.assign
+          if (status === AssetStatus.in_use) finalAction = AssetRecordAction.check_out
+          if (status === AssetStatus.borrowed) {
+            finalAction = AssetRecordAction.lend
+            const expectedRaw = row['预计归还日期'] ?? row['expectedReturnDate'] ?? ''
+            if (expectedRaw) {
+              const d = new Date(expectedRaw)
+              if (!Number.isNaN(d.getTime())) expectedReturnDate = d
             }
           }
+          if (status === AssetStatus.in_repair) finalAction = AssetRecordAction.repair
+          if (status === AssetStatus.retired) finalAction = AssetRecordAction.retire
+
+          if (status === AssetStatus.in_stock) {
+            recordUserName = ''
+          }
+
+          // Excel 导入来源标记：让你在“流转历史”里确认这些记录确实来自表格导入
+          const excelSourceRemark = remark ? `${remark}\n来源：Excel导入` : '来源：Excel导入'
+
+          if (status !== AssetStatus.in_stock) {
+            // 先补一条入库（避免出现“只有领用没有入库”的观感问题）
+            if (!stockInAssetsCache.has(asset.id)) {
+              const hasStockIn = await tx.assetRecord.findFirst({
+                where: { assetId: asset.id, action: AssetRecordAction.stock_in },
+                select: { id: true },
+              })
+              if (hasStockIn) {
+                stockInAssetsCache.add(asset.id)
+              } else {
+                await tx.assetRecord.create({
+                  data: {
+                    assetId: asset.id,
+                    action: AssetRecordAction.stock_in,
+                    userName: '',
+                    departmentId: recordDeptId,
+                    actionDate: new Date(baseActionDate.getTime() - 1),
+                    expectedReturnDate: undefined,
+                    proofImage: undefined,
+                    remark: excelSourceRemark,
+                    operatorId: authUser.id,
+                    requestId: `import-${randomUUID()}-${i}-stock_in`,
+                  },
+                })
+                stockInAssetsCache.add(asset.id)
+              }
+            }
+          }
+
+          await tx.assetRecord.create({
+            data: {
+              assetId: asset.id,
+              action: finalAction,
+              userName: recordUserName,
+              departmentId: recordDeptId,
+              actionDate: baseActionDate,
+              expectedReturnDate,
+              proofImage: undefined,
+              remark: excelSourceRemark,
+              operatorId: authUser.id,
+              requestId: `import-${randomUUID()}-${i}-status`,
+            },
+          })
         }
 
-        await tx.assetRecord.create({
-          data: {
-            assetId: asset.id,
-            action: finalAction,
-            userName: recordUserName,
-            departmentId: recordDeptId,
-            actionDate: baseActionDate,
-            expectedReturnDate,
-            proofImage: undefined,
-            remark: excelSourceRemark,
-            operatorId: authUser.id,
-            requestId: `import-${randomUUID()}-${i}-status`,
-          },
-        })
-
         imported++
+      }
+
+      let backupRecordResult: RecordImportAccum | undefined
+      if (importBackupRecords && recordRows.length) {
+        backupRecordResult = await importBackupRecordsInTx(tx, recordRows, authUser.id, deptSortRef)
       }
 
       const invalidReasonStats: InvalidReasonStat[] = Array.from(reasonCounter.entries())
         .map(([reason, count]) => ({ reason, count }))
         .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason, 'zh-CN'))
 
+      const recordInvalidReasonStats: InvalidReasonStat[] | undefined = backupRecordResult
+        ? Array.from(backupRecordResult.reasonCounter.entries())
+            .map(([reason, count]) => ({ reason, count }))
+            .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason, 'zh-CN'))
+        : undefined
+
       return {
         detectedRows,
         imported,
+        importedRecords: backupRecordResult?.imported ?? 0,
         createdTemplates: templatesCreated,
         invalidRows: skippedCount,
         invalidReasonStats,
         skippedCount,
         skippedRows,
+        importBackupRecords,
+        skipDefaultFlowRecords,
+        backupRecords: backupRecordResult
+          ? {
+              imported: backupRecordResult.imported,
+              skippedCount: backupRecordResult.skippedCount,
+              skippedRows: backupRecordResult.skippedRows,
+              invalidReasonStats: recordInvalidReasonStats ?? [],
+            }
+          : undefined,
       }
     })
 
@@ -946,6 +1339,7 @@ const ASSET_IMPORT_TEMPLATE_HEADERS = [
   '存储',
   '设备状态',
   '现定人',
+  '园区',
   '部门',
   '采购日期',
   '保修到期日',
@@ -969,6 +1363,7 @@ export function sendAssetImportTemplate(_req: Request, res: Response) {
     存储: '256GB SSD',
     设备状态: '在库',
     现定人: '',
+    园区: '泰鼎',
     部门: '未分配',
     采购日期: '2025-03-01',
     保修到期日: '',
@@ -999,7 +1394,14 @@ export function sendAssetImportTemplate(_req: Request, res: Response) {
     ['七、日期', '采购日期、保修到期日、预计归还日期：建议 YYYY-MM-DD。'],
     ['八、借用', '状态为「借用中」时可填预计归还日期。'],
     ['九、配置', '若无单独 CPU/内存/存储列，可将摘要写在「配置」，会写入资产备注。'],
-    ['十、工作表', '导入时只读取 Excel 第一个工作表；请把数据放在「资产导入」或将其挪到第一位。'],
+    [
+      '十、园区与部门',
+      '「园区」填擎鼎/爱鼎/泰鼎等；默认可填空按泰鼎。「部门」多级可用斜杠或短横线分隔，如：综合部门/信息中心 或 综合部门 - 信息中心。',
+    ],
+    [
+      '十一、工作表',
+      '导入资产时优先读取「资产清单」或「资产导入」工作表；否则使用第一个工作表。完整备份包另含「流转记录」表，需在导入页勾选对应选项。',
+    ],
   ]
   const helpSheet = xlsx.utils.aoa_to_sheet(helpAoa)
   helpSheet['!cols'] = [{ wch: 22 }, { wch: 72 }]
@@ -1011,9 +1413,9 @@ export function sendAssetImportTemplate(_req: Request, res: Response) {
   res.send(buffer)
 }
 
-excelRouter.get('/template', requireAuth, sendAssetImportTemplate)
+excelRouter.get('/template', requireAuth, requirePermission('excel.import'), sendAssetImportTemplate)
 
-excelRouter.get('/export', requireAuth, requireRole(adminRoles), async (req, res) => {
+excelRouter.get('/export', requireAuth, requirePermission('excel.export'), async (req, res) => {
   const type = typeof req.query.type === 'string' ? req.query.type : 'assets'
 
   if (type === 'assets') {
@@ -1037,10 +1439,13 @@ excelRouter.get('/export', requireAuth, requireRole(adminRoles), async (req, res
       return s
     }
 
+    const pathRows = await prisma.department.findMany({ include: { campus: true } })
+    const exportPathMap = buildDepartmentPathMap(pathRows)
+
     if (!pageProvided && !pageSizeProvided) {
       assets = await prisma.asset.findMany({
         orderBy: { id: 'desc' },
-        include: { department: true, template: true },
+        include: { department: { include: { campus: true } }, template: true },
       })
     } else {
       const page = Number(pageRaw ?? 1)
@@ -1053,7 +1458,7 @@ excelRouter.get('/export', requireAuth, requireRole(adminRoles), async (req, res
         orderBy: { id: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { department: true, template: true },
+        include: { department: { include: { campus: true } }, template: true },
       })
 
       res.setHeader('X-Total-Count', String(total))
@@ -1063,23 +1468,33 @@ excelRouter.get('/export', requireAuth, requireRole(adminRoles), async (req, res
     }
 
     const sheet = xlsx.utils.json_to_sheet(
-      assets.map((a) => ({
-        电脑编号: a.assetCode,
-        模板名称: toNo(a.template?.name),
-        品牌: toNo(a.brand),
-        型号: toNo(a.model),
-        操作系统: toNo(a.os),
-        CPU: toNo(a.cpu),
-        内存: toNo(a.memory),
-        存储: toNo(a.storage),
-        序列号: displaySerial(a.serialNumber),
-        设备状态: toNo(a.status),
-        现定人: toNo(a.currentUserName),
-        部门: toNo(a.department?.name),
-        采购日期: fmtDate(a.purchaseDate ?? null),
-        保修到期日: fmtDate(a.warrantyExpiry ?? null),
-        备注: toNo(a.remark),
-      })),
+      assets.map((a) => {
+        let 园区 = '暂无'
+        let 部门 = '暂无'
+        if (a.department) {
+          园区 = toNo(a.department.campus?.name)
+          const full = computeDepartmentDisplayPath(a.department as DepartmentWithCampus, exportPathMap)
+          部门 = departmentPathWithoutCampus(full) || toNo(a.department.name)
+        }
+        return {
+          电脑编号: a.assetCode,
+          模板名称: toNo(a.template?.name),
+          品牌: toNo(a.brand),
+          型号: toNo(a.model),
+          操作系统: toNo(a.os),
+          CPU: toNo(a.cpu),
+          内存: toNo(a.memory),
+          存储: toNo(a.storage),
+          序列号: displaySerial(a.serialNumber),
+          设备状态: toNo(a.status),
+          现定人: toNo(a.currentUserName),
+          园区,
+          部门,
+          采购日期: fmtDate(a.purchaseDate ?? null),
+          保修到期日: fmtDate(a.warrantyExpiry ?? null),
+          备注: toNo(a.remark),
+        }
+      }),
     )
     const wb = xlsx.utils.book_new()
     xlsx.utils.book_append_sheet(wb, sheet, '资产清单')
@@ -1087,6 +1502,103 @@ excelRouter.get('/export', requireAuth, requireRole(adminRoles), async (req, res
     const buffer = xlsx.write(wb, { bookType: 'xlsx', type: 'buffer' })
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`)
+    res.end(buffer)
+    return
+  }
+
+  if (type === 'backup') {
+    const toNo = (v: unknown) => {
+      const s = v === undefined || v === null ? '' : String(v)
+      return s.trim() ? s : '暂无'
+    }
+    const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '暂无')
+    const displaySerial = (sn: string) => {
+      const s = (sn ?? '').trim()
+      if (!s) return '暂无'
+      if (s === '暂无' || s.startsWith('暂无-')) return '暂无'
+      return s
+    }
+
+    const pathRows = await prisma.department.findMany({ include: { campus: true } })
+    const exportPathMap = buildDepartmentPathMap(pathRows)
+
+    const assets = await prisma.asset.findMany({
+      orderBy: { id: 'desc' },
+      include: { department: { include: { campus: true } }, template: true },
+    })
+
+    const assetSheet = xlsx.utils.json_to_sheet(
+      assets.map((a) => {
+        let 园区 = '暂无'
+        let 部门 = '暂无'
+        if (a.department) {
+          园区 = toNo(a.department.campus?.name)
+          const full = computeDepartmentDisplayPath(a.department as DepartmentWithCampus, exportPathMap)
+          部门 = departmentPathWithoutCampus(full) || toNo(a.department.name)
+        }
+        return {
+          电脑编号: a.assetCode,
+          模板名称: toNo(a.template?.name),
+          品牌: toNo(a.brand),
+          型号: toNo(a.model),
+          操作系统: toNo(a.os),
+          CPU: toNo(a.cpu),
+          内存: toNo(a.memory),
+          存储: toNo(a.storage),
+          序列号: displaySerial(a.serialNumber),
+          设备状态: toNo(a.status),
+          现定人: toNo(a.currentUserName),
+          园区,
+          部门,
+          采购日期: fmtDate(a.purchaseDate ?? null),
+          保修到期日: fmtDate(a.warrantyExpiry ?? null),
+          备注: toNo(a.remark),
+        }
+      }),
+    )
+
+    const recPathRows = await prisma.department.findMany({ include: { campus: true } })
+    const recPathMap = buildDepartmentPathMap(recPathRows)
+
+    const records = await prisma.assetRecord.findMany({
+      orderBy: { actionDate: 'asc' },
+      include: { asset: true, department: { include: { campus: true } }, operator: true },
+    })
+
+    const recordSheet = xlsx.utils.json_to_sheet(
+      records.map((r) => {
+        let 园区 = '暂无'
+        let 部门 = '暂无'
+        if (r.department) {
+          园区 = toNo(r.department.campus?.name)
+          const full = computeDepartmentDisplayPath(r.department as DepartmentWithCampus, recPathMap)
+          部门 = departmentPathWithoutCampus(full) || toNo(r.department.name)
+        }
+        return {
+          requestId: r.requestId,
+          action: r.action,
+          操作时间: r.actionDate ? r.actionDate.toISOString() : '',
+          操作类型: RECORD_EXPORT_ACTION_ZH[String(r.action)] ?? String(r.action),
+          电脑编号: toNo(r.asset?.assetCode),
+          用户: toNo(r.userName),
+          园区,
+          部门,
+          预计归还日期: r.expectedReturnDate ? r.expectedReturnDate.toISOString().slice(0, 10) : '',
+          凭证图片: toNo(r.proofImage),
+          备注: toNo(r.remark),
+          操作人账号: toNo(r.operator?.username),
+          操作人: toNo(r.operator?.realName),
+        }
+      }),
+    )
+
+    const wb = xlsx.utils.book_new()
+    xlsx.utils.book_append_sheet(wb, assetSheet, '资产清单')
+    xlsx.utils.book_append_sheet(wb, recordSheet, '流转记录')
+
+    const buffer = xlsx.write(wb, { bookType: 'xlsx', type: 'buffer' })
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    res.setHeader('Content-Disposition', 'attachment; filename="assets_backup.xlsx"')
     res.end(buffer)
     return
   }
@@ -1132,11 +1644,14 @@ excelRouter.get('/export', requireAuth, requireRole(adminRoles), async (req, res
     let records: any[]
     let fileName = 'records.xlsx'
 
+    const recPathRows = await prisma.department.findMany({ include: { campus: true } })
+    const recPathMap = buildDepartmentPathMap(recPathRows)
+
     if (!pageProvided && !pageSizeProvided) {
       records = await prisma.assetRecord.findMany({
         where,
         orderBy: { actionDate: 'desc' },
-        include: { asset: true, department: true, operator: true },
+        include: { asset: true, department: { include: { campus: true } }, operator: true },
       })
     } else {
       const page = Number(pageRaw ?? 1)
@@ -1150,7 +1665,7 @@ excelRouter.get('/export', requireAuth, requireRole(adminRoles), async (req, res
         orderBy: { actionDate: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { asset: true, department: true, operator: true },
+        include: { asset: true, department: { include: { campus: true } }, operator: true },
       })
 
       res.setHeader('X-Total-Count', String(total))
@@ -1160,18 +1675,28 @@ excelRouter.get('/export', requireAuth, requireRole(adminRoles), async (req, res
     }
 
     const sheet = xlsx.utils.json_to_sheet(
-      records.map((r) => ({
+      records.map((r) => {
+        let 园区 = '暂无'
+        let 部门 = '暂无'
+        if (r.department) {
+          园区 = toNo(r.department.campus?.name)
+          const full = computeDepartmentDisplayPath(r.department as DepartmentWithCampus, recPathMap)
+          部门 = departmentPathWithoutCampus(full) || toNo(r.department.name)
+        }
+        return {
         操作时间: r.actionDate ? r.actionDate.toISOString() : '暂无',
         操作类型: actionMap[String(r.action)] ?? toNo(r.action),
         电脑编号: toNo(r.asset?.assetCode),
         用户: toNo(r.userName),
-        部门: toNo(r.department?.name),
+        园区,
+        部门,
         预计归还日期: r.expectedReturnDate ? r.expectedReturnDate.toISOString().slice(0, 10) : '暂无',
         凭证图片: toNo(r.proofImage),
         备注: toNo(r.remark),
         操作人: toNo(r.operator?.realName ?? r.operator?.username),
         IP: '', // 这里我们不额外导出 OperationLog ipAddress，避免冗余
-      })),
+        }
+      }),
     )
 
     const wb = xlsx.utils.book_new()
@@ -1184,7 +1709,7 @@ excelRouter.get('/export', requireAuth, requireRole(adminRoles), async (req, res
     return
   }
 
-  badRequest('Invalid export type. Use type=assets|records')
+  badRequest('Invalid export type. Use type=assets|records|backup')
 })
 
 export { excelRouter }

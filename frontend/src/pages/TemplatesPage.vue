@@ -11,6 +11,16 @@
     </el-card>
 
     <el-card shadow="never" style="margin-top: 16px" v-loading="loading">
+      <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px">
+        <el-input
+          v-model="searchQ"
+          placeholder="搜索：模板名称、品牌、型号、系统、CPU、内存、存储、备注或设备类型（如 笔记本）"
+          style="width: min(100%, 420px)"
+          clearable
+          @keyup.enter="load"
+        />
+        <el-button type="primary" @click="load">搜索</el-button>
+      </div>
       <el-table :data="templates" style="width: 100%" size="small">
         <el-table-column prop="name" label="模板名称" />
         <el-table-column prop="deviceType" label="设备类型" />
@@ -91,12 +101,11 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { apiRequest } from '../services/api'
-import { useAuthStore } from '../stores/auth'
 
-const authStore = useAuthStore()
 const templates = ref<any[]>([])
 const loading = ref(false)
 const saving = ref(false)
+const searchQ = ref('')
 
 const deviceTypeOptions = [
   { label: '笔记本', value: 'laptop' },
@@ -124,7 +133,9 @@ const form = reactive<any>({
 async function load() {
   loading.value = true
   try {
-    const data = await apiRequest<{ items: any[] }>('/api/templates/all')
+    const q = searchQ.value.trim()
+    const qs = q ? `?q=${encodeURIComponent(q)}` : ''
+    const data = await apiRequest<{ items: any[] }>(`/api/templates/all${qs}`)
     templates.value = data.items ?? []
   } finally {
     loading.value = false

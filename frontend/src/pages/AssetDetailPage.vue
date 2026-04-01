@@ -13,12 +13,20 @@
           <div style="color: #666; margin-top: 6px">序列号：{{ formatSerial(asset.serialNumber) }}</div>
           <div style="margin-top: 10px">
             <el-tag type="info" style="margin-right: 8px">{{ statusLabel(asset.status) }}</el-tag>
-            <el-tag v-if="asset.department?.name" style="margin-right: 8px">{{ asset.department.name }}</el-tag>
+            <el-tag v-if="asset.department?.campus?.name" type="success" effect="plain" style="margin-right: 8px">
+              {{ asset.department.campus.name }}
+            </el-tag>
+            <el-tag v-if="asset.department?.deptPathOnly || asset.department?.name" effect="plain" style="margin-right: 8px">
+              {{ asset.department.deptPathOnly || asset.department.name }}
+            </el-tag>
             <el-tag>{{ formatText(asset.currentUserName) }}</el-tag>
+          </div>
+          <div v-if="asset.department?.displayPath" style="margin-top: 8px; font-size: 13px; color: #606266">
+            全路径：{{ asset.department.displayPath }}
           </div>
         </div>
         <div style="min-width: 280px">
-          <div style="display: flex; justify-content: flex-end; margin-bottom: 8px" v-if="isSuperAdmin">
+          <div style="display: flex; justify-content: flex-end; margin-bottom: 8px" v-if="canEditAsset">
             <el-button type="warning" plain @click="openEditCore">编辑关键信息</el-button>
           </div>
           <el-descriptions :column="1" size="small" border>
@@ -32,6 +40,8 @@
             <el-descriptions-item label="CPU">{{ formatText(asset.cpu) }}</el-descriptions-item>
             <el-descriptions-item label="内存">{{ formatText(asset.memory) }}</el-descriptions-item>
             <el-descriptions-item label="存储">{{ formatText(asset.storage) }}</el-descriptions-item>
+            <el-descriptions-item label="园区">{{ formatText(asset.department?.campus?.name) }}</el-descriptions-item>
+            <el-descriptions-item label="部门">{{ formatText(asset.department?.deptPathOnly ?? asset.department?.name) }}</el-descriptions-item>
             <el-descriptions-item label="采购日期">{{ toDate(asset.purchaseDate) }}</el-descriptions-item>
             <el-descriptions-item label="保修到期">{{ asset.warrantyExpiry ? toDate(asset.warrantyExpiry) : '暂无' }}</el-descriptions-item>
           </el-descriptions>
@@ -51,8 +61,8 @@
       </div>
     </el-card>
 
-    <!-- 管理操作（仅 admin/super_admin） -->
-    <el-card shadow="never" style="margin-top: 16px" v-if="asset && canAdmin">
+    <!-- 管理操作：需「出入库与流转操作」权限 -->
+    <el-card shadow="never" style="margin-top: 16px" v-if="asset && canOperations">
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
         <div style="font-weight: 800">资产管理操作</div>
         <div style="color: #666; font-size: 13px">
@@ -99,7 +109,10 @@
     </el-card>
 
     <el-card shadow="never" style="margin-top: 16px">
-      <div style="font-weight: 700; margin-bottom: 10px">流转历史</div>
+      <div style="font-weight: 700; margin-bottom: 6px">流转历史</div>
+      <div style="color: #909399; font-size: 12px; margin-bottom: 10px">
+        每条为当时业务记录的归属部门（含园区）；调拨等可能造成跨园区，以记录为准。
+      </div>
       <el-timeline v-if="timelineItems.length">
         <el-timeline-item
           v-for="r in timelineItems"
@@ -115,7 +128,7 @@
                 {{ r.action === 'return' ? '原使用人' : '用户' }}：{{ formatText(r.userName) }}
               </el-tag>
               <el-tag type="info" effect="plain" size="small">
-                部门：{{ formatText(r.departmentName) }}
+                园区 / 部门：{{ formatText(r.departmentDisplay) }}
               </el-tag>
               <el-tag v-if="r.recordOperatorName" type="warning" effect="plain" size="small">
                 操作人：{{ r.recordOperatorName }}
@@ -160,9 +173,7 @@
           <el-input v-model="transferForm.userName" placeholder="输入新使用人姓名" />
         </el-form-item>
         <el-form-item label="目标部门">
-          <el-select v-model="transferForm.departmentId" placeholder="选择部门" style="width: 100%">
-            <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
-          </el-select>
+          <DepartmentCascader v-model="transferForm.departmentId" :departments="departments" :campuses="campuses" />
         </el-form-item>
         <el-form-item label="备注">
           <el-input type="textarea" v-model="transferForm.remark" :rows="4" placeholder="可选" />
@@ -228,7 +239,7 @@
       </template>
     </el-dialog>
 
-    <!-- 关键信息编辑（仅 super_admin） -->
+    <!-- 关键信息编辑：需「登记/编辑资产」权限 -->
     <el-dialog v-model="editCoreDialogVisible" title="编辑资产关键信息（高风险）" width="720px" :close-on-click-modal="false">
       <el-alert
         type="warning"
@@ -281,6 +292,7 @@ import { apiRequest } from '../services/api'
 import { actionLabel } from '../actionLabel'
 import { useAuthStore } from '../stores/auth'
 import { ElMessage } from 'element-plus'
+import DepartmentCascader from '../components/DepartmentCascader.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -289,11 +301,12 @@ const assetId = Number(route.params.id)
 const asset = ref<any | null>(null)
 const records = ref<any[]>([])
 const repairs = ref<any[]>([])
-const departments = ref<Array<{ id: number; name: string }>>([])
+const campuses = ref<Array<{ id: number; name: string; sortOrder: number }>>([])
+const departments = ref<Array<{ id: number; name: string; displayPath?: string; campusId: number; parentId: number | null; sortOrder: number }>>([])
 
 const authStore = useAuthStore()
-const canAdmin = computed(() => authStore.me?.role === 'admin' || authStore.me?.role === 'super_admin')
-const isSuperAdmin = computed(() => authStore.me?.role === 'super_admin')
+const canOperations = computed(() => authStore.can('operations.execute'))
+const canEditAsset = computed(() => authStore.can('assets.write'))
 const changeLogs = ref<any[]>([])
 
 function toDate(d: any) {
@@ -347,7 +360,7 @@ const timelineItems = computed(() => {
     title: actionLabel(r.action),
     action: String(r.action ?? ''),
     userName: r.userName,
-    departmentName: r.department?.name ?? '-',
+    departmentDisplay: r.department?.displayPath ?? r.department?.name ?? '-',
     remark: r.remark ?? '-',
     recordOperatorName: r.operator?.realName?.trim() || r.operator?.username?.trim() || '',
   }))
@@ -388,8 +401,12 @@ function uuid() {
 }
 
 async function loadDepartments() {
-  const d = await apiRequest<{ items: any[] }>('/api/departments')
+  const [d, c] = await Promise.all([
+    apiRequest<{ items: any[] }>('/api/departments'),
+    apiRequest<{ items: any[] }>('/api/campuses'),
+  ])
   departments.value = d.items ?? []
+  campuses.value = c.items ?? []
 }
 
 async function reload() {
@@ -648,7 +665,7 @@ async function submitRetire() {
 
 onMounted(async () => {
   await reload()
-  if (canAdmin.value) await loadDepartments()
+  if (canOperations.value) await loadDepartments()
 })
 </script>
 

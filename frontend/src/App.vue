@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { apiRequest } from './services/api'
 import { useAuthStore } from './stores/auth'
 
 const route = useRoute()
@@ -8,46 +10,53 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const isLogin = computed(() => route.path === '/login')
-const role = computed(() => authStore.me?.role)
-const isAdmin = computed(() => role.value === 'admin' || role.value === 'super_admin')
-const isSuperAdmin = computed(() => role.value === 'super_admin')
 const navKeyword = ref('')
 
 const activeMenu = computed(() => {
-  // 详情页高亮回“资产列表”，避免看起来像丢失导航位置
   if (route.path.startsWith('/assets/')) return '/assets'
   return route.path
 })
 
-const sectionCommon = [
-  { path: '/dashboard', label: '仪表盘' },
-  { path: '/assets', label: '资产列表' },
-  { path: '/records', label: '出入库记录' },
-  { path: '/logs', label: '操作日志' },
+type NavItem = { path: string; label: string; perm: string }
+
+const sectionCommon: NavItem[] = [
+  { path: '/dashboard', label: '仪表盘', perm: 'dashboard.view' },
+  { path: '/assets', label: '资产列表', perm: 'assets.read' },
+  { path: '/records', label: '出入库记录', perm: 'records.read' },
+  { path: '/logs', label: '操作日志', perm: 'logs.read' },
 ]
 
-const sectionBusiness = [
-  { path: '/stock-in', label: '入库登记' },
-  { path: '/stock-out', label: '出库/借用' },
-  { path: '/return', label: '归还登记' },
-  { path: '/import', label: '导入导出' },
+const sectionBusiness: NavItem[] = [
+  { path: '/stock-in', label: '入库登记', perm: 'assets.write' },
+  { path: '/stock-out', label: '出库/借用', perm: 'operations.execute' },
+  { path: '/return', label: '归还登记', perm: 'operations.execute' },
+  { path: '/import', label: '导入导出', perm: 'excel.import' },
 ]
 
-const sectionManage = [
-  { path: '/templates', label: '设备型号管理' },
-  { path: '/departments', label: '部门管理' },
+const sectionManage: NavItem[] = [
+  { path: '/templates', label: '设备型号管理', perm: 'templates.manage' },
+  { path: '/departments', label: '部门管理', perm: 'departments.manage' },
 ]
 
-const sectionSystem = [
-  { path: '/users', label: '用户管理' },
-  { path: '/config', label: '系统配置' },
-  { path: '/backup', label: '数据备份' },
+const sectionSystem: NavItem[] = [
+  { path: '/users', label: '用户管理', perm: 'users.manage' },
+  { path: '/roles', label: '角色权限', perm: 'roles.manage' },
+  { path: '/config', label: '系统配置', perm: 'config.manage' },
+  { path: '/backup', label: '数据备份', perm: 'backup.run' },
 ]
+
+function navVisible(item: NavItem) {
+  if (item.path === '/import') {
+    return authStore.can('excel.import') || authStore.can('excel.export')
+  }
+  return authStore.can(item.perm)
+}
 
 const keyword = computed(() => navKeyword.value.trim().toLowerCase())
-function filterByKeyword(items: Array<{ path: string; label: string }>) {
-  if (!keyword.value) return items
-  return items.filter((x) => x.label.toLowerCase().includes(keyword.value) || x.path.toLowerCase().includes(keyword.value))
+function filterByKeyword(items: NavItem[]) {
+  const base = items.filter(navVisible)
+  if (!keyword.value) return base
+  return base.filter((x) => x.label.toLowerCase().includes(keyword.value) || x.path.toLowerCase().includes(keyword.value))
 }
 
 const sectionCommonFiltered = computed(() => filterByKeyword(sectionCommon))
@@ -57,8 +66,9 @@ const sectionSystemFiltered = computed(() => filterByKeyword(sectionSystem))
 const hasAnyFiltered = computed(() => {
   return (
     sectionCommonFiltered.value.length > 0 ||
-    (isAdmin.value && (sectionBusinessFiltered.value.length > 0 || sectionManageFiltered.value.length > 0)) ||
-    (isSuperAdmin.value && sectionSystemFiltered.value.length > 0)
+    sectionBusinessFiltered.value.length > 0 ||
+    sectionManageFiltered.value.length > 0 ||
+    sectionSystemFiltered.value.length > 0
   )
 })
 
@@ -66,9 +76,53 @@ function go(path: string) {
   if (route.path !== path) router.push(path)
 }
 
-function logout() {
-  authStore.logout()
+async function logout() {
+  await authStore.logout()
   router.push('/login')
+}
+
+const changePwdVisible = ref(false)
+const changingPwd = ref(false)
+const pwdForm = ref({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: '',
+})
+
+function openChangePassword() {
+  pwdForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+  changePwdVisible.value = true
+}
+
+async function submitChangePassword() {
+  if (!pwdForm.value.oldPassword || !pwdForm.value.newPassword || !pwdForm.value.confirmPassword) {
+    ElMessage.error('请完整填写密码信息')
+    return
+  }
+  if (pwdForm.value.newPassword.length < 6) {
+    ElMessage.error('新密码长度不能少于 6 位')
+    return
+  }
+  if (pwdForm.value.newPassword !== pwdForm.value.confirmPassword) {
+    ElMessage.error('两次输入的新密码不一致')
+    return
+  }
+  changingPwd.value = true
+  try {
+    await apiRequest('/api/auth/change-password', {
+      method: 'POST',
+      body: {
+        oldPassword: pwdForm.value.oldPassword,
+        newPassword: pwdForm.value.newPassword,
+      },
+    })
+    ElMessage.success('密码修改成功')
+    changePwdVisible.value = false
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '修改密码失败')
+  } finally {
+    changingPwd.value = false
+  }
 }
 </script>
 
@@ -79,7 +133,10 @@ function logout() {
     <aside style="width: 260px; border-right: 1px solid #eee; background: #fff; display: flex; flex-direction: column">
       <div style="padding: 16px 16px 8px 16px; border-bottom: 1px solid #f0f0f0">
         <div style="font-weight: 800; font-size: 16px">电脑资产管理系统</div>
-        <div style="font-size: 12px; color: #888; margin-top: 6px">当前用户：{{ authStore.me?.realName || '-' }}</div>
+        <div style="font-size: 12px; color: #888; margin-top: 6px">
+          当前用户：{{ authStore.me?.realName || '-' }}
+          <span v-if="authStore.me?.accessRole?.name" style="color: #aaa">（{{ authStore.me.accessRole.name }}）</span>
+        </div>
       </div>
 
       <div style="padding: 8px 8px 0 8px; overflow: auto; flex: 1">
@@ -99,14 +156,16 @@ function logout() {
           </el-menu-item>
         </el-menu>
 
-        <template v-if="isAdmin">
+        <template v-if="sectionBusinessFiltered.length">
           <div class="nav-section-title">业务操作</div>
           <el-menu :default-active="activeMenu" unique-opened>
             <el-menu-item v-for="item in sectionBusinessFiltered" :key="item.path" :index="item.path" @click="go(item.path)">
               {{ item.label }}
             </el-menu-item>
           </el-menu>
+        </template>
 
+        <template v-if="sectionManageFiltered.length">
           <div class="nav-section-title">基础管理</div>
           <el-menu :default-active="activeMenu" unique-opened>
             <el-menu-item v-for="item in sectionManageFiltered" :key="item.path" :index="item.path" @click="go(item.path)">
@@ -115,7 +174,7 @@ function logout() {
           </el-menu>
         </template>
 
-        <template v-if="isSuperAdmin">
+        <template v-if="sectionSystemFiltered.length">
           <div class="nav-section-title">系统管理</div>
           <el-menu :default-active="activeMenu" unique-opened>
             <el-menu-item v-for="item in sectionSystemFiltered" :key="item.path" :index="item.path" @click="go(item.path)">
@@ -130,6 +189,7 @@ function logout() {
       </div>
 
       <div style="padding: 12px; border-top: 1px solid #f0f0f0">
+        <el-button style="width: 100%; margin-bottom: 8px" @click="openChangePassword">修改密码</el-button>
         <el-button style="width: 100%" @click="logout">退出登录</el-button>
       </div>
     </aside>
@@ -138,6 +198,24 @@ function logout() {
       <router-view />
     </main>
   </div>
+
+  <el-dialog v-model="changePwdVisible" title="修改密码" width="460px" :close-on-click-modal="false">
+    <el-form label-width="100px">
+      <el-form-item label="旧密码" required>
+        <el-input v-model="pwdForm.oldPassword" type="password" show-password autocomplete="current-password" />
+      </el-form-item>
+      <el-form-item label="新密码" required>
+        <el-input v-model="pwdForm.newPassword" type="password" show-password autocomplete="new-password" />
+      </el-form-item>
+      <el-form-item label="确认新密码" required>
+        <el-input v-model="pwdForm.confirmPassword" type="password" show-password autocomplete="new-password" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="changePwdVisible = false">取消</el-button>
+      <el-button type="primary" :loading="changingPwd" @click="submitChangePassword">确认修改</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>

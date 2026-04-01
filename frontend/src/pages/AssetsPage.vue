@@ -11,11 +11,14 @@
         <el-select v-model="query.status" placeholder="状态" style="width: 160px" clearable>
           <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
-        <el-select v-model="query.departmentId" placeholder="部门" style="width: 180px" clearable>
-          <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
+        <el-select v-model="query.campusId" placeholder="园区" style="width: 130px" clearable>
+          <el-option v-for="c in campuses" :key="c.id" :label="c.name" :value="c.id" />
+        </el-select>
+        <el-select v-model="query.departmentId" placeholder="部门" style="width: 240px" filterable clearable>
+          <el-option v-for="d in departments" :key="d.id" :label="d.displayPath ?? d.name" :value="d.id" />
         </el-select>
         <el-button type="primary" @click="loadAssets">搜索</el-button>
-        <el-button v-if="canAdmin" @click="router.push('/stock-in')">新增入库</el-button>
+        <el-button v-if="canStockIn" @click="router.push('/stock-in')">新增入库</el-button>
       </div>
     </el-card>
 
@@ -59,8 +62,13 @@
             <span v-else>{{ row.currentUserName }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="部门" min-width="120">
-          <template #default="{ row }">{{ formatText(row.department?.name) }}</template>
+        <el-table-column label="园区" min-width="100">
+          <template #default="{ row }">{{ formatText(row.department?.campus?.name) }}</template>
+        </el-table-column>
+        <el-table-column label="部门" min-width="200">
+          <template #default="{ row }">
+            {{ formatText(row.department?.deptPathOnly ?? row.department?.name) }}
+          </template>
         </el-table-column>
         <el-table-column label="操作" width="120">
           <template #default="{ row }">
@@ -88,19 +96,19 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { apiRequest } from '../services/api'
 import { useAuthStore } from '../stores/auth'
-import type { UserRole } from '../stores/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
-const canAdmin = computed(() => authStore.me?.role === 'admin' || authStore.me?.role === 'super_admin')
+const canStockIn = computed(() => authStore.can('assets.write'))
 
 const loading = ref(false)
 const assets = ref<any[]>([])
 const total = ref(0)
 /** 名下 ≥2 台「持机状态」资产的使用人（与后端 groupBy 一致，按库内原文字符串匹配） */
 const multiHolderUserNames = ref<Set<string>>(new Set())
-const departments = ref<Array<{ id: number; name: string }>>([])
+const campuses = ref<Array<{ id: number; name: string }>>([])
+const departments = ref<Array<{ id: number; name: string; displayPath?: string }>>([])
 
 const statusOptions = [
   { label: '在库', value: 'in_stock' },
@@ -114,14 +122,19 @@ const statusOptions = [
 const query = reactive({
   q: '',
   status: '',
+  campusId: null as number | null,
   departmentId: null as number | null,
   page: 1,
   pageSize: 20,
 })
 
-async function loadDepartments() {
-  const data = await apiRequest<{ items: any[] }>('/api/departments')
-  departments.value = data.items
+async function loadFilters() {
+  const [dRes, cRes] = await Promise.all([
+    apiRequest<{ items: any[] }>('/api/departments'),
+    apiRequest<{ items: any[] }>('/api/campuses'),
+  ])
+  departments.value = dRes.items ?? []
+  campuses.value = cRes.items ?? []
 }
 
 async function loadAssets() {
@@ -130,6 +143,7 @@ async function loadAssets() {
     const params = new URLSearchParams()
     if (query.q) params.set('q', query.q)
     if (query.status) params.set('status', query.status)
+    if (query.campusId) params.set('campusId', String(query.campusId))
     if (query.departmentId) params.set('departmentId', String(query.departmentId))
     params.set('page', String(query.page))
     params.set('pageSize', String(query.pageSize))
@@ -176,7 +190,7 @@ function formatSerial(serialNumber: string) {
 }
 
 onMounted(async () => {
-  await loadDepartments()
+  await loadFilters()
   await loadAssets()
 })
 </script>

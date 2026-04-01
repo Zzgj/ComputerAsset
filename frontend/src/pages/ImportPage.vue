@@ -6,7 +6,7 @@
     </el-card>
 
     <div class="grid-wrap">
-      <el-card shadow="never">
+      <el-card v-if="canImport" shadow="never">
         <template #header>
           <div class="section-title">导入资产</div>
         </template>
@@ -14,6 +14,14 @@
         <div class="block">
           <el-button type="primary" plain @click="downloadTemplate">下载导入模板</el-button>
           <span class="helper-text">按模板列名填写后上传，格式与系统保持一致</span>
+        </div>
+
+        <div class="block options-col">
+          <el-checkbox v-model="importBackupRecords">同时导入「流转记录 / 出入库记录」工作表</el-checkbox>
+          <el-checkbox v-model="skipDefaultFlowRecords">不根据资产状态自动生成入库与状态台账</el-checkbox>
+          <span class="helper-text"
+            >空库还原备份时：请同时勾选「同时导入流转记录」与本项，否则系统会再自动写入一套台账，与备份历史重复</span
+          >
         </div>
 
         <div class="block">
@@ -29,10 +37,13 @@
           <div>4. 日期校验：采购日期、保修到期日格式非法会判为无效。</div>
           <div>5. 模板匹配：优先按“模板名称”，其次按“品牌+型号”；未登记型号可选择自动创建模板。</div>
           <div>6. 处理方式：导入前会预校验并显示总数/有效/无效；无效行会在明细中给出原因并跳过。</div>
+          <div>
+            7. 完整备份：使用「导出完整备份」可得到「资产清单 + 流转记录」双表；导入时勾选「同时导入流转记录」，并在空库还原历史时勾选「不自动生成台账」。
+          </div>
         </div>
       </el-card>
 
-      <el-card shadow="never">
+      <el-card v-if="canExport" shadow="never">
         <template #header>
           <div class="section-title">导出数据</div>
         </template>
@@ -48,22 +59,34 @@
 
         <div class="block actions">
           <el-button type="success" @click="exportAssets">导出资产清单</el-button>
+          <el-button type="warning" plain @click="exportBackup">导出完整备份（含流转记录）</el-button>
           <el-button type="primary" plain @click="exportRecords">导出出入库记录</el-button>
         </div>
       </el-card>
     </div>
+
+    <el-card v-if="!canImport && !canExport" shadow="never" style="margin-top: 16px">
+      <div class="page-subtitle">当前账号无导入或导出权限，请联系管理员调整角色。</div>
+    </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useAuthStore } from '../stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getApiBaseURL } from '../services/api'
+
+const authStore = useAuthStore()
+const canImport = computed(() => authStore.can('excel.import'))
+const canExport = computed(() => authStore.can('excel.export'))
 
 const file = ref<File | null>(null)
 const importing = ref(false)
 const assetsExportPage = ref(1)
 const assetsExportPageSize = ref(500)
+const importBackupRecords = ref(false)
+const skipDefaultFlowRecords = ref(false)
 
 type UnknownTemplate = {
   key: string
@@ -80,15 +103,26 @@ type SkippedRow = {
   assetCode?: string
 }
 
+type BackupRecordsPreview = {
+  sheetName?: string
+  detectedRows?: number
+  wouldImport?: number
+  skippedCount?: number
+  skippedRows?: SkippedRow[]
+  invalidReasonStats?: Array<{ reason: string; count: number }>
+}
+
 type ImportResult = {
   invalidReasonStats?: Array<{ reason: string; count: number }>
   detectedRows?: number
   wouldImport?: number
   invalidRows?: number
   imported?: number
+  importedRecords?: number
   createdTemplates?: number
   skippedCount?: number
   skippedRows?: SkippedRow[]
+  backupRecords?: BackupRecordsPreview
 }
 
 function onFileChange(e: Event) {
@@ -227,6 +261,8 @@ async function doImport() {
     const fdPreview = new FormData()
     fdPreview.append('file', file.value)
     fdPreview.append('dryRun', 'true')
+    if (importBackupRecords.value) fdPreview.append('importBackupRecords', 'true')
+    if (skipDefaultFlowRecords.value) fdPreview.append('skipDefaultFlowRecords', 'true')
     const { res: r0, data: d0 } = await postImport(fdPreview)
     if (!r0.ok) {
       ElMessage.error(d0?.error?.message ?? d0?.message ?? '导入预校验失败')
@@ -239,9 +275,14 @@ async function doImport() {
     // 兼容旧后端：若未返回 detectedRows，则按 有效+无效 估算
     const detectedRows = Number(d0?.detectedRows ?? wouldImport + invalidRows)
     const skipN0 = Number(d0?.skippedCount ?? 0)
+    const br = d0?.backupRecords as BackupRecordsPreview | undefined
+    const recHint =
+      importBackupRecords.value && br
+        ? `；流转记录：检测到 ${Number(br.detectedRows ?? 0)} 条，预计写入 ${Number(br.wouldImport ?? 0)} 条，将跳过 ${Number(br.skippedCount ?? 0)} 条`
+        : ''
     ElMessage.info({
-      message: `预校验：检测到 ${detectedRows} 条，预计可导入 ${wouldImport} 条，无效 ${invalidRows} 条`,
-      duration: 6000,
+      message: `预校验：检测到 ${detectedRows} 条资产行，预计可导入 ${wouldImport} 条，无效 ${invalidRows} 条${recHint}`,
+      duration: 8000,
     })
     if (skipN0 > 0) {
       ElMessage.warning({ message: `导入预校验：将跳过 ${skipN0} 行无效数据`, duration: 6000 })
@@ -289,6 +330,8 @@ async function doImport() {
     fd.append('file', file.value)
     if (createMissingTemplates) fd.append('createMissingTemplates', 'true')
     if (allowMissingTemplates) fd.append('allowMissingTemplates', 'true')
+    if (importBackupRecords.value) fd.append('importBackupRecords', 'true')
+    if (skipDefaultFlowRecords.value) fd.append('skipDefaultFlowRecords', 'true')
     const { res: r1, data: d1 } = await postImport(fd)
     if (!r1.ok) {
       ElMessage.error(d1?.error?.message ?? d1?.message ?? '导入失败')
@@ -299,9 +342,17 @@ async function doImport() {
       typeof d1.createdTemplates === 'number' && d1.createdTemplates > 0
         ? `，新建型号模板 ${d1.createdTemplates} 个`
         : ''
+    const recN = Number(d1.importedRecords ?? 0)
+    const recExtra =
+      importBackupRecords.value && recN > 0 ? `，流转记录 ${recN} 条` : ''
+    const recSkip = d1.backupRecords?.skippedCount
+    const recSkipMsg =
+      importBackupRecords.value && typeof recSkip === 'number' && recSkip > 0
+        ? `（流转记录跳过 ${recSkip} 条）`
+        : ''
     const skipN1 = Number(d1.skippedCount ?? 0)
-    const skipped = skipN1 > 0 ? `，跳过 ${skipN1} 条` : ''
-    ElMessage.success(`导入完成：${d1.imported ?? 0} 条已写入${extra}${skipped}`)
+    const skipped = skipN1 > 0 ? `，资产跳过 ${skipN1} 条` : ''
+    ElMessage.success(`导入完成：${d1.imported ?? 0} 条资产已写入${recExtra}${extra}${skipped}${recSkipMsg}`)
 
     if (skipN1 > 0) {
       ElMessage.warning({ message: `有 ${skipN1} 行未导入，请核对 Excel 行号与原因`, duration: 6000 })
@@ -371,6 +422,15 @@ async function exportRecords() {
     ElMessage.error(e?.message ?? '导出失败')
   }
 }
+
+async function exportBackup() {
+  try {
+    await downloadBlob(`${getApiBaseURL()}/api/excel/export?type=backup`, 'assets_backup.xlsx')
+    ElMessage.success('已导出完整备份（资产清单 + 流转记录）')
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '导出失败')
+  }
+}
 </script>
 
 <style scoped>
@@ -429,5 +489,10 @@ async function exportRecords() {
 
 .actions {
   justify-content: flex-start;
+}
+
+.options-col {
+  flex-direction: column;
+  align-items: flex-start;
 }
 </style>

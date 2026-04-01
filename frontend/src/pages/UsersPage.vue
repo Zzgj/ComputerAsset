@@ -4,7 +4,7 @@
       <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
         <div>
           <div style="font-weight: 800">用户管理</div>
-          <div style="color: #666; font-size: 13px; margin-top: 4px">仅超级管理员可操作。</div>
+          <div style="color: #666; font-size: 13px; margin-top: 4px">绑定访问角色以继承权限与园区范围。</div>
         </div>
         <el-button type="primary" @click="openAdd">新增用户</el-button>
       </div>
@@ -14,8 +14,8 @@
       <el-table :data="users" size="small" style="width: 100%">
         <el-table-column prop="username" label="用户名" />
         <el-table-column prop="realName" label="姓名" />
-        <el-table-column label="角色" width="110">
-          <template #default="{ row }">{{ roleLabel(row.role) }}</template>
+        <el-table-column label="角色" min-width="140">
+          <template #default="{ row }">{{ row.accessRole?.name ?? '-' }}</template>
         </el-table-column>
         <el-table-column label="启用/需改密" width="160">
           <template #default="{ row }">
@@ -29,7 +29,13 @@
           <template #default="{ row }">
             <el-button size="small" text type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button size="small" text type="warning" @click="resetPassword(row)">重置密码</el-button>
-            <el-button size="small" text type="danger" @click="deleteUser(row)" :disabled="row.role === 'super_admin'">
+            <el-button
+              size="small"
+              text
+              type="danger"
+              @click="deleteUser(row)"
+              :disabled="row.accessRole?.bypassAll"
+            >
               删除
             </el-button>
           </template>
@@ -48,9 +54,9 @@
         <el-form-item label="姓名">
           <el-input v-model="form.realName" />
         </el-form-item>
-        <el-form-item label="角色">
-          <el-select v-model="form.role" style="width: 100%">
-            <el-option v-for="o in roleOptions" :key="o.value" :label="o.label" :value="o.value" />
+        <el-form-item label="访问角色">
+          <el-select v-model="form.accessRoleId" style="width: 100%" filterable placeholder="选择角色">
+            <el-option v-for="r in roleList" :key="r.id" :label="r.name" :value="r.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="启用">
@@ -63,7 +69,7 @@
 
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="save">保存</el-button>
+        <el-button type="primary" :loading="saving" @click="save">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -75,7 +81,9 @@ import { ElMessageBox, ElMessage } from 'element-plus'
 import { apiRequest } from '../services/api'
 
 const loading = ref(false)
+const saving = ref(false)
 const users = ref<any[]>([])
+const roleList = ref<Array<{ id: number; name: string; slug: string }>>([])
 
 const dialogVisible = ref(false)
 const form = reactive<any>({
@@ -83,20 +91,14 @@ const form = reactive<any>({
   username: '',
   password: '',
   realName: '',
-  role: 'viewer',
+  accessRoleId: null as number | null,
   isActive: true,
   mustChangePass: true,
 })
 
-const roleOptions = [
-  { label: '超级管理员', value: 'super_admin' },
-  { label: '资产管理员', value: 'admin' },
-  { label: '只读用户', value: 'viewer' },
-]
-
-function roleLabel(roleRaw: unknown) {
-  const r = String(roleRaw ?? '').trim()
-  return roleOptions.find((x) => x.value === r)?.label ?? r
+async function loadRoles() {
+  const data = await apiRequest<{ items: Array<{ id: number; name: string; slug: string }> }>('/api/roles')
+  roleList.value = data.items ?? []
 }
 
 async function load() {
@@ -110,7 +112,16 @@ async function load() {
 }
 
 function openAdd() {
-  Object.assign(form, { id: null, username: '', password: '', realName: '', role: 'viewer', isActive: true, mustChangePass: true })
+  const first = roleList.value.find((r) => r.slug === 'viewer') ?? roleList.value[0]
+  Object.assign(form, {
+    id: null,
+    username: '',
+    password: '',
+    realName: '',
+    accessRoleId: first?.id ?? null,
+    isActive: true,
+    mustChangePass: true,
+  })
   dialogVisible.value = true
 }
 
@@ -120,7 +131,7 @@ function openEdit(row: any) {
     username: row.username,
     password: '',
     realName: row.realName,
-    role: row.role,
+    accessRoleId: row.accessRoleId,
     isActive: row.isActive,
     mustChangePass: row.mustChangePass,
   })
@@ -128,24 +139,35 @@ function openEdit(row: any) {
 }
 
 async function save() {
-  const payload: any = {
-    realName: form.realName,
-    role: form.role,
-    isActive: form.isActive,
+  if (!form.accessRoleId) {
+    ElMessage.error('请选择访问角色')
+    return
   }
+  saving.value = true
+  try {
+    const payload: any = {
+      realName: form.realName,
+      accessRoleId: form.accessRoleId,
+      isActive: form.isActive,
+    }
 
-  if (!form.id) {
-    payload.username = form.username
-    payload.password = form.password
-    payload.mustChangePass = form.mustChangePass
-    await apiRequest('/api/users', { method: 'POST', body: payload })
-  } else {
-    await apiRequest(`/api/users/${form.id}`, { method: 'PUT', body: payload })
+    if (!form.id) {
+      payload.username = form.username
+      payload.password = form.password
+      payload.mustChangePass = form.mustChangePass
+      await apiRequest('/api/users', { method: 'POST', body: payload })
+    } else {
+      await apiRequest(`/api/users/${form.id}`, { method: 'PUT', body: payload })
+    }
+
+    ElMessage.success('保存成功')
+    dialogVisible.value = false
+    await load()
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '保存失败')
+  } finally {
+    saving.value = false
   }
-
-  ElMessage.success('保存成功')
-  dialogVisible.value = false
-  await load()
 }
 
 async function resetPassword(row: any) {
@@ -170,11 +192,14 @@ async function deleteUser(row: any) {
     await apiRequest(`/api/users/${row.id}`, { method: 'DELETE' })
     ElMessage.success('删除成功')
     await load()
-  } catch {
-    // cancel/close ignore
+  } catch (e: any) {
+    const msg = e?.message ?? e?.error?.message
+    if (msg) ElMessage.error(msg)
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await loadRoles()
+  await load()
+})
 </script>
-

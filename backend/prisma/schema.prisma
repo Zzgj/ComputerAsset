@@ -7,12 +7,6 @@ datasource db {
   provider = "sqlite"
 }
 
-enum Role {
-  super_admin
-  admin
-  viewer
-}
-
 enum DeviceType {
   laptop
   desktop
@@ -53,7 +47,8 @@ model User {
   username         String           @unique
   password         String
   realName         String
-  role             Role
+  accessRoleId     Int
+  accessRole       AccessRole       @relation(fields: [accessRoleId], references: [id])
   isActive         Boolean          @default(true)
   mustChangePass   Boolean          @default(false)
   createdAt        DateTime         @default(now())
@@ -63,17 +58,72 @@ model User {
   assetRecords     AssetRecord[]   @relation("RecordOperator")
 
   @@index([username])
+  @@index([accessRoleId])
+}
+
+/** 可配置访问角色：用户通过 accessRoleId 绑定；超级管理员 bypassAll 跳过权限与园区校验 */
+model AccessRole {
+  id          Int      @id @default(autoincrement())
+  name        String
+  slug        String   @unique
+  description String?
+  isSystem    Boolean  @default(false)
+  bypassAll   Boolean  @default(false)
+  campusesAll Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions AccessRolePermission[]
+  campuses    AccessRoleCampus[]
+  users       User[]
+}
+
+model AccessRolePermission {
+  id     Int        @id @default(autoincrement())
+  roleId Int
+  role   AccessRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  key    String
+
+  @@unique([roleId, key])
+  @@index([roleId])
+}
+
+model AccessRoleCampus {
+  id       Int        @id @default(autoincrement())
+  roleId   Int
+  role     AccessRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  campusId Int
+  campus   Campus     @relation(fields: [campusId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, campusId])
+  @@index([roleId])
+}
+
+model Campus {
+  id           Int           @id @default(autoincrement())
+  name         String        @unique
+  sortOrder    Int
+  isActive     Boolean       @default(true)
+  departments  Department[]
+  roleCampuses AccessRoleCampus[]
 }
 
 model Department {
   id          Int           @id @default(autoincrement())
-  name        String        @unique
+  campusId    Int
+  campus      Campus        @relation(fields: [campusId], references: [id])
+  parentId    Int?
+  parent      Department?   @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children    Department[]  @relation("DepartmentHierarchy")
+
+  name        String
   sortOrder   Int
   isActive    Boolean       @default(true)
 
   assets      Asset[]
   records     AssetRecord[]
 
+  @@index([campusId, parentId])
   @@index([sortOrder])
 }
 

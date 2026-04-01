@@ -31,9 +31,9 @@
                 <el-input v-model="checkOut.userName" placeholder="姓名" class="field-full" clearable />
               </el-form-item>
               <el-form-item label="部门" required>
-                <el-select v-model="checkOut.departmentId" placeholder="选择部门" filterable class="field-full">
-                  <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
-                </el-select>
+                <div class="field-full">
+                  <DepartmentCascader v-model="checkOut.departmentId" :departments="departments" :campuses="campuses" />
+                </div>
               </el-form-item>
               <el-form-item label="备注">
                 <el-input type="textarea" v-model="checkOut.remark" placeholder="可选" :rows="3" class="field-wide" />
@@ -66,9 +66,9 @@
                 <el-input v-model="assign.userName" placeholder="姓名" class="field-full" clearable />
               </el-form-item>
               <el-form-item label="部门" required>
-                <el-select v-model="assign.departmentId" placeholder="选择部门" filterable class="field-full">
-                  <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
-                </el-select>
+                <div class="field-full">
+                  <DepartmentCascader v-model="assign.departmentId" :departments="departments" :campuses="campuses" />
+                </div>
               </el-form-item>
               <el-form-item label="备注">
                 <el-input type="textarea" v-model="assign.remark" placeholder="可选" :rows="3" class="field-wide" />
@@ -101,9 +101,9 @@
                 <el-input v-model="lend.userName" placeholder="姓名" class="field-full" clearable />
               </el-form-item>
               <el-form-item label="部门" required>
-                <el-select v-model="lend.departmentId" placeholder="选择部门" filterable class="field-full">
-                  <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
-                </el-select>
+                <div class="field-full">
+                  <DepartmentCascader v-model="lend.departmentId" :departments="departments" :campuses="campuses" />
+                </div>
               </el-form-item>
               <el-form-item label="预计归还" required>
                 <el-date-picker
@@ -166,10 +166,12 @@
 import { onMounted, reactive, ref } from 'vue'
 import { apiRequest } from '../services/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import DepartmentCascader from '../components/DepartmentCascader.vue'
 
 const activeTab = ref('check_out')
 const submitting = ref(false)
 
+const campuses = ref<Array<{ id: number; name: string; sortOrder: number }>>([])
 const departments = ref<any[]>([])
 const inStockAssets = ref<any[]>([])
 const waitingPickupAssets = ref<any[]>([])
@@ -228,8 +230,12 @@ async function findUserAssetsConflicts(userName: string) {
 }
 
 async function loadDepartments() {
-  const data = await apiRequest<{ items: any[] }>('/api/departments')
-  departments.value = data.items ?? []
+  const [d, c] = await Promise.all([
+    apiRequest<{ items: any[] }>('/api/departments'),
+    apiRequest<{ items: any[] }>('/api/campuses'),
+  ])
+  departments.value = d.items ?? []
+  campuses.value = c.items ?? []
 }
 
 async function loadAssets() {

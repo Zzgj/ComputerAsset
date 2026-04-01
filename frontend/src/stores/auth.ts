@@ -1,14 +1,16 @@
 import { defineStore } from 'pinia'
 import { apiRequest } from '../services/api'
 
-export type UserRole = 'super_admin' | 'admin' | 'viewer'
-
 export type Me = {
   id: number
   username: string
   realName: string
-  role: UserRole
   mustChangePass: boolean
+  bypassAll: boolean
+  permissions: string[]
+  campusesAll: boolean
+  campusIds: number[]
+  accessRole: { id: number; name: string; slug: string }
 }
 
 type LoginResponse = { token: string; me: Me }
@@ -37,6 +39,11 @@ export const useAuthStore = defineStore('auth', {
       this.token = null
       localStorage.removeItem('token')
     },
+    can(permission: string): boolean {
+      if (!this.me) return false
+      if (this.me.bypassAll) return true
+      return this.me.permissions.includes(permission)
+    },
     async login(username: string, password: string) {
       const data = await apiRequest<LoginResponse>('/api/auth/login', {
         method: 'POST',
@@ -49,10 +56,16 @@ export const useAuthStore = defineStore('auth', {
       const data = await apiRequest<{ me: Me }>('/api/auth/me', { method: 'GET' })
       this.me = data.me
     },
-    logout() {
+    async logout() {
+      if (this.token) {
+        try {
+          await apiRequest('/api/auth/logout', { method: 'POST' })
+        } catch {
+          // Ignore logout-log failure and still clear local auth state.
+        }
+      }
       this.clearToken()
       this.me = null
     },
   },
 })
-

@@ -3,12 +3,10 @@ import fs from 'fs'
 import path from 'path'
 
 import { prisma } from '../prisma'
-import { requireAuth, requireRole } from '../middleware/auth'
+import { requireAuth, requirePermission } from '../middleware/auth'
 import { getEnv } from '../utils/env'
 
 const backupRouter = Router()
-const superAdminRoles = ['super_admin'] as const
-
 function badRequest(message: string, details?: unknown): never {
   throw { statusCode: 400, message, details }
 }
@@ -26,7 +24,7 @@ function getBackupDirPath() {
   return path.resolve(process.cwd(), BACKUP_DIR)
 }
 
-backupRouter.post('/', requireAuth, requireRole([...superAdminRoles]), async (req, res) => {
+backupRouter.post('/', requireAuth, requirePermission('backup.run'), async (req, res) => {
   const authUser = (req as any).auth as { id: number }
 
   const srcPath = getDbPath()
@@ -55,7 +53,7 @@ backupRouter.post('/', requireAuth, requireRole([...superAdminRoles]), async (re
   res.json({ name, size: stat.size, mtimeMs: stat.mtimeMs })
 })
 
-backupRouter.get('/list', requireAuth, requireRole([...superAdminRoles]), async (_req, res) => {
+backupRouter.get('/list', requireAuth, requirePermission('backup.run'), async (_req, res) => {
   const backupDir = getBackupDirPath()
   if (!fs.existsSync(backupDir)) {
     return res.json({ items: [] })
@@ -74,7 +72,7 @@ backupRouter.get('/list', requireAuth, requireRole([...superAdminRoles]), async 
   res.json({ items })
 })
 
-backupRouter.get('/download/:name', requireAuth, requireRole([...superAdminRoles]), async (req, res) => {
+backupRouter.get('/download/:name', requireAuth, requirePermission('backup.run'), async (req, res) => {
   const backupDir = getBackupDirPath()
   const nameParam = req.params.name
   const name = Array.isArray(nameParam) ? nameParam[0] : nameParam

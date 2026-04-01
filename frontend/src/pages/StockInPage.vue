@@ -34,9 +34,9 @@
 
         <div class="form-section-label">归属与时间</div>
         <el-form-item label="所属部门" required>
-          <el-select v-model="form.departmentId" placeholder="选择部门" class="field-lg" filterable>
-            <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
-          </el-select>
+          <div class="field-lg">
+            <DepartmentCascader v-model="form.departmentId" :departments="departments" :campuses="campuses" />
+          </div>
         </el-form-item>
         <el-form-item label="采购日期">
           <el-date-picker
@@ -66,6 +66,7 @@
         <ul class="hint-list">
           <li>模板决定默认品牌、型号、配置等；入库后仍可由超级管理员调整关键字段（会解除模板关联）。</li>
           <li>电脑编号在系统内唯一；序列号在系统内唯一，请与实物一致。</li>
+          <li>部门请按园区展开后点选具体部门（支持选中间层级，如仅选「综合部门」）。</li>
           <li>提交成功后资产状态为「在库」，可在出库/借用页办理领用或借出。</li>
         </ul>
       </div>
@@ -78,10 +79,12 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { apiRequest } from '../services/api'
 import { ElMessage } from 'element-plus'
+import DepartmentCascader from '../components/DepartmentCascader.vue'
 
 const router = useRouter()
 
 const templates = ref<any[]>([])
+const campuses = ref<Array<{ id: number; name: string; sortOrder: number }>>([])
 const departments = ref<any[]>([])
 const genLoading = ref(false)
 const submitting = ref(false)
@@ -99,10 +102,14 @@ const form = reactive<any>({
 async function load() {
   pageLoading.value = true
   try {
-    const t = await apiRequest<{ items: any[] }>('/api/templates')
+    const [t, d, c] = await Promise.all([
+      apiRequest<{ items: any[] }>('/api/templates'),
+      apiRequest<{ items: any[] }>('/api/departments'),
+      apiRequest<{ items: any[] }>('/api/campuses'),
+    ])
     templates.value = t.items ?? []
-    const d = await apiRequest<{ items: any[] }>('/api/departments')
     departments.value = d.items ?? []
+    campuses.value = c.items ?? []
   } finally {
     pageLoading.value = false
   }

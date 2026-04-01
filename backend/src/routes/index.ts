@@ -4,8 +4,10 @@ import { authRouter } from './auth'
 import { assetsRouter } from './assets'
 import { operationsRouter } from './operations'
 import { departmentsRouter } from './departments'
+import { campusesRouter } from './campuses'
 import { templatesRouter } from './templates'
 import { usersRouter } from './users'
+import { rolesRouter } from './roles'
 import { configRouter } from './config'
 import { dashboardRouter } from './dashboard'
 import { logsRouter } from './logs'
@@ -23,8 +25,10 @@ router.use('/auth', authRouter)
 router.use('/assets', assetsRouter)
 router.use('/operations', operationsRouter)
 router.use('/departments', departmentsRouter)
+router.use('/campuses', campusesRouter)
 router.use('/templates', templatesRouter)
 router.use('/users', usersRouter)
+router.use('/roles', rolesRouter)
 router.use('/config', configRouter)
 router.use('/dashboard', dashboardRouter)
 router.use('/logs', logsRouter)

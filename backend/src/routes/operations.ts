@@ -1,11 +1,11 @@
 import { Router } from 'express'
 
+import type { AccessAuth } from '../auth/accessContext'
+import { assertCampusAccess } from '../auth/accessContext'
 import { prisma } from '../prisma'
-import { requireAuth, requireRole } from '../middleware/auth'
+import { requireAuth, requirePermission } from '../middleware/auth'
 
-import { AssetStatus, AssetRecordAction, RepairResult, Role } from '@prisma/client'
-
-const adminRoles: Role[] = ['super_admin', 'admin']
+import { AssetStatus, AssetRecordAction, RepairResult } from '@prisma/client'
 
 function toInt(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value)
@@ -38,15 +38,26 @@ function toBoolean(value: unknown): boolean {
   return false
 }
 
-async function getUnassignedDepartmentId() {
-  const dept = await prisma.department.findUnique({ where: { name: '未分配' } })
-  if (!dept) badRequest('Missing department: 未分配')
+type TxOps = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
+
+async function getUnassignedDepartmentIdForCampus(tx: TxOps, campusId: number) {
+  const dept = await tx.department.findFirst({
+    where: { name: '未分配', campusId, parentId: null },
+  })
+  if (!dept) badRequest(`缺少园区「未分配」部门（campusId=${campusId}）`)
   return dept.id
+}
+
+async function assertDeptCampus(tx: TxOps, access: AccessAuth, departmentId: number) {
+  const d = await tx.department.findUnique({ where: { id: departmentId }, select: { campusId: true } })
+  if (!d) badRequest('部门不存在')
+  assertCampusAccess(access, d.campusId)
 }
 
 export const operationsRouter = Router()
 
-operationsRouter.post('/check-out', requireAuth, requireRole(adminRoles), async (req, res) => {
+operationsRouter.post('/check-out', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
@@ -85,9 +96,14 @@ operationsRouter.post('/check-out', requireAuth, requireRole(adminRoles), async 
   const now = new Date()
 
   const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({ where: { id: assetId } })
+    const asset = await tx.asset.findUnique({
+      where: { id: assetId },
+      include: { department: { select: { campusId: true } } },
+    })
     if (!asset) badNotFound('Asset not found')
     if (asset.status !== AssetStatus.in_stock) badRequest('Asset must be in_stock for check-out')
+    assertCampusAccess(access, asset.department.campusId)
+    await assertDeptCampus(tx, access, departmentId)
 
     await tx.asset.update({
       where: { id: assetId },
@@ -126,7 +142,8 @@ operationsRouter.post('/check-out', requireAuth, requireRole(adminRoles), async 
   res.json(result)
 })
 
-operationsRouter.post('/assign', requireAuth, requireRole(adminRoles), async (req, res) => {
+operationsRouter.post('/assign', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
@@ -141,9 +158,14 @@ operationsRouter.post('/assign', requireAuth, requireRole(adminRoles), async (re
 
   const now = new Date()
   const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({ where: { id: assetId } })
+    const asset = await tx.asset.findUnique({
+      where: { id: assetId },
+      include: { department: { select: { campusId: true } } },
+    })
     if (!asset) badNotFound('Asset not found')
     if (asset.status !== AssetStatus.in_stock) badRequest('Asset must be in_stock for assign')
+    assertCampusAccess(access, asset.department.campusId)
+    await assertDeptCampus(tx, access, departmentId)
 
     await tx.asset.update({
       where: { id: assetId },
@@ -182,7 +204,8 @@ operationsRouter.post('/assign', requireAuth, requireRole(adminRoles), async (re
   res.json(result)
 })
 
-operationsRouter.post('/cancel-assign', requireAuth, requireRole(adminRoles), async (req, res) => {
+operationsRouter.post('/cancel-assign', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
@@ -193,12 +216,17 @@ operationsRouter.post('/cancel-assign', requireAuth, requireRole(adminRoles), as
   if (exist) return res.json({ alreadyProcessed: true, assetRecord: exist })
 
   const now = new Date()
-  const unassignedDepartmentId = await getUnassignedDepartmentId()
 
   const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({ where: { id: assetId } })
+    const asset = await tx.asset.findUnique({
+      where: { id: assetId },
+      include: { department: { select: { campusId: true } } },
+    })
     if (!asset) badNotFound('Asset not found')
     if (asset.status !== AssetStatus.waiting_pickup) badRequest('Asset must be waiting_pickup for cancel-assign')
+    assertCampusAccess(access, asset.department.campusId)
+
+    const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
 
     await tx.asset.update({
       where: { id: assetId },
@@ -237,7 +265,8 @@ operationsRouter.post('/cancel-assign', requireAuth, requireRole(adminRoles), as
   res.json(result)
 })
 
-operationsRouter.post('/pick-up', requireAuth, requireRole(adminRoles), async (req, res) => {
+operationsRouter.post('/pick-up', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
@@ -250,9 +279,13 @@ operationsRouter.post('/pick-up', requireAuth, requireRole(adminRoles), async (r
   const now = new Date()
 
   const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({ where: { id: assetId } })
+    const asset = await tx.asset.findUnique({
+      where: { id: assetId },
+      include: { department: { select: { campusId: true } } },
+    })
     if (!asset) badNotFound('Asset not found')
     if (asset.status !== AssetStatus.waiting_pickup) badRequest('Asset must be waiting_pickup for pick-up')
+    assertCampusAccess(access, asset.department.campusId)
 
     await tx.asset.update({
       where: { id: assetId },
@@ -291,7 +324,8 @@ operationsRouter.post('/pick-up', requireAuth, requireRole(adminRoles), async (r
   res.json(result)
 })
 
-operationsRouter.post('/lend', requireAuth, requireRole(adminRoles), async (req, res) => {
+operationsRouter.post('/lend', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
@@ -333,9 +367,14 @@ operationsRouter.post('/lend', requireAuth, requireRole(adminRoles), async (req,
 
   const now = new Date()
   const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({ where: { id: assetId } })
+    const asset = await tx.asset.findUnique({
+      where: { id: assetId },
+      include: { department: { select: { campusId: true } } },
+    })
     if (!asset) badNotFound('Asset not found')
     if (asset.status !== AssetStatus.in_stock) badRequest('Asset must be in_stock for lend')
+    assertCampusAccess(access, asset.department.campusId)
+    await assertDeptCampus(tx, access, departmentId)
 
     await tx.asset.update({
       where: { id: assetId },
@@ -374,7 +413,8 @@ operationsRouter.post('/lend', requireAuth, requireRole(adminRoles), async (req,
   res.json(result)
 })
 
-operationsRouter.post('/return', requireAuth, requireRole(adminRoles), async (req, res) => {
+operationsRouter.post('/return', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
@@ -385,14 +425,19 @@ operationsRouter.post('/return', requireAuth, requireRole(adminRoles), async (re
   if (exist) return res.json({ alreadyProcessed: true, assetRecord: exist })
 
   const now = new Date()
-  const unassignedDepartmentId = await getUnassignedDepartmentId()
 
   const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({ where: { id: assetId } })
+    const asset = await tx.asset.findUnique({
+      where: { id: assetId },
+      include: { department: { select: { campusId: true } } },
+    })
     if (!asset) badNotFound('Asset not found')
     if (asset.status !== AssetStatus.in_use && asset.status !== AssetStatus.borrowed) {
       badRequest('Asset must be in_use or borrowed for return')
     }
+    assertCampusAccess(access, asset.department.campusId)
+
+    const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
 
     await tx.asset.update({
       where: { id: assetId },
@@ -431,7 +476,8 @@ operationsRouter.post('/return', requireAuth, requireRole(adminRoles), async (re
   res.json(result)
 })
 
-operationsRouter.post('/transfer', requireAuth, requireRole(adminRoles), async (req, res) => {
+operationsRouter.post('/transfer', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
@@ -447,9 +493,14 @@ operationsRouter.post('/transfer', requireAuth, requireRole(adminRoles), async (
   const now = new Date()
 
   const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({ where: { id: assetId } })
+    const asset = await tx.asset.findUnique({
+      where: { id: assetId },
+      include: { department: { select: { campusId: true } } },
+    })
     if (!asset) badNotFound('Asset not found')
     if (asset.status !== AssetStatus.in_use) badRequest('Asset must be in_use for transfer')
+    assertCampusAccess(access, asset.department.campusId)
+    await assertDeptCampus(tx, access, departmentId)
 
     await tx.asset.update({
       where: { id: assetId },
@@ -488,7 +539,8 @@ operationsRouter.post('/transfer', requireAuth, requireRole(adminRoles), async (
   res.json(result)
 })
 
-operationsRouter.post('/repair', requireAuth, requireRole(adminRoles), async (req, res) => {
+operationsRouter.post('/repair', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
@@ -503,8 +555,12 @@ operationsRouter.post('/repair', requireAuth, requireRole(adminRoles), async (re
   const now = new Date()
 
   const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({ where: { id: assetId } })
+    const asset = await tx.asset.findUnique({
+      where: { id: assetId },
+      include: { department: { select: { campusId: true } } },
+    })
     if (!asset) badNotFound('Asset not found')
+    assertCampusAccess(access, asset.department.campusId)
 
     await tx.asset.update({
       where: { id: assetId },
@@ -556,7 +612,8 @@ operationsRouter.post('/repair', requireAuth, requireRole(adminRoles), async (re
   res.json(result)
 })
 
-operationsRouter.post('/repair-done', requireAuth, requireRole(adminRoles), async (req, res) => {
+operationsRouter.post('/repair-done', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
@@ -573,12 +630,15 @@ operationsRouter.post('/repair-done', requireAuth, requireRole(adminRoles), asyn
   if (exist) return res.json({ alreadyProcessed: true, assetRecord: exist })
 
   const now = new Date()
-  const unassignedDepartmentId = await getUnassignedDepartmentId()
 
   const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({ where: { id: assetId } })
+    const asset = await tx.asset.findUnique({
+      where: { id: assetId },
+      include: { department: { select: { campusId: true } } },
+    })
     if (!asset) badNotFound('Asset not found')
     if (asset.status !== AssetStatus.in_repair) badRequest('Asset must be in_repair for repair-done')
+    assertCampusAccess(access, asset.department.campusId)
 
     const repair = await tx.repairRecord.findFirst({
       where: { assetId },
@@ -597,6 +657,8 @@ operationsRouter.post('/repair-done', requireAuth, requireRole(adminRoles), asyn
     })
 
     const toStatus = repairResult === RepairResult.fixed ? AssetStatus.in_stock : AssetStatus.retired
+
+    const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
 
     await tx.asset.update({
       where: { id: assetId },
@@ -639,7 +701,8 @@ operationsRouter.post('/repair-done', requireAuth, requireRole(adminRoles), asyn
   res.json(result)
 })
 
-operationsRouter.post('/retire', requireAuth, requireRole(adminRoles), async (req, res) => {
+operationsRouter.post('/retire', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
@@ -650,12 +713,17 @@ operationsRouter.post('/retire', requireAuth, requireRole(adminRoles), async (re
   if (exist) return res.json({ alreadyProcessed: true, assetRecord: exist })
 
   const now = new Date()
-  const unassignedDepartmentId = await getUnassignedDepartmentId()
 
   const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({ where: { id: assetId } })
+    const asset = await tx.asset.findUnique({
+      where: { id: assetId },
+      include: { department: { select: { campusId: true } } },
+    })
     if (!asset) badNotFound('Asset not found')
     if (asset.status === AssetStatus.retired) badRequest('Asset already retired')
+    assertCampusAccess(access, asset.department.campusId)
+
+    const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
 
     await tx.asset.update({
       where: { id: assetId },

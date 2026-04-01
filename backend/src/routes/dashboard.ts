@@ -1,10 +1,16 @@
 import { Router } from 'express'
-import { AssetStatus, AssetRecordAction, Role } from '@prisma/client'
+import { AssetStatus, AssetRecordAction } from '@prisma/client'
 
+import type { AccessAuth } from '../auth/accessContext'
+import { applyCampusScopeToAssetWhere, applyCampusScopeToRecordWhere } from '../auth/accessContext'
 import { prisma } from '../prisma'
-import { requireAuth } from '../middleware/auth'
-
-const adminRoles: Role[] = ['super_admin', 'admin']
+import { requireAuth, requirePermission } from '../middleware/auth'
+import {
+  attachDepartmentPathFields,
+  buildDepartmentPathMap,
+  computeDepartmentDisplayPath,
+  type DepartmentWithCampus,
+} from '../utils/departmentDisplay'
 
 /** 与「一人一机」一致：这些状态下资产记在某人名下 */
 const HOLDER_STATUSES: AssetStatus[] = [
@@ -36,7 +42,14 @@ async function getConfigNumber(key: string, defaultValue: number) {
 
 export const dashboardRouter = Router()
 
-dashboardRouter.get('/stats', requireAuth, async (_req, res) => {
+function scopedAssetWhere(access: AccessAuth, extra: Record<string, unknown> = {}) {
+  const w = { ...extra }
+  applyCampusScopeToAssetWhere(w, access)
+  return w
+}
+
+dashboardRouter.get('/stats', requireAuth, requirePermission('dashboard.view'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const [
     totalCount,
     inStockCount,
@@ -45,12 +58,12 @@ dashboardRouter.get('/stats', requireAuth, async (_req, res) => {
     borrowedCount,
     inRepairCount,
   ] = await Promise.all([
-    prisma.asset.count(),
-    prisma.asset.count({ where: { status: AssetStatus.in_stock } }),
-    prisma.asset.count({ where: { status: AssetStatus.waiting_pickup } }),
-    prisma.asset.count({ where: { status: AssetStatus.in_use } }),
-    prisma.asset.count({ where: { status: AssetStatus.borrowed } }),
-    prisma.asset.count({ where: { status: AssetStatus.in_repair } }),
+    prisma.asset.count({ where: scopedAssetWhere(access) }),
+    prisma.asset.count({ where: scopedAssetWhere(access, { status: AssetStatus.in_stock }) }),
+    prisma.asset.count({ where: scopedAssetWhere(access, { status: AssetStatus.waiting_pickup }) }),
+    prisma.asset.count({ where: scopedAssetWhere(access, { status: AssetStatus.in_use }) }),
+    prisma.asset.count({ where: scopedAssetWhere(access, { status: AssetStatus.borrowed }) }),
+    prisma.asset.count({ where: scopedAssetWhere(access, { status: AssetStatus.in_repair }) }),
   ])
 
   const statusPie = [
@@ -64,16 +77,17 @@ dashboardRouter.get('/stats', requireAuth, async (_req, res) => {
   const [inUseByDept, borrowedByDept, typeByType] = await Promise.all([
     prisma.asset.groupBy({
       by: ['departmentId'],
-      where: { status: AssetStatus.in_use },
+      where: scopedAssetWhere(access, { status: AssetStatus.in_use }),
       _count: { _all: true },
     }),
     prisma.asset.groupBy({
       by: ['departmentId'],
-      where: { status: AssetStatus.borrowed },
+      where: scopedAssetWhere(access, { status: AssetStatus.borrowed }),
       _count: { _all: true },
     }),
     prisma.asset.groupBy({
       by: ['deviceType'],
+      where: scopedAssetWhere(access),
       _count: { _all: true },
     }),
   ])
@@ -82,18 +96,19 @@ dashboardRouter.get('/stats', requireAuth, async (_req, res) => {
     ...inUseByDept.map((x) => x.departmentId),
     ...borrowedByDept.map((x) => x.departmentId),
   ])
-  const depts = await prisma.department.findMany({
-    where: { id: { in: Array.from(deptIds) } },
-    select: { id: true, name: true },
-  })
-  const deptName = new Map(depts.map((d) => [d.id, d.name]))
+  const allDeptsForPath = await prisma.department.findMany({ include: { campus: true } })
+  const pathMap = buildDepartmentPathMap(allDeptsForPath)
+  const deptLabel = (id: number) => {
+    const d = allDeptsForPath.find((x) => x.id === id)
+    return d ? computeDepartmentDisplayPath(d as DepartmentWithCampus, pathMap) : String(id)
+  }
 
   const departments = Array.from(deptIds).map((id) => {
     const u = inUseByDept.find((x) => x.departmentId === id)
     const b = borrowedByDept.find((x) => x.departmentId === id)
     return {
       departmentId: id,
-      departmentName: deptName.get(id) ?? String(id),
+      departmentName: deptLabel(id),
       inUse: u?._count._all ?? 0,
       borrowed: b?._count._all ?? 0,
     }
@@ -106,10 +121,10 @@ dashboardRouter.get('/stats', requireAuth, async (_req, res) => {
 
   const multiGroups = await prisma.asset.groupBy({
     by: ['currentUserName'],
-    where: {
+    where: scopedAssetWhere(access, {
       currentUserName: { not: '' },
       status: { in: HOLDER_STATUSES },
-    },
+    }),
     _count: { _all: true },
   })
   const multiNameRows = multiGroups.filter((g) => g._count._all >= 2 && g.currentUserName.trim() !== '')
@@ -128,16 +143,12 @@ dashboardRouter.get('/stats', requireAuth, async (_req, res) => {
 
   if (multiUserNames.length > 0) {
     const holderAssets = await prisma.asset.findMany({
-      where: {
+      where: scopedAssetWhere(access, {
         currentUserName: { in: multiUserNames },
         status: { in: HOLDER_STATUSES },
-      },
-      select: {
-        id: true,
-        assetCode: true,
-        currentUserName: true,
-        status: true,
-        department: { select: { name: true } },
+      }),
+      include: {
+        department: { include: { campus: true } },
       },
       orderBy: [{ currentUserName: 'asc' }, { assetCode: 'asc' }],
     })
@@ -156,7 +167,9 @@ dashboardRouter.get('/stats', requireAuth, async (_req, res) => {
           id: a.id,
           assetCode: a.assetCode,
           status: a.status,
-          departmentName: a.department?.name ?? '',
+          departmentName: a.department
+            ? computeDepartmentDisplayPath(a.department as DepartmentWithCampus, pathMap)
+            : '',
         })),
       }))
       .sort((a, b) => b.count - a.count || a.userName.localeCompare(b.userName, 'zh-CN'))
@@ -176,7 +189,8 @@ dashboardRouter.get('/stats', requireAuth, async (_req, res) => {
   })
 })
 
-dashboardRouter.get('/recent-records', requireAuth, async (_req, res) => {
+dashboardRouter.get('/recent-records', requireAuth, requirePermission('dashboard.view'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const allowed: AssetRecordAction[] = [
     AssetRecordAction.stock_in,
     AssetRecordAction.check_out,
@@ -190,21 +204,31 @@ dashboardRouter.get('/recent-records', requireAuth, async (_req, res) => {
     AssetRecordAction.retire,
   ]
 
+  const recWhere: Record<string, unknown> = { action: { in: allowed } }
+  applyCampusScopeToRecordWhere(recWhere, access)
   const records = await prisma.assetRecord.findMany({
-    where: { action: { in: allowed } },
+    where: recWhere as any,
     orderBy: { actionDate: 'desc' },
     take: 10,
     include: {
       asset: true,
-      department: true,
+      department: { include: { campus: true } },
       operator: { select: { id: true, username: true, realName: true } },
     },
   })
 
-  res.json({ records })
+  const pathRows = await prisma.department.findMany({ include: { campus: true } })
+  const listPathMap = buildDepartmentPathMap(pathRows)
+  const enriched = records.map((rec) => ({
+    ...rec,
+    department: attachDepartmentPathFields(rec.department as DepartmentWithCampus | null, listPathMap) ?? null,
+  }))
+
+  res.json({ records: enriched })
 })
 
-dashboardRouter.get('/notifications', requireAuth, async (_req, res) => {
+dashboardRouter.get('/notifications', requireAuth, requirePermission('dashboard.view'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
   const borrowAdvanceAlertDays = await getConfigNumber('borrow_advance_alert_days', 1)
   const waitingPickupAlertDays = await getConfigNumber('waiting_pickup_alert_days', 3)
 
@@ -212,8 +236,8 @@ dashboardRouter.get('/notifications', requireAuth, async (_req, res) => {
   const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
 
   const borrowedAssets = await prisma.asset.findMany({
-    where: { status: AssetStatus.borrowed },
-    include: { department: true },
+    where: scopedAssetWhere(access, { status: AssetStatus.borrowed }),
+    include: { department: { include: { campus: true } } },
   })
 
   const lendRecords = await prisma.assetRecord.findMany({
@@ -232,6 +256,9 @@ dashboardRouter.get('/notifications', requireAuth, async (_req, res) => {
   const overdue: any[] = []
   const dueSoon: any[] = []
 
+  const notifPathDepts = await prisma.department.findMany({ include: { campus: true } })
+  const notifPathMap = buildDepartmentPathMap(notifPathDepts)
+
   for (const a of borrowedAssets) {
     const rec = lendLatest.get(a.id)
     const expected = rec?.expectedReturnDate
@@ -243,7 +270,9 @@ dashboardRouter.get('/notifications', requireAuth, async (_req, res) => {
         assetCode: a.assetCode,
         currentUserName: a.currentUserName,
         departmentId: a.departmentId,
-        departmentName: a.department?.name ?? '',
+        departmentName: a.department
+          ? computeDepartmentDisplayPath(a.department as DepartmentWithCampus, notifPathMap)
+          : '',
         expectedReturnDate: rec.expectedReturnDate,
         daysOverdue: Math.abs(diffDays),
       })
@@ -253,7 +282,9 @@ dashboardRouter.get('/notifications', requireAuth, async (_req, res) => {
         assetCode: a.assetCode,
         currentUserName: a.currentUserName,
         departmentId: a.departmentId,
-        departmentName: a.department?.name ?? '',
+        departmentName: a.department
+          ? computeDepartmentDisplayPath(a.department as DepartmentWithCampus, notifPathMap)
+          : '',
         expectedReturnDate: rec.expectedReturnDate,
         daysRemaining: diffDays,
       })
@@ -261,8 +292,8 @@ dashboardRouter.get('/notifications', requireAuth, async (_req, res) => {
   }
 
   const waitingAssets = await prisma.asset.findMany({
-    where: { status: AssetStatus.waiting_pickup },
-    include: { department: true },
+    where: scopedAssetWhere(access, { status: AssetStatus.waiting_pickup }),
+    include: { department: { include: { campus: true } } },
   })
 
   const assignRecords = await prisma.assetRecord.findMany({
@@ -290,7 +321,9 @@ dashboardRouter.get('/notifications', requireAuth, async (_req, res) => {
         assetCode: a.assetCode,
         currentUserName: a.currentUserName,
         departmentId: a.departmentId,
-        departmentName: a.department?.name ?? '',
+        departmentName: a.department
+          ? computeDepartmentDisplayPath(a.department as DepartmentWithCampus, notifPathMap)
+          : '',
         assignedAt: rec.actionDate,
         daysWaiting: diffDays,
       })
