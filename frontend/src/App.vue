@@ -188,9 +188,9 @@ async function submitChangePassword() {
         </div>
       </div>
 
-      <div style="padding: 12px; border-top: 1px solid #f0f0f0">
-        <el-button style="width: 100%; margin-bottom: 8px" @click="openChangePassword">修改密码</el-button>
-        <el-button style="width: 100%" @click="logout">退出登录</el-button>
+      <div class="sidebar-footer-actions">
+        <el-button class="sidebar-footer-btn" @click="openChangePassword">修改密码</el-button>
+        <el-button class="sidebar-footer-btn" @click="logout">退出登录</el-button>
       </div>
     </aside>
 
@@ -225,5 +225,23 @@ async function submitChangePassword() {
   font-weight: 700;
   letter-spacing: 0.5px;
   margin: 8px 8px 4px;
+}
+
+/* 侧栏底部：两按钮同宽、同列对齐，避免 el-button 默认 margin 导致错位 */
+.sidebar-footer-actions {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid #f0f0f0;
+  box-sizing: border-box;
+}
+
+.sidebar-footer-btn {
+  width: 100%;
+  margin: 0 !important;
+  box-sizing: border-box;
 }
 </style>
