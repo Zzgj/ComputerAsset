@@ -84,7 +84,7 @@
           :total="total"
           :page-size="query.pageSize"
           :current-page="query.page"
-          @current-change="(p: number) => (query.page = p, loadAssets())"
+          @current-change="onPageChange"
         />
       </div>
     </el-card>
@@ -93,10 +93,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import type { LocationQuery } from 'vue-router'
 import { apiRequest } from '../services/api'
 import { useAuthStore } from '../stores/auth'
 
+const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
@@ -128,6 +130,49 @@ const query = reactive({
   pageSize: 20,
 })
 
+function parseOptionalInt(v: LocationQuery[string] | undefined): number | null {
+  if (v === undefined || v === null || v === '') return null
+  const raw = Array.isArray(v) ? v[0] : v
+  if (raw === undefined || raw === null || raw === '') return null
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : null
+}
+
+/** 从 URL 恢复筛选（从详情返回时可保留状态） */
+function applyListQueryFromRoute(q: LocationQuery) {
+  const str = (key: string) => {
+    const v = q[key]
+    return typeof v === 'string' ? v : ''
+  }
+  query.q = str('q')
+  query.status = str('status')
+  query.campusId = parseOptionalInt(q.campusId)
+  query.departmentId = parseOptionalInt(q.departmentId)
+  const p = q.page
+  query.page = p ? Math.max(1, parseInt(String(Array.isArray(p) ? p[0] : p), 10) || 1) : 1
+  const ps = q.pageSize
+  query.pageSize = ps
+    ? Math.min(100, Math.max(1, parseInt(String(Array.isArray(ps) ? ps[0] : ps), 10) || 20))
+    : 20
+}
+
+/** 将当前列表条件写入 URL，便于详情页带回 */
+function buildListQueryForRoute(): Record<string, string> {
+  const o: Record<string, string> = {}
+  const qv = query.q.trim()
+  if (qv) o.q = qv
+  if (query.status) o.status = query.status
+  if (query.campusId != null) o.campusId = String(query.campusId)
+  if (query.departmentId != null) o.departmentId = String(query.departmentId)
+  if (query.page > 1) o.page = String(query.page)
+  if (query.pageSize !== 20) o.pageSize = String(query.pageSize)
+  return o
+}
+
+function syncListUrl() {
+  router.replace({ name: 'assets', query: buildListQueryForRoute() })
+}
+
 async function loadFilters() {
   const [dRes, cRes] = await Promise.all([
     apiRequest<{ items: any[] }>('/api/departments'),
@@ -158,6 +203,7 @@ async function loadAssets() {
     assets.value = data.items
     total.value = data.total
     multiHolderUserNames.value = new Set(data.multiHolderUserNames ?? [])
+    syncListUrl()
   } finally {
     loading.value = false
   }
@@ -169,7 +215,16 @@ function search() {
 }
 
 function goDetail(id: number) {
-  router.push('/assets/' + id)
+  router.push({
+    name: 'assetDetail',
+    params: { id: String(id) },
+    query: buildListQueryForRoute(),
+  })
+}
+
+function onPageChange(p: number) {
+  query.page = p
+  loadAssets()
 }
 
 function formatText(v: unknown) {
@@ -190,6 +245,7 @@ function formatSerial(serialNumber: string) {
 }
 
 onMounted(async () => {
+  applyListQueryFromRoute(route.query)
   await loadFilters()
   await loadAssets()
 })

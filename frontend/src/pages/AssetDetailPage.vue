@@ -1,7 +1,7 @@
 <template>
   <div style="padding: 20px">
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom: 12px; flex-wrap: wrap">
-      <el-button type="primary" @click="router.push('/assets')">返回资产列表</el-button>
+      <el-button type="primary" @click="backToAssetList">返回资产列表</el-button>
       <div style="color: var(--el-text-color-secondary); font-size: 13px">
         资产ID：{{ assetId }}
       </div>
@@ -297,6 +297,10 @@ import DepartmentCascader from '../components/DepartmentCascader.vue'
 const route = useRoute()
 const router = useRouter()
 const assetId = Number(route.params.id)
+
+function backToAssetList() {
+  router.push({ name: 'assets', query: route.query })
+}
 
 const asset = ref<any | null>(null)
 const records = ref<any[]>([])

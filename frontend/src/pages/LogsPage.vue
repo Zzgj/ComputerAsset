@@ -2,7 +2,15 @@
   <div style="padding: 20px">
     <el-card shadow="never">
       <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
-        <el-input v-model="query.action" placeholder="按操作类型关键字搜索" style="width: 260px" clearable />
+        <el-select v-model="query.category" placeholder="日志类型" style="width: 220px" @change="onCategoryChange">
+          <el-option v-for="c in categoryOptions" :key="c.key" :label="c.label" :value="c.key" />
+        </el-select>
+        <el-input
+          v-model="query.action"
+          placeholder="在当前类型内按关键字筛选"
+          style="width: 260px"
+          clearable
+        />
         <el-date-picker v-model="query.startDate" type="date" placeholder="开始日期" value-format="YYYY-MM-DD" />
         <el-date-picker v-model="query.endDate" type="date" placeholder="结束日期" value-format="YYYY-MM-DD" />
         <el-button type="primary" @click="load">搜索</el-button>
@@ -96,7 +104,10 @@ const total = ref(0)
 const detailVisible = ref(false)
 const selectedDetailText = ref('')
 
+const categoryOptions = ref<Array<{ key: string; label: string }>>([{ key: 'all', label: '全部' }])
+
 const query = reactive<any>({
+  category: 'all',
   action: '',
   startDate: null,
   endDate: null,
@@ -104,10 +115,16 @@ const query = reactive<any>({
   pageSize: 20,
 })
 
+function onCategoryChange() {
+  query.page = 1
+  load()
+}
+
 async function load() {
   loading.value = true
   try {
     const params = new URLSearchParams()
+    if (query.category && query.category !== 'all') params.set('category', query.category)
     if (query.action) params.set('action', query.action)
     if (query.startDate) params.set('startDate', query.startDate)
     if (query.endDate) params.set('endDate', query.endDate)
@@ -152,6 +169,18 @@ function openDetail(row: any) {
   detailVisible.value = true
 }
 
-onMounted(load)
+async function loadMeta() {
+  try {
+    const data = await apiRequest<{ categories: Array<{ key: string; label: string }> }>('/api/logs/meta')
+    if (data.categories?.length) categoryOptions.value = data.categories
+  } catch {
+    // 保持默认「全部」
+  }
+}
+
+onMounted(async () => {
+  await loadMeta()
+  await load()
+})
 </script>
 

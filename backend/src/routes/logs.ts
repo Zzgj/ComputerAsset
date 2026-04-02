@@ -1,7 +1,9 @@
+import type { Prisma } from '@prisma/client'
 import { Router } from 'express'
 
 import { prisma } from '../prisma'
 import { requireAuth, requirePermission } from '../middleware/auth'
+import { LOG_CATEGORY_OPTIONS, operationLogWhereForCategory } from '../utils/logCategories'
 
 function badRequest(message: string, details?: unknown): never {
   throw { statusCode: 400, message, details }
@@ -18,8 +20,13 @@ function toInt(value: unknown): number | null {
 
 export const logsRouter = Router()
 
+logsRouter.get('/meta', requireAuth, requirePermission('logs.read'), async (_req, res) => {
+  res.json({ categories: LOG_CATEGORY_OPTIONS })
+})
+
 logsRouter.get('/', requireAuth, requirePermission('logs.read'), async (req, res) => {
   const qAction = typeof req.query.action === 'string' ? req.query.action : undefined
+  const category = typeof req.query.category === 'string' ? req.query.category : undefined
   const startDate = typeof req.query.startDate === 'string' ? new Date(req.query.startDate) : undefined
   const endDate = typeof req.query.endDate === 'string' ? new Date(req.query.endDate) : undefined
 
@@ -29,16 +36,21 @@ logsRouter.get('/', requireAuth, requirePermission('logs.read'), async (req, res
   const page = Math.max(1, toInt(req.query.page) ?? 1)
   const pageSize = Math.min(100, Math.max(1, toInt(req.query.pageSize) ?? 20))
 
-  const where: any = {}
-  if (qAction) {
-    where.action = { contains: qAction }
-  }
+  const parts: Prisma.OperationLogWhereInput[] = []
+  const catWhere = operationLogWhereForCategory(category)
+  if (catWhere) parts.push(catWhere)
+  if (qAction) parts.push({ action: { contains: qAction } })
   if (startDate || endDate) {
-    where.createdAt = {
-      ...(startDate ? { gte: startDate } : {}),
-      ...(endDate ? { lte: endDate } : {}),
-    }
+    parts.push({
+      createdAt: {
+        ...(startDate ? { gte: startDate } : {}),
+        ...(endDate ? { lte: endDate } : {}),
+      },
+    })
   }
+
+  const where: Prisma.OperationLogWhereInput =
+    parts.length === 0 ? {} : parts.length === 1 ? parts[0]! : { AND: parts }
 
   const total = await prisma.operationLog.count({ where })
   const items = await prisma.operationLog.findMany({
