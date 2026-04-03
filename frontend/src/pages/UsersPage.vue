@@ -1,31 +1,33 @@
 <template>
-  <div style="padding: 20px">
+  <div class="ca-page ca-animate">
     <el-card shadow="never">
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+      <div class="ca-page-header">
         <div>
-          <div style="font-weight: 800">用户管理</div>
-          <div style="color: #666; font-size: 13px; margin-top: 4px">绑定访问角色以继承权限与园区范围。</div>
+          <div class="ca-page-title">用户管理</div>
+          <div class="ca-page-subtitle">管理系统用户，绑定访问角色以继承权限与园区范围</div>
         </div>
         <el-button type="primary" @click="openAdd">新增用户</el-button>
       </div>
     </el-card>
 
-    <el-card shadow="never" style="margin-top: 16px" v-loading="loading">
+    <el-card shadow="never" v-loading="loading">
       <el-table :data="users" size="small" style="width: 100%">
-        <el-table-column prop="username" label="用户名" />
-        <el-table-column prop="realName" label="姓名" />
+        <el-table-column prop="username" label="用户名" min-width="120" />
+        <el-table-column prop="realName" label="姓名" min-width="120" />
         <el-table-column label="角色" min-width="140">
-          <template #default="{ row }">{{ row.accessRole?.name ?? '-' }}</template>
-        </el-table-column>
-        <el-table-column label="启用/需改密" width="160">
           <template #default="{ row }">
-            <div style="display: grid; gap: 4px">
-              <el-tag :type="row.isActive ? 'success' : 'info'">{{ row.isActive ? '启用' : '停用' }}</el-tag>
-              <el-tag :type="row.mustChangePass ? 'warning' : 'success'">{{ row.mustChangePass ? '需改密' : '正常' }}</el-tag>
+            <el-tag effect="light">{{ row.accessRole?.name ?? '-' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="160">
+          <template #default="{ row }">
+            <div style="display: flex; gap: 6px; flex-wrap: wrap">
+              <el-tag :type="row.isActive ? 'success' : 'info'" effect="light">{{ row.isActive ? '启用' : '停用' }}</el-tag>
+              <el-tag :type="row.mustChangePass ? 'warning' : 'success'" effect="light">{{ row.mustChangePass ? '需改密' : '正常' }}</el-tag>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button size="small" text type="warning" @click="resetPassword(row)">重置密码</el-button>

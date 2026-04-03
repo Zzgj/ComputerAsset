@@ -435,29 +435,34 @@ async function exportBackup() {
 
 <style scoped>
 .page-wrap {
-  padding: 20px;
+  padding: 24px;
   display: grid;
-  gap: 16px;
+  gap: 20px;
+  animation: ca-fade-in 0.4s ease-out;
 }
 
 .page-title {
   font-weight: 800;
+  font-size: 20px;
   margin-bottom: 4px;
+  letter-spacing: -0.01em;
+  color: var(--ca-text-primary);
 }
 
 .page-subtitle {
-  color: var(--el-text-color-secondary);
+  color: var(--ca-text-secondary);
   font-size: 13px;
 }
 
 .grid-wrap {
   display: grid;
-  gap: 16px;
+  gap: 20px;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
 }
 
 .section-title {
   font-weight: 700;
+  font-size: 15px;
 }
 
 .block {
@@ -472,19 +477,19 @@ async function exportBackup() {
 }
 
 .helper-text {
-  color: var(--el-text-color-secondary);
+  color: var(--ca-text-secondary);
   font-size: 13px;
 }
 
 .hint-box {
-  margin-top: 14px;
-  padding: 10px 12px;
-  border-radius: 8px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: var(--ca-radius-sm);
   line-height: 1.6;
   font-size: 13px;
-  color: var(--el-text-color-secondary);
-  background: #fafafa;
-  border: 1px solid #f0f0f0;
+  color: var(--ca-text-secondary);
+  background: #f8fafc;
+  border: 1px solid var(--ca-border-light);
 }
 
 .actions {

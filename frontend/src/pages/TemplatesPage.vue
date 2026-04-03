@@ -1,41 +1,41 @@
 <template>
-  <div style="padding: 20px">
+  <div class="ca-page ca-animate">
     <el-card shadow="never">
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+      <div class="ca-page-header">
         <div>
-          <div style="font-weight: 800">设备型号管理</div>
-          <div style="color: #666; font-size: 13px; margin-top: 4px">支持新增/编辑/停用/删除。</div>
+          <div class="ca-page-title">设备型号管理</div>
+          <div class="ca-page-subtitle">管理设备模板，支持新增、编辑、停用和删除操作</div>
         </div>
         <el-button type="primary" @click="openAdd">新增模板</el-button>
       </div>
-    </el-card>
-
-    <el-card shadow="never" style="margin-top: 16px" v-loading="loading">
-      <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px">
+      <div class="filter-bar">
         <el-input
           v-model="searchQ"
-          placeholder="搜索：模板名称、品牌、型号、系统、CPU、内存、存储、备注或设备类型（如 笔记本）"
+          placeholder="搜索：模板名称、品牌、型号、系统、CPU、内存、存储、备注或设备类型"
           style="width: min(100%, 420px)"
           clearable
           @keyup.enter="load"
         />
         <el-button type="primary" @click="load">搜索</el-button>
       </div>
+    </el-card>
+
+    <el-card shadow="never" v-loading="loading">
       <el-table :data="templates" style="width: 100%" size="small">
-        <el-table-column prop="name" label="模板名称" />
-        <el-table-column prop="deviceType" label="设备类型" />
-        <el-table-column prop="brand" label="品牌" />
-        <el-table-column prop="model" label="型号" />
-        <el-table-column prop="cpu" label="CPU" />
-        <el-table-column prop="memory" label="内存" />
-        <el-table-column prop="storage" label="存储" />
+        <el-table-column prop="name" label="模板名称" min-width="140" />
+        <el-table-column prop="deviceType" label="设备类型" width="100" />
+        <el-table-column prop="brand" label="品牌" min-width="100" />
+        <el-table-column prop="model" label="型号" min-width="120" />
+        <el-table-column prop="cpu" label="CPU" min-width="100" />
+        <el-table-column prop="memory" label="内存" width="90" />
+        <el-table-column prop="storage" label="存储" width="90" />
         <el-table-column prop="assetCount" label="关联资产数" width="110" />
-        <el-table-column prop="isActive" label="启用" width="90">
+        <el-table-column prop="isActive" label="启用" width="80">
           <template #default="{ row }">
-            <el-tag :type="row.isActive ? 'success' : 'info'">{{ row.isActive ? '启用' : '停用' }}</el-tag>
+            <el-tag :type="row.isActive ? 'success' : 'info'" effect="light">{{ row.isActive ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160">
+        <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button size="small" text type="danger" @click="remove(row)">删除</el-button>
@@ -68,15 +68,11 @@
         </el-form-item>
         <el-form-item label="内存">
           <el-input v-model="form.memory" />
-          <div style="color: #909399; font-size: 12px; margin-top: 4px">
-            支持多个可选值（如：8GB / 16GB / 32GB），可用「/、,，」分隔
-          </div>
+          <div class="form-hint">支持多个可选值（如：8GB / 16GB / 32GB），可用「/、,，」分隔</div>
         </el-form-item>
         <el-form-item label="存储">
           <el-input v-model="form.storage" />
-          <div style="color: #909399; font-size: 12px; margin-top: 4px">
-            支持多个可选值（如：256GB / 512GB / 1TB），可用「/、,，」分隔
-          </div>
+          <div class="form-hint">支持多个可选值（如：256GB / 512GB / 1TB），可用「/、,，」分隔</div>
         </el-form-item>
         <el-form-item label="排序号">
           <el-input-number v-model="form.sortOrder" :min="0" style="width: 100%" />
@@ -209,7 +205,6 @@ async function remove(row: any) {
     ElMessage.success('删除成功')
     await load()
   } catch (e: any) {
-    // 取消/关闭不提示；真正的失败（比如模板被资产使用）要把后端 message 显示给用户
     const msg = e?.message ?? e?.error?.message
     if (!msg) return
     ElMessage.error(msg)
@@ -219,3 +214,18 @@ async function remove(row: any) {
 onMounted(load)
 </script>
 
+<style scoped>
+.filter-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.form-hint {
+  color: var(--ca-text-muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+</style>

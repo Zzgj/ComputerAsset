@@ -163,31 +163,33 @@ onMounted(async () => {
 
 <style scoped>
 .page-wrap {
-  padding: 20px;
+  padding: 24px;
   display: grid;
-  gap: 16px;
+  gap: 20px;
   max-width: 920px;
+  animation: ca-fade-in 0.4s ease-out;
 }
 
 .intro-card {
-  border-radius: 10px;
+  border-radius: var(--ca-radius);
 }
 
 .page-title {
   font-weight: 800;
-  font-size: 18px;
+  font-size: 20px;
   margin-bottom: 6px;
-  letter-spacing: 0.02em;
+  letter-spacing: -0.01em;
+  color: var(--ca-text-primary);
 }
 
 .page-subtitle {
-  color: var(--el-text-color-secondary);
+  color: var(--ca-text-secondary);
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 1.6;
 }
 
 .main-card {
-  border-radius: 10px;
+  border-radius: var(--ca-radius);
 }
 
 .card-head {
@@ -202,11 +204,11 @@ onMounted(async () => {
 }
 
 .form-section-label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  color: var(--el-text-color-secondary);
+  color: var(--ca-text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   margin: 0 0 12px 2px;
 }
 
@@ -257,18 +259,18 @@ onMounted(async () => {
 
 .hint-box {
   margin-top: 20px;
-  padding: 12px 14px;
-  border-radius: 8px;
+  padding: 14px 16px;
+  border-radius: var(--ca-radius-sm);
   font-size: 13px;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-light);
-  border: 1px solid var(--el-border-color-lighter);
-  line-height: 1.55;
+  color: var(--ca-text-secondary);
+  background: #f8fafc;
+  border: 1px solid var(--ca-border-light);
+  line-height: 1.6;
 }
 
 .hint-title {
   font-weight: 600;
-  color: var(--el-text-color-regular);
+  color: var(--ca-text-primary);
   margin-bottom: 8px;
 }
 

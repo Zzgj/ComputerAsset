@@ -1,25 +1,28 @@
 <template>
-  <div style="padding: 20px">
+  <div class="ca-page ca-animate">
     <el-card shadow="never">
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+      <div class="ca-page-header">
         <div>
-          <div style="font-weight: 800; margin-bottom: 4px">数据备份</div>
-          <div style="color:#666; font-size: 13px">将当前 SQLite 数据库文件复制到本地备份目录。</div>
+          <div class="ca-page-title">数据备份</div>
+          <div class="ca-page-subtitle">将当前 SQLite 数据库文件复制到本地备份目录，可随时下载</div>
         </div>
-        <el-button type="primary" @click="createBackup">立即备份</el-button>
+        <el-button type="primary" @click="createBackup">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          立即备份
+        </el-button>
       </div>
     </el-card>
 
-    <el-card shadow="never" style="margin-top: 16px" v-loading="loading">
+    <el-card shadow="never" v-loading="loading">
       <el-table :data="backups" size="small" style="width: 100%">
-        <el-table-column prop="name" label="文件名" />
-        <el-table-column prop="size" label="大小(KB)" width="120">
-          <template #default="{ row }">{{ Math.round((row.size ?? 0) / 1024) }}</template>
+        <el-table-column prop="name" label="文件名" min-width="240" />
+        <el-table-column prop="size" label="大小" width="120">
+          <template #default="{ row }">{{ Math.round((row.size ?? 0) / 1024) }} KB</template>
         </el-table-column>
-        <el-table-column label="时间" width="200">
+        <el-table-column label="备份时间" width="200">
           <template #default="{ row }">{{ new Date(row.mtimeMs).toLocaleString() }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="140">
+        <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" text @click="download(row.name)">下载</el-button>
           </template>
@@ -82,4 +85,3 @@ async function download(name: string) {
 
 onMounted(load)
 </script>
-

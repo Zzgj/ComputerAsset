@@ -1,8 +1,8 @@
 <template>
-  <div style="padding: 20px">
-    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom: 12px; flex-wrap: wrap">
+  <div class="detail-page ca-animate">
+    <div class="detail-top-bar">
       <el-button type="primary" @click="backToAssetList">返回资产列表</el-button>
-      <div style="color: var(--el-text-color-secondary); font-size: 13px">
+      <div class="detail-id-hint">
         资产ID：{{ assetId }}
       </div>
     </div>
@@ -674,6 +674,24 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.detail-page {
+  padding: 24px;
+}
+
+.detail-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.detail-id-hint {
+  color: var(--ca-text-muted);
+  font-size: 13px;
+}
+
 .timeline-title {
   font-weight: 700;
 }

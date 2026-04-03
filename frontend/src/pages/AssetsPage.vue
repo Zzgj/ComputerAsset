@@ -1,39 +1,44 @@
 <template>
-  <div style="padding: 20px">
+  <div class="ca-page ca-animate">
     <el-card shadow="never">
-      <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
+      <div class="ca-page-header">
+        <div>
+          <div class="ca-page-title">资产列表</div>
+          <div class="ca-page-subtitle">查看和管理所有电脑资产，支持多维度搜索和筛选</div>
+        </div>
+        <el-button v-if="canStockIn" type="primary" @click="router.push('/stock-in')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          新增入库
+        </el-button>
+      </div>
+      <div class="filter-bar">
         <el-input
           v-model="query.q"
           placeholder="搜索：编号/品牌/型号/序列号/使用人"
           style="width: 320px"
           @keyup.enter="search"
         />
-        <el-select v-model="query.status" placeholder="状态" style="width: 160px" clearable>
+        <el-select v-model="query.status" placeholder="状态" style="width: 140px" clearable>
           <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
         <el-select v-model="query.campusId" placeholder="园区" style="width: 130px" clearable>
           <el-option v-for="c in campuses" :key="c.id" :label="c.name" :value="c.id" />
         </el-select>
-        <el-select v-model="query.departmentId" placeholder="部门" style="width: 240px" filterable clearable>
+        <el-select v-model="query.departmentId" placeholder="部门" style="width: 220px" filterable clearable>
           <el-option v-for="d in departments" :key="d.id" :label="d.displayPath ?? d.name" :value="d.id" />
         </el-select>
         <el-button type="primary" @click="loadAssets">搜索</el-button>
-        <el-button v-if="canStockIn" @click="router.push('/stock-in')">新增入库</el-button>
       </div>
     </el-card>
 
-    <el-card shadow="never" style="margin-top: 16px">
+    <el-card shadow="never">
       <el-table :data="assets" v-loading="loading" style="width: 100%" border class="assets-table">
         <el-table-column prop="assetCode" label="电脑编号" min-width="140" />
         <el-table-column label="品牌" min-width="120">
-          <template #default="{ row }">
-            {{ formatText(row.brand) }}
-          </template>
+          <template #default="{ row }">{{ formatText(row.brand) }}</template>
         </el-table-column>
         <el-table-column label="型号" min-width="150">
-          <template #default="{ row }">
-            {{ formatText(row.model) }}
-          </template>
+          <template #default="{ row }">{{ formatText(row.model) }}</template>
         </el-table-column>
         <el-table-column label="设备模板" min-width="140">
           <template #default="{ row }">
@@ -42,13 +47,13 @@
           </template>
         </el-table-column>
         <el-table-column label="序列号" min-width="160">
-          <template #default="{ row }">
-            {{ formatSerial(row.serialNumber) }}
-          </template>
+          <template #default="{ row }">{{ formatSerial(row.serialNumber) }}</template>
         </el-table-column>
         <el-table-column label="状态" min-width="100">
           <template #default="{ row }">
-            <span>{{ statusOptions.find((s) => s.value === row.status)?.label ?? row.status }}</span>
+            <el-tag :type="statusTagType(row.status)" effect="light">
+              {{ statusOptions.find((s) => s.value === row.status)?.label ?? row.status }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="使用人" min-width="140">
@@ -66,11 +71,9 @@
           <template #default="{ row }">{{ formatText(row.department?.campus?.name) }}</template>
         </el-table-column>
         <el-table-column label="部门" min-width="200">
-          <template #default="{ row }">
-            {{ formatText(row.department?.deptPathOnly ?? row.department?.name) }}
-          </template>
+          <template #default="{ row }">{{ formatText(row.department?.deptPathOnly ?? row.department?.name) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="120">
+        <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" text @click="goDetail(row.id)">查看</el-button>
           </template>
@@ -107,7 +110,6 @@ const canStockIn = computed(() => authStore.can('assets.write'))
 const loading = ref(false)
 const assets = ref<any[]>([])
 const total = ref(0)
-/** 名下 ≥2 台「持机状态」资产的使用人（与后端 groupBy 一致，按库内原文字符串匹配） */
 const multiHolderUserNames = ref<Set<string>>(new Set())
 const campuses = ref<Array<{ id: number; name: string }>>([])
 const departments = ref<Array<{ id: number; name: string; displayPath?: string }>>([])
@@ -120,6 +122,18 @@ const statusOptions = [
   { label: '维修中', value: 'in_repair' },
   { label: '已报废', value: 'retired' },
 ]
+
+function statusTagType(status: string): '' | 'success' | 'warning' | 'danger' | 'info' {
+  const map: Record<string, '' | 'success' | 'warning' | 'danger' | 'info'> = {
+    in_stock: '',
+    waiting_pickup: 'warning',
+    in_use: 'success',
+    borrowed: 'warning',
+    in_repair: 'danger',
+    retired: 'info',
+  }
+  return map[status] ?? 'info'
+}
 
 const query = reactive({
   q: '',
@@ -138,7 +152,6 @@ function parseOptionalInt(v: LocationQuery[string] | undefined): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-/** 从 URL 恢复筛选（从详情返回时可保留状态） */
 function applyListQueryFromRoute(q: LocationQuery) {
   const str = (key: string) => {
     const v = q[key]
@@ -156,7 +169,6 @@ function applyListQueryFromRoute(q: LocationQuery) {
     : 20
 }
 
-/** 将当前列表条件写入 URL，便于详情页带回 */
 function buildListQueryForRoute(): Record<string, string> {
   const o: Record<string, string> = {}
   const qv = query.q.trim()
@@ -252,7 +264,14 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-/* 保留列宽拖拽能力（需要 border），但去掉数据区网格线视觉 */
+.filter-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
 .assets-table :deep(.el-table__body td) {
   border-right-color: transparent;
   border-bottom-color: transparent;
@@ -262,4 +281,3 @@ onMounted(async () => {
   border-left-color: transparent;
 }
 </style>
-

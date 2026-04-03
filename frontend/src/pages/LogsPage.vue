@@ -1,14 +1,16 @@
 <template>
-  <div style="padding: 20px">
+  <div class="ca-page ca-animate">
     <el-card shadow="never">
-      <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
-        <el-select v-model="query.category" placeholder="日志类型" style="width: 220px" @change="onCategoryChange">
+      <div class="ca-page-title">操作日志</div>
+      <div class="ca-page-subtitle">查看系统所有操作记录，支持按类型和日期范围筛选</div>
+      <div class="filter-bar">
+        <el-select v-model="query.category" placeholder="日志类型" style="width: 200px" @change="onCategoryChange">
           <el-option v-for="c in categoryOptions" :key="c.key" :label="c.label" :value="c.key" />
         </el-select>
         <el-input
           v-model="query.action"
           placeholder="在当前类型内按关键字筛选"
-          style="width: 260px"
+          style="width: 240px"
           clearable
         />
         <el-date-picker v-model="query.startDate" type="date" placeholder="开始日期" value-format="YYYY-MM-DD" />
@@ -17,39 +19,29 @@
       </div>
     </el-card>
 
-    <el-card shadow="never" style="margin-top: 16px" v-loading="loading">
+    <el-card shadow="never" v-loading="loading">
       <el-table :data="items" size="small" style="width: 100%">
-        <el-table-column prop="createdAt" label="时间">
+        <el-table-column prop="createdAt" label="时间" width="180">
           <template #default="{ row }">{{ new Date(row.createdAt).toLocaleString() }}</template>
         </el-table-column>
-        <el-table-column label="操作类型">
+        <el-table-column label="操作类型" width="140">
           <template #default="{ row }">{{ actionLabel(row.action) }}</template>
         </el-table-column>
-        <el-table-column label="操作人">
+        <el-table-column label="操作人" width="120">
           <template #default="{ row }">{{ row.operator?.realName ?? row.operator?.username }}</template>
         </el-table-column>
-        <el-table-column prop="targetType" label="对象类型" width="120" />
+        <el-table-column prop="targetType" label="对象类型" width="110" />
         <el-table-column prop="targetId" label="对象ID" width="80" />
-        <el-table-column prop="ipAddress" label="IP" width="140" />
+        <el-table-column prop="ipAddress" label="IP" width="130" />
         <el-table-column label="详情" min-width="320">
           <template #default="{ row }">
-            <div style="display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; flex-wrap: nowrap">
-              <span
-                style="
-                  color: #606266;
-                  flex: 1;
-                  min-width: 0;
-                  overflow: hidden;
-                  text-overflow: ellipsis;
-                  white-space: nowrap;
-                "
-              >{{ detailSummary(row.detail) }}</span>
+            <div class="detail-cell">
+              <span class="detail-summary">{{ detailSummary(row.detail) }}</span>
               <el-button
                 v-if="row.detail && typeof row.detail === 'object'"
                 type="primary"
                 text
                 size="small"
-                style="flex: none"
                 @click="openDetail(row)"
               >
                 查看详情
@@ -72,20 +64,7 @@
     </el-card>
 
     <el-dialog v-model="detailVisible" title="操作详情" width="720px">
-      <pre
-        style="
-          margin: 0;
-          padding: 12px;
-          max-height: 420px;
-          overflow: auto;
-          background: #f7f8fa;
-          border: 1px solid #ebeef5;
-          border-radius: 8px;
-          line-height: 1.5;
-          font-size: 12px;
-          color: #2c3e50;
-        "
-      >{{ selectedDetailText }}</pre>
+      <pre class="detail-pre">{{ selectedDetailText }}</pre>
       <template #footer>
         <el-button type="primary" @click="detailVisible = false">关闭</el-button>
       </template>
@@ -174,7 +153,7 @@ async function loadMeta() {
     const data = await apiRequest<{ categories: Array<{ key: string; label: string }> }>('/api/logs/meta')
     if (data.categories?.length) categoryOptions.value = data.categories
   } catch {
-    // 保持默认「全部」
+    // keep default
   }
 }
 
@@ -184,3 +163,42 @@ onMounted(async () => {
 })
 </script>
 
+<style scoped>
+.filter-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.detail-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.detail-summary {
+  color: var(--ca-text-secondary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-pre {
+  margin: 0;
+  padding: 16px;
+  max-height: 420px;
+  overflow: auto;
+  background: #f8fafc;
+  border: 1px solid var(--ca-border-light);
+  border-radius: var(--ca-radius-sm);
+  line-height: 1.6;
+  font-size: 12px;
+  color: var(--ca-text-primary);
+}
+</style>

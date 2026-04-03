@@ -1,25 +1,27 @@
 <template>
-  <div style="padding: 20px">
+  <div class="ca-page ca-animate">
     <el-card shadow="never" v-loading="loading">
-      <div style="font-weight: 800; margin-bottom: 12px">系统配置</div>
+      <div class="ca-page-title">系统配置</div>
+      <div class="ca-page-subtitle" style="margin-bottom: 20px">管理全局业务规则与提醒策略</div>
 
-      <el-form :model="form" label-width="180px">
+      <el-form :model="form" label-width="180px" class="config-form">
         <el-form-item label="一人一机规则">
           <el-switch v-model="form.one_person_one_device" />
+          <span class="form-hint">开启后出库/借出时将检查是否冲突</span>
         </el-form-item>
         <el-form-item label="默认借用天数">
-          <el-input-number v-model="form.default_borrow_days" :min="0" style="width: 220px" />
+          <el-input-number v-model="form.default_borrow_days" :min="0" style="width: 200px" />
         </el-form-item>
         <el-form-item label="待领用超时天数">
-          <el-input-number v-model="form.waiting_pickup_alert_days" :min="0" style="width: 220px" />
+          <el-input-number v-model="form.waiting_pickup_alert_days" :min="0" style="width: 200px" />
         </el-form-item>
         <el-form-item label="借用到期提前提醒天数">
-          <el-input-number v-model="form.borrow_advance_alert_days" :min="0" style="width: 220px" />
+          <el-input-number v-model="form.borrow_advance_alert_days" :min="0" style="width: 200px" />
         </el-form-item>
       </el-form>
 
-      <div style="margin-top: 16px; display: flex; gap: 12px">
-        <el-button type="primary" @click="save">保存</el-button>
+      <div style="margin-top: 24px; display: flex; gap: 12px">
+        <el-button type="primary" @click="save">保存配置</el-button>
         <el-button @click="load">刷新</el-button>
       </div>
     </el-card>
@@ -70,3 +72,14 @@ async function save() {
 onMounted(load)
 </script>
 
+<style scoped>
+.config-form {
+  max-width: 560px;
+}
+
+.form-hint {
+  color: var(--ca-text-muted);
+  font-size: 12px;
+  margin-left: 12px;
+}
+</style>

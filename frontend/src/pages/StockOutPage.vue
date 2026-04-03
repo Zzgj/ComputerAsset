@@ -497,31 +497,33 @@ onMounted(async () => {
 
 <style scoped>
 .page-wrap {
-  padding: 20px;
+  padding: 24px;
   display: grid;
-  gap: 16px;
+  gap: 20px;
   max-width: 960px;
+  animation: ca-fade-in 0.4s ease-out;
 }
 
 .intro-card {
-  border-radius: 10px;
+  border-radius: var(--ca-radius);
 }
 
 .page-title {
   font-weight: 800;
-  font-size: 18px;
+  font-size: 20px;
   margin-bottom: 6px;
-  letter-spacing: 0.02em;
+  letter-spacing: -0.01em;
+  color: var(--ca-text-primary);
 }
 
 .page-subtitle {
-  color: var(--el-text-color-secondary);
+  color: var(--ca-text-secondary);
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 1.6;
 }
 
 .main-card {
-  border-radius: 10px;
+  border-radius: var(--ca-radius);
 }
 
 .policy-alert {
@@ -549,12 +551,12 @@ onMounted(async () => {
 .tab-desc {
   margin: 0 0 18px;
   font-size: 13px;
-  color: var(--el-text-color-secondary);
-  line-height: 1.55;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--el-fill-color-light);
-  border: 1px solid var(--el-border-color-lighter);
+  color: var(--ca-text-secondary);
+  line-height: 1.6;
+  padding: 10px 14px;
+  border-radius: var(--ca-radius-sm);
+  background: #f8fafc;
+  border: 1px solid var(--ca-border-light);
 }
 
 .op-form :deep(.el-form-item) {

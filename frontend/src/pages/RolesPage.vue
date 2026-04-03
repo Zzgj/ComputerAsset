@@ -1,10 +1,10 @@
 <template>
-  <div style="padding: 20px">
+  <div class="ca-page ca-animate">
     <el-card shadow="never">
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+      <div class="ca-page-header">
         <div>
-          <div style="font-weight: 800">角色与权限</div>
-          <div style="color: #666; font-size: 13px; margin-top: 4px">
+          <div class="ca-page-title">角色与权限</div>
+          <div class="ca-page-subtitle">
             配置权限点与园区范围；用户通过「用户管理」绑定角色。关闭「全部园区」时需勾选允许访问的园区。
           </div>
         </div>
@@ -12,15 +12,15 @@
       </div>
     </el-card>
 
-    <el-card shadow="never" style="margin-top: 16px" v-loading="loading">
+    <el-card shadow="never" v-loading="loading">
       <el-table :data="items" size="small" style="width: 100%">
         <el-table-column prop="name" label="名称" min-width="120" />
         <el-table-column prop="slug" label="标识" width="140" />
         <el-table-column label="类型" width="100">
           <template #default="{ row }">
-            <el-tag v-if="row.bypassAll" type="danger" size="small">超管</el-tag>
-            <el-tag v-else-if="row.isSystem" type="info" size="small">内置</el-tag>
-            <el-tag v-else type="success" size="small">自定义</el-tag>
+            <el-tag v-if="row.bypassAll" type="danger" size="small" effect="light">超管</el-tag>
+            <el-tag v-else-if="row.isSystem" type="info" size="small" effect="light">内置</el-tag>
+            <el-tag v-else type="success" size="small" effect="light">自定义</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="园区范围" width="110">
@@ -28,7 +28,7 @@
         </el-table-column>
         <el-table-column prop="permissionCount" label="权限数" width="80" />
         <el-table-column prop="userCount" label="用户数" width="80" />
-        <el-table-column label="操作" width="160">
+        <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text type="primary" :disabled="row.slug === 'super_admin'" @click="openEdit(row)">
               编辑
@@ -52,7 +52,7 @@
         </el-form-item>
         <el-form-item label="全部园区">
           <el-switch v-model="form.campusesAll" />
-          <span style="color: #909399; font-size: 12px; margin-left: 8px">关闭后需选择可访问的园区</span>
+          <span class="form-hint" style="margin-left: 8px">关闭后需选择可访问的园区</span>
         </el-form-item>
         <el-form-item v-if="!form.campusesAll" label="园区">
           <el-select v-model="form.campusIds" multiple filterable style="width: 100%" placeholder="选择园区">
@@ -60,7 +60,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="权限">
-          <div style="max-height: 260px; overflow: auto; border: 1px solid #ebeef5; border-radius: 6px; padding: 10px">
+          <div class="perm-box">
             <el-checkbox-group v-model="form.permissionKeys">
               <div v-for="p in permMeta" :key="p.key" style="margin-bottom: 6px">
                 <el-checkbox :label="p.key">{{ p.label }}</el-checkbox>
@@ -223,3 +223,18 @@ onMounted(async () => {
   await load()
 })
 </script>
+
+<style scoped>
+.form-hint {
+  color: var(--ca-text-muted);
+  font-size: 12px;
+}
+
+.perm-box {
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--ca-border-light);
+  border-radius: var(--ca-radius-sm);
+  padding: 12px;
+}
+</style>

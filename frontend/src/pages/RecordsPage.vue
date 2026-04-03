@@ -1,33 +1,32 @@
 <template>
-  <div style="padding: 20px">
+  <div class="ca-page ca-animate">
     <el-card shadow="never">
-      <div style="display: grid; gap: 12px">
-        <div style="font-weight: 800">出入库记录</div>
-        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center">
-          <el-input v-model="query.assetCode" clearable style="width: 220px" placeholder="电脑编号（支持模糊）" />
-          <el-select v-model="query.action" clearable style="width: 180px" placeholder="操作类型">
-            <el-option label="入库" value="stock_in" />
-            <el-option label="待领用" value="assign" />
-            <el-option label="取消分配" value="cancel_assign" />
-            <el-option label="领用" value="pick_up" />
-            <el-option label="出库/领用" value="check_out" />
-            <el-option label="借出" value="lend" />
-            <el-option label="归还" value="return" />
-            <el-option label="调拨" value="transfer" />
-            <el-option label="送修" value="repair" />
-            <el-option label="维修完成" value="repair_done" />
-            <el-option label="报废" value="retire" />
-          </el-select>
-          <el-input v-model="query.userName" clearable style="width: 180px" placeholder="使用人（可选）" />
-          <el-date-picker v-model="query.startDate" type="date" placeholder="开始日期" value-format="YYYY-MM-DD" />
-          <el-date-picker v-model="query.endDate" type="date" placeholder="结束日期" value-format="YYYY-MM-DD" />
-          <el-button type="primary" @click="search">搜索</el-button>
-          <el-button @click="reset">重置</el-button>
-        </div>
+      <div class="ca-page-title">出入库记录</div>
+      <div class="ca-page-subtitle">查看所有出入库流转记录，支持按编号、操作类型、使用人和日期范围筛选</div>
+      <div class="filter-bar">
+        <el-input v-model="query.assetCode" clearable style="width: 200px" placeholder="电脑编号（模糊）" />
+        <el-select v-model="query.action" clearable style="width: 160px" placeholder="操作类型">
+          <el-option label="入库" value="stock_in" />
+          <el-option label="待领用" value="assign" />
+          <el-option label="取消分配" value="cancel_assign" />
+          <el-option label="领用" value="pick_up" />
+          <el-option label="出库/领用" value="check_out" />
+          <el-option label="借出" value="lend" />
+          <el-option label="归还" value="return" />
+          <el-option label="调拨" value="transfer" />
+          <el-option label="送修" value="repair" />
+          <el-option label="维修完成" value="repair_done" />
+          <el-option label="报废" value="retire" />
+        </el-select>
+        <el-input v-model="query.userName" clearable style="width: 160px" placeholder="使用人（可选）" />
+        <el-date-picker v-model="query.startDate" type="date" placeholder="开始日期" value-format="YYYY-MM-DD" />
+        <el-date-picker v-model="query.endDate" type="date" placeholder="结束日期" value-format="YYYY-MM-DD" />
+        <el-button type="primary" @click="search">搜索</el-button>
+        <el-button @click="reset">重置</el-button>
       </div>
     </el-card>
 
-    <el-card shadow="never" style="margin-top: 16px" v-loading="loading">
+    <el-card shadow="never" v-loading="loading">
       <el-table :data="records" style="width: 100%" size="small">
         <el-table-column label="操作类型">
           <template #default="{ row }">{{ actionLabel(row.action) }}</template>
@@ -92,12 +91,10 @@ async function load() {
     params.set('page', String(query.page))
     params.set('pageSize', String(query.pageSize))
     try {
-      // 新版：分页 + 搜索接口（默认无筛选时返回全部数据的分页结果）
       const data = await apiRequest<{ items: any[]; total: number }>('/api/records?' + params.toString())
       records.value = data.items ?? []
       total.value = data.total ?? 0
     } catch {
-      // 兜底：后端尚未重启到新路由时，至少展示最近记录，避免首屏空白
       const fallback = await apiRequest<{ records: any[] }>('/api/dashboard/recent-records')
       records.value = fallback.records ?? []
       total.value = records.value.length
@@ -138,3 +135,12 @@ function onSizeChange(s: number) {
 onMounted(load)
 </script>
 
+<style scoped>
+.filter-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 16px;
+}
+</style>

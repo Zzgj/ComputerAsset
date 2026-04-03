@@ -1,18 +1,18 @@
 <template>
-  <div style="padding: 20px">
+  <div class="ca-page ca-animate">
     <el-card shadow="never">
-      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap">
+      <div class="ca-page-header">
         <div>
-          <div style="font-weight: 800">部门管理</div>
-          <div style="color: #666; font-size: 13px; margin-top: 6px; max-width: 640px; line-height: 1.5">
-            先选园区，仅展示该园区下的部门树。路径示例：<span style="color: #303133">泰鼎 - 综合部门 - 信息中心</span>。新增默认落在当前园区；变更上级可跨园区移动（随系统规则同步园区）。
+          <div class="ca-page-title">部门管理</div>
+          <div class="ca-page-subtitle">
+            先选园区，仅展示该园区下的部门树。路径示例：<strong>泰鼎 - 综合部门 - 信息中心</strong>。新增默认落在当前园区；变更上级可跨园区移动。
           </div>
         </div>
         <el-button type="primary" :disabled="!activeCampusId" @click="openAdd">在当前园区新增</el-button>
       </div>
     </el-card>
 
-    <el-card shadow="never" style="margin-top: 16px">
+    <el-card shadow="never">
       <div style="margin-bottom: 16px">
         <el-radio-group v-model="activeCampusId" size="large">
           <el-radio-button v-for="c in displayCampuses" :key="c.id" :value="c.id">
@@ -40,12 +40,12 @@
             <el-table-column prop="name" label="部门" min-width="160" />
             <el-table-column label="完整路径" min-width="320">
               <template #default="{ row }">
-                <span style="color: #606266">{{ row.displayPath }}</span>
+                <span style="color: var(--ca-text-secondary)">{{ row.displayPath }}</span>
               </template>
             </el-table-column>
             <el-table-column label="启用" width="88" align="center">
               <template #default="{ row }">
-                <el-tag :type="row.isActive ? 'success' : 'info'" size="small">
+                <el-tag :type="row.isActive ? 'success' : 'info'" size="small" effect="light">
                   {{ row.isActive ? '启用' : '停用' }}
                 </el-tag>
               </template>
@@ -142,7 +142,6 @@ const form = reactive<{
   isActive: true,
 })
 
-/** 页面只展示前 3 个园区标签（按排序） */
 const displayCampuses = computed(() =>
   [...campuses.value].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id).slice(0, 3),
 )
