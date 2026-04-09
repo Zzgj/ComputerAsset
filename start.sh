@@ -211,7 +211,7 @@ if [ -d "$BACKEND_DIR/node_modules" ]; then
   ok "node_modules 已存在"
 else
   info "正在安装后端依赖..."
-  (cd "$BACKEND_DIR" && pnpm install --frozen-lockfile 2>&1) | while IFS= read -r line; do
+  (cd "$BACKEND_DIR" && pnpm install 2>&1) | while IFS= read -r line; do
     echo -e "    ${DIM}  $line${NC}"
   done
   if [ -d "$BACKEND_DIR/node_modules" ]; then
@@ -232,7 +232,7 @@ if [ -d "$FRONTEND_DIR/node_modules" ]; then
   ok "node_modules 已存在"
 else
   info "正在安装前端依赖..."
-  (cd "$FRONTEND_DIR" && pnpm install --frozen-lockfile 2>&1) | while IFS= read -r line; do
+  (cd "$FRONTEND_DIR" && pnpm install 2>&1) | while IFS= read -r line; do
     echo -e "    ${DIM}  $line${NC}"
   done
   if [ -d "$FRONTEND_DIR/node_modules" ]; then

@@ -3,12 +3,11 @@ chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
 :: ============================================================
-::  ComputerAsset 一键启动脚本 (Windows)
-::  适用于 Windows 10 / 11 / Server
+::  ComputerAsset - One-Click Startup Script (Windows)
 :: ============================================================
 
 set "ROOT_DIR=%~dp0"
-set "ROOT_DIR=%ROOT_DIR:~0,-1%"
+if "%ROOT_DIR:~-1%"=="\" set "ROOT_DIR=%ROOT_DIR:~0,-1%"
 set "BACKEND_DIR=%ROOT_DIR%\backend"
 set "FRONTEND_DIR=%ROOT_DIR%\frontend"
 set "BACKEND_PORT=3000"
@@ -18,281 +17,289 @@ set "STEP=0"
 
 cls
 echo.
-echo   ╔═══════════════════════════════════════════════╗
-echo   ║                                               ║
-echo   ║        ComputerAsset  启动程序                ║
-echo   ║        电脑资产管理系统 v1.1.5                ║
-echo   ║                                               ║
-echo   ╚═══════════════════════════════════════════════╝
+echo   +===================================================+
+echo   ^|                                                   ^|
+echo   ^|        ComputerAsset Launcher                     ^|
+echo   ^|        Computer Asset Management System v1.1.5    ^|
+echo   ^|                                                   ^|
+echo   +===================================================+
 echo.
-echo     项目目录: %ROOT_DIR%
-echo     启动时间: %date% %time:~0,8%
+echo     Project : %ROOT_DIR%
+echo     Time    : %date% %time:~0,8%
 echo.
 
-:: ═══════════════════════════════════════════════════════════
-::  阶段 1：环境检查
-:: ═══════════════════════════════════════════════════════════
-echo ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo   阶段 1/4  环境检查
-echo ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+:: =============================================================
+::  Phase 1: Environment Check
+:: =============================================================
+echo -----------------------------------------------------------
+echo   Phase 1/4  Environment Check
+echo -----------------------------------------------------------
 
-:: 1. Node.js
+:: -- 1. Node.js --
 set /a STEP+=1
 echo.
-echo [%STEP%] 检查 Node.js 运行时
+echo [%STEP%] Checking Node.js ...
 where node >nul 2>&1
 if %errorlevel% neq 0 (
-    echo     X 未安装 Node.js — 请先安装 https://nodejs.org/
+    echo     [FAIL] Node.js not installed. Please install from https://nodejs.org/
     set /a FAIL_COUNT+=1
     goto :check_pnpm
 )
 for /f "tokens=*" %%v in ('node -v') do set "NODE_VER=%%v"
-echo     √ Node.js %NODE_VER%
+echo     [OK] Node.js %NODE_VER%
 
 :check_pnpm
-:: 2. pnpm
+:: -- 2. pnpm --
 set /a STEP+=1
 echo.
-echo [%STEP%] 检查 pnpm 包管理器
+echo [%STEP%] Checking pnpm ...
 where pnpm >nul 2>&1
 if %errorlevel% neq 0 (
-    echo     ! 未安装 pnpm，尝试 corepack 启用...
+    echo     [WARN] pnpm not found, trying corepack ...
     corepack enable >nul 2>&1
     where pnpm >nul 2>&1
     if !errorlevel! neq 0 (
-        echo     X 安装 pnpm 失败，请运行: npm install -g pnpm
+        echo     [FAIL] Cannot install pnpm. Run: npm install -g pnpm
         set /a FAIL_COUNT+=1
     ) else (
-        for /f "tokens=*" %%v in ('pnpm -v') do echo     √ 已安装 pnpm v%%v
+        for /f "tokens=*" %%v in ('pnpm -v') do echo     [OK] pnpm v%%v (via corepack)
     )
 ) else (
-    for /f "tokens=*" %%v in ('pnpm -v') do echo     √ pnpm v%%v
+    for /f "tokens=*" %%v in ('pnpm -v') do echo     [OK] pnpm v%%v
 )
 
-:: 3. 项目目录
+:: -- 3. Directories --
 set /a STEP+=1
 echo.
-echo [%STEP%] 检查项目目录结构
+echo [%STEP%] Checking project directories ...
 if exist "%BACKEND_DIR%" (
-    echo     √ backend/ 存在
+    echo     [OK] backend/
 ) else (
-    echo     X 缺少 backend/ 目录
+    echo     [FAIL] Missing backend/
     set /a FAIL_COUNT+=1
 )
 if exist "%FRONTEND_DIR%" (
-    echo     √ frontend/ 存在
+    echo     [OK] frontend/
 ) else (
-    echo     X 缺少 frontend/ 目录
+    echo     [FAIL] Missing frontend/
     set /a FAIL_COUNT+=1
 )
 
-:: 4. 网络
+:: -- 4. Network --
 set /a STEP+=1
 echo.
-echo [%STEP%] 检查网络连通性
+echo [%STEP%] Checking network ...
 ping -n 1 -w 3000 8.8.8.8 >nul 2>&1
 if %errorlevel% equ 0 (
-    echo     √ 网络连通
+    echo     [OK] Network is reachable
 ) else (
-    echo     ! 网络不通 — 若依赖已安装则不影响启动
+    echo     [WARN] Network unreachable - OK if dependencies are already installed
 )
 
-:: ═══════════════════════════════════════════════════════════
-::  阶段 2：依赖与配置
-:: ═══════════════════════════════════════════════════════════
+:: =============================================================
+::  Phase 2: Dependencies ^& Configuration
+:: =============================================================
 echo.
-echo ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo   阶段 2/4  依赖与配置
-echo ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo -----------------------------------------------------------
+echo   Phase 2/4  Dependencies ^& Configuration
+echo -----------------------------------------------------------
 
-:: 5. .env
+:: -- 5. .env --
 set /a STEP+=1
 echo.
-echo [%STEP%] 检查后端环境变量配置
+echo [%STEP%] Checking backend .env ...
 if exist "%BACKEND_DIR%\.env" (
-    echo     √ .env 文件已存在
+    echo     [OK] .env exists
 ) else (
     if exist "%BACKEND_DIR%\.env.example" (
         copy "%BACKEND_DIR%\.env.example" "%BACKEND_DIR%\.env" >nul
-        echo     √ 已从 .env.example 创建 .env
-        echo     ! 生产环境请务必修改 JWT_SECRET！
+        echo     [OK] Created .env from .env.example
+        echo     [WARN] Change JWT_SECRET before production use!
     ) else (
-        echo     X 找不到 .env.example
+        echo     [FAIL] .env.example not found
         set /a FAIL_COUNT+=1
     )
 )
 
-:: 读取 PORT
+:: Read PORT from .env
 for /f "tokens=1,* delims==" %%a in ('findstr /b "PORT=" "%BACKEND_DIR%\.env" 2^>nul') do (
     set "BACKEND_PORT=%%b"
 )
+:: Trim spaces/quotes
+for /f "tokens=* delims= " %%x in ("!BACKEND_PORT!") do set "BACKEND_PORT=%%~x"
 
-:: 6. 后端依赖
+:: -- 6. Backend deps --
 set /a STEP+=1
 echo.
-echo [%STEP%] 检查后端依赖
+echo [%STEP%] Checking backend dependencies ...
 if exist "%BACKEND_DIR%\node_modules" (
-    echo     √ node_modules 已存在
+    echo     [OK] node_modules exists
 ) else (
-    echo     ● 正在安装后端依赖...
+    echo     [..] Installing backend dependencies ...
     cd /d "%BACKEND_DIR%"
     call pnpm install --frozen-lockfile
     if exist "%BACKEND_DIR%\node_modules" (
-        echo     √ 后端依赖安装完成
+        echo     [OK] Backend dependencies installed
     ) else (
-        echo     X 后端依赖安装失败
+        echo     [FAIL] Backend dependency installation failed
         set /a FAIL_COUNT+=1
     )
 )
-echo     ● 允许原生模块构建...
+echo     [..] Building native modules (esbuild, prisma, better-sqlite3) ...
 cd /d "%BACKEND_DIR%"
 call pnpm approve-builds --all >nul 2>&1
-echo     √ 原生模块构建完成
+echo     [OK] Native modules ready
 
-:: 7. 前端依赖
+:: -- 7. Frontend deps --
 set /a STEP+=1
 echo.
-echo [%STEP%] 检查前端依赖
+echo [%STEP%] Checking frontend dependencies ...
 if exist "%FRONTEND_DIR%\node_modules" (
-    echo     √ node_modules 已存在
+    echo     [OK] node_modules exists
 ) else (
-    echo     ● 正在安装前端依赖...
+    echo     [..] Installing frontend dependencies ...
     cd /d "%FRONTEND_DIR%"
     call pnpm install --frozen-lockfile
     if exist "%FRONTEND_DIR%\node_modules" (
-        echo     √ 前端依赖安装完成
+        echo     [OK] Frontend dependencies installed
     ) else (
-        echo     X 前端依赖安装失败
+        echo     [FAIL] Frontend dependency installation failed
         set /a FAIL_COUNT+=1
     )
 )
 cd /d "%FRONTEND_DIR%"
 call pnpm approve-builds --all >nul 2>&1
 
-:: 8. Prisma 客户端生成
+:: -- 8. Prisma generate --
 set /a STEP+=1
 echo.
-echo [%STEP%] 生成 Prisma 客户端
+echo [%STEP%] Generating Prisma client ...
 cd /d "%BACKEND_DIR%"
-call pnpm exec prisma generate >nul 2>&1
-echo     √ Prisma 客户端已生成
+call pnpm exec prisma generate 2>&1 | findstr /i "error" >nul 2>&1
+if %errorlevel% equ 0 (
+    echo     [WARN] Prisma generate may have errors, trying again ...
+    call pnpm exec prisma generate
+) else (
+    echo     [OK] Prisma client generated
+)
 
-:: 9. 数据库迁移
+:: -- 9. DB migration --
 set /a STEP+=1
 echo.
-echo [%STEP%] 执行数据库迁移
+echo [%STEP%] Running database migration ...
 cd /d "%BACKEND_DIR%"
 call pnpm exec prisma migrate deploy >nul 2>&1
-echo     √ 数据库迁移完成
+echo     [OK] Database migration done
 
-:: ═══════════════════════════════════════════════════════════
-::  阶段 3：端口检查
-:: ═══════════════════════════════════════════════════════════
+:: =============================================================
+::  Phase 3: Port Check
+:: =============================================================
 echo.
-echo ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo   阶段 3/4  端口检查
-echo ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo -----------------------------------------------------------
+echo   Phase 3/4  Port Check
+echo -----------------------------------------------------------
 
 set /a STEP+=1
 echo.
-echo [%STEP%] 检查后端端口 :%BACKEND_PORT%
+echo [%STEP%] Checking backend port :%BACKEND_PORT% ...
 netstat -ano 2>nul | findstr ":%BACKEND_PORT% " | findstr "LISTENING" >nul 2>&1
 if %errorlevel% equ 0 (
-    echo     ! 端口 %BACKEND_PORT% 已被占用，后端可能无法启动
-    echo     ! 请手动关闭占用进程或修改 .env 中的 PORT
+    echo     [FAIL] Port %BACKEND_PORT% is already in use!
+    echo     [WARN] Close the process or change PORT in .env
     set /a FAIL_COUNT+=1
 ) else (
-    echo     √ 端口 %BACKEND_PORT% 可用
+    echo     [OK] Port %BACKEND_PORT% is available
 )
 
 set /a STEP+=1
 echo.
-echo [%STEP%] 检查前端端口 :%FRONTEND_PORT%
+echo [%STEP%] Checking frontend port :%FRONTEND_PORT% ...
 netstat -ano 2>nul | findstr ":%FRONTEND_PORT% " | findstr "LISTENING" >nul 2>&1
 if %errorlevel% equ 0 (
-    echo     ! 端口 %FRONTEND_PORT% 已被占用 (Vite 会自动尝试下一个端口)
+    echo     [WARN] Port %FRONTEND_PORT% in use (Vite will auto-pick next port)
 ) else (
-    echo     √ 端口 %FRONTEND_PORT% 可用
+    echo     [OK] Port %FRONTEND_PORT% is available
 )
 
-:: ═══════════════════════════════════════════════════════════
-::  检查汇总
-:: ═══════════════════════════════════════════════════════════
+:: =============================================================
+::  Summary
+:: =============================================================
 echo.
-echo ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo -----------------------------------------------------------
 if %FAIL_COUNT% gtr 0 (
-    echo   预检发现 %FAIL_COUNT% 个问题
-    echo ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    echo   [!] Found %FAIL_COUNT% issue(s)
+    echo -----------------------------------------------------------
     echo.
-    set /p "CONT=  是否仍然尝试启动？(y/N) "
+    set /p "CONT=  Continue anyway? (y/N) "
     if /i not "!CONT!"=="y" (
         echo.
-        echo   已取消启动。请修复上述问题后重试。
+        echo   Cancelled. Please fix the issues above and retry.
         echo.
         pause
         exit /b 1
     )
 ) else (
-    echo   所有检查通过！
-    echo ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    echo   [OK] All checks passed!
+    echo -----------------------------------------------------------
 )
 
-:: ═══════════════════════════════════════════════════════════
-::  阶段 4：启动服务
-:: ═══════════════════════════════════════════════════════════
+:: =============================================================
+::  Phase 4: Launch Services
+:: =============================================================
 echo.
-echo ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo   阶段 4/4  启动服务
-echo ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo -----------------------------------------------------------
+echo   Phase 4/4  Launch Services
+echo -----------------------------------------------------------
 
+:: -- Backend --
 set /a STEP+=1
 echo.
-echo [%STEP%] 启动后端服务 (Express + Prisma + SQLite)
-echo     → 端口: http://127.0.0.1:%BACKEND_PORT%
-start "ComputerAsset-Backend" cmd /c "cd /d "%BACKEND_DIR%" && title ComputerAsset Backend && pnpm run dev"
+echo [%STEP%] Starting backend (Express + Prisma + SQLite) ...
+echo     Port: http://127.0.0.1:%BACKEND_PORT%
 
-:: 等待后端就绪
-echo     等待后端服务就绪...
+start "ComputerAsset-Backend" /D "%BACKEND_DIR%" cmd /k "title ComputerAsset Backend && pnpm run dev"
+
+:: Wait for backend health
+echo     Waiting for backend to be ready ...
 set WAIT=0
 :wait_backend
-if %WAIT% geq 20 goto :backend_timeout
+if %WAIT% geq 30 goto :backend_timeout
 timeout /t 1 /nobreak >nul
 set /a WAIT+=1
 curl -s --connect-timeout 2 "http://127.0.0.1:%BACKEND_PORT%/api/health" >nul 2>&1
 if %errorlevel% equ 0 (
-    echo     √ 后端服务已就绪 (%WAIT%s^)
+    echo     [OK] Backend ready (%WAIT%s)
     goto :start_frontend
 )
 goto :wait_backend
 
 :backend_timeout
-echo     ! 后端服务可能仍在启动中 (已等待 %WAIT%s^)
+echo     [WARN] Backend may still be starting (%WAIT%s elapsed)
 
 :start_frontend
+:: -- Frontend --
 set /a STEP+=1
 echo.
-echo [%STEP%] 启动前端服务 (Vite + Vue 3)
-echo     → 端口: http://localhost:%FRONTEND_PORT%
-start "ComputerAsset-Frontend" cmd /c "cd /d "%FRONTEND_DIR%" && title ComputerAsset Frontend && pnpm run dev"
+echo [%STEP%] Starting frontend (Vite + Vue 3) ...
+echo     Port: http://localhost:%FRONTEND_PORT%
+
+start "ComputerAsset-Frontend" /D "%FRONTEND_DIR%" cmd /k "title ComputerAsset Frontend && pnpm run dev"
 
 timeout /t 3 /nobreak >nul
 
 echo.
 echo.
-echo   ╔═══════════════════════════════════════════════╗
-echo   ║                                               ║
-echo   ║    √  ComputerAsset 启动成功！                ║
-echo   ║                                               ║
-echo   ╠═══════════════════════════════════════════════╣
-echo   ║                                               ║
-echo   ║    前端:  http://localhost:%FRONTEND_PORT%           ║
-echo   ║    后端:  http://127.0.0.1:%BACKEND_PORT%           ║
-echo   ║                                               ║
-echo   ║    默认账号: admin / admin123                  ║
-echo   ║                                               ║
-echo   ╚═══════════════════════════════════════════════╝
+echo   +===================================================+
+echo   ^|                                                   ^|
+echo   ^|    [OK] ComputerAsset started successfully!       ^|
+echo   ^|                                                   ^|
+echo   ^|    Frontend : http://localhost:%FRONTEND_PORT%            ^|
+echo   ^|    Backend  : http://127.0.0.1:%BACKEND_PORT%            ^|
+echo   ^|                                                   ^|
+echo   ^|    Login    : admin / admin123                     ^|
+echo   ^|                                                   ^|
+echo   +===================================================+
 echo.
-echo   提示：关闭此窗口不会停止服务
-echo   要停止服务，请关闭 Backend 和 Frontend 两个命令行窗口
+echo   Tip: Close the Backend and Frontend windows to stop services.
 echo.
 pause
