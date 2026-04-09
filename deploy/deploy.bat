@@ -14,78 +14,77 @@ echo.
 echo   +---------------------------------------------------+
 echo   ^|                                                   ^|
 echo   ^|   ComputerAsset v1.2.0                            ^|
-echo   ^|   Windows Server 2019 内网部署                    ^|
 echo   ^|                                                   ^|
 echo   +---------------------------------------------------+
 echo.
-echo   部署目录 : %ROOT_DIR%
-echo   部署时间 : %date% %time:~0,8%
+echo   Path : %ROOT_DIR%
+echo   Time : %date% %time:~0,8%
 echo.
 
 echo -----------------------------------------------------------
-echo   阶段 1/4  环境检查
+echo   [1/4] Environment Check
 echo -----------------------------------------------------------
 
 echo.
-echo [1] 检查 Node.js ...
+echo [1] Node.js ...
 where node >nul 2>&1
 if %errorlevel% neq 0 (
-    echo     [失败] 未安装 Node.js
+    echo     [FAIL] Node.js not found
     set /a FAIL+=1
     goto :step2
 )
 for /f "tokens=*" %%v in ('node -v') do set "NODE_VER=%%v"
-echo     [通过] Node.js %NODE_VER%
+echo     [OK] Node.js %NODE_VER%
 
 for /f "tokens=1 delims=." %%m in ("%NODE_VER:~1%") do set "NODE_MAJOR=%%m"
 if !NODE_MAJOR! lss 20 (
-    echo     [失败] Node.js 版本过低, 需要 v20+
+    echo     [FAIL] Node.js too old, need v20+
     set /a FAIL+=1
 )
 
 :step2
 echo.
-echo [2] 检查部署文件完整性 ...
+echo [2] Files ...
 set "FILES_OK=1"
 if not exist "%BACKEND_DIR%\dist\server.js" (
-    echo     [失败] 缺少 backend\dist\server.js
+    echo     [FAIL] backend\dist\server.js missing
     set "FILES_OK=0"
     set /a FAIL+=1
 )
 if not exist "%BACKEND_DIR%\node_modules" (
-    echo     [失败] 缺少 backend\node_modules
+    echo     [FAIL] backend\node_modules missing
     set "FILES_OK=0"
     set /a FAIL+=1
 )
 if not exist "%FRONTEND_DIR%\dist\index.html" (
-    echo     [失败] 缺少 frontend\dist\index.html
+    echo     [FAIL] frontend\dist\index.html missing
     set "FILES_OK=0"
     set /a FAIL+=1
 )
 if not exist "%BACKEND_DIR%\prisma\schema.prisma" (
-    echo     [失败] 缺少 backend\prisma\schema.prisma
+    echo     [FAIL] backend\prisma\schema.prisma missing
     set "FILES_OK=0"
     set /a FAIL+=1
 )
 if "!FILES_OK!"=="1" (
-    echo     [通过] 所有必要文件完整
+    echo     [OK] All files present
 )
 
 echo.
 echo -----------------------------------------------------------
-echo   阶段 2/4  配置
+echo   [2/4] Configuration
 echo -----------------------------------------------------------
 
 echo.
-echo [3] 检查 .env 配置文件 ...
+echo [3] .env ...
 if exist "%BACKEND_DIR%\.env" (
-    echo     [通过] .env 已存在
+    echo     [OK] .env exists
 ) else (
     if exist "%BACKEND_DIR%\.env.example" (
         copy "%BACKEND_DIR%\.env.example" "%BACKEND_DIR%\.env" >nul
-        echo     [通过] 已从 .env.example 创建 .env
+        echo     [OK] .env created from .env.example
     ) else (
-        echo     [失败] 找不到 .env.example
+        echo     [FAIL] .env.example not found
         set /a FAIL+=1
     )
 )
@@ -94,97 +93,97 @@ for /f "tokens=1,* delims==" %%a in ('findstr /b "PORT=" "%BACKEND_DIR%\.env" 2^
     set "PORT=%%b"
 )
 for /f "tokens=* delims= " %%x in ("!PORT!") do set "PORT=%%~x"
-echo     [信息] 服务端口 %PORT%
+echo     [INFO] PORT = %PORT%
 
 echo.
-echo [4] 创建数据目录 ...
+echo [4] Data directory ...
 if not exist "%BACKEND_DIR%\data" mkdir "%BACKEND_DIR%\data"
-echo     [通过] backend\data\ 已就绪
+echo     [OK] backend\data\
 
 echo.
 echo -----------------------------------------------------------
-echo   阶段 3/4  数据库初始化
+echo   [3/4] Database
 echo -----------------------------------------------------------
 
 echo.
-echo [5] 执行数据库迁移 ...
+echo [5] Prisma migrate deploy ...
 cd /d "%BACKEND_DIR%"
 
 set "PRISMA_CLI=%BACKEND_DIR%\node_modules\.bin\prisma.cmd"
 if exist "!PRISMA_CLI!" (
     call "!PRISMA_CLI!" migrate deploy 2>&1
     if !errorlevel! neq 0 (
-        echo     [警告] 数据库迁移可能未完全成功
+        echo     [WARN] Migration may have issues
     ) else (
-        echo     [通过] 数据库迁移完成
+        echo     [OK] Migration done
     )
 ) else (
     node "%BACKEND_DIR%\node_modules\prisma\build\index.js" migrate deploy 2>&1
     if !errorlevel! neq 0 (
-        echo     [警告] 数据库迁移可能未完全成功
+        echo     [WARN] Migration may have issues
     ) else (
-        echo     [通过] 数据库迁移完成
+        echo     [OK] Migration done
     )
 )
 
 echo.
 echo -----------------------------------------------------------
-echo   阶段 4/4  启动服务
+echo   [4/4] Start Service
 echo -----------------------------------------------------------
 
 echo.
-echo [6] 检查端口 %PORT% ...
+echo [6] Port %PORT% ...
 set "PORT_PID="
 for /f "tokens=5" %%p in ('netstat -ano 2^>nul ^| findstr ":%PORT% " ^| findstr "LISTENING"') do (
     if not defined PORT_PID set "PORT_PID=%%p"
 )
 if defined PORT_PID (
-    echo     [冲突] 端口 %PORT% 已被占用 (PID !PORT_PID!)
+    echo     [!!] Port %PORT% in use, PID !PORT_PID!
     for /f "tokens=1" %%n in ('tasklist /fi "PID eq !PORT_PID!" /fo csv /nh 2^>nul') do (
-        echo     [信息] 占用进程 %%~n
+        echo     [INFO] Process %%~n
     )
     echo.
-    set /p "KILL_CHOICE=     是否终止该进程? (y/N) "
+    set /p "KILL_CHOICE=     Kill it? (y/N) "
     if /i "!KILL_CHOICE!"=="y" (
         taskkill /pid !PORT_PID! /f >nul 2>&1
         timeout /t 2 /nobreak >nul
-        echo     [通过] 已终止进程
+        echo     [OK] Process killed
     ) else (
-        echo     [失败] 端口被占用, 无法启动
+        echo     [FAIL] Port blocked
         set /a FAIL+=1
     )
 ) else (
-    echo     [通过] 端口 %PORT% 可用
+    echo     [OK] Port %PORT% available
 )
 
 echo.
 echo -----------------------------------------------------------
 if !FAIL! gtr 0 (
-    echo   [!] 发现 !FAIL! 个问题
+    echo   [!] Found !FAIL! issue(s)
     echo -----------------------------------------------------------
     echo.
-    set /p "CONT=  是否仍然尝试启动? (y/N) "
+    set /p "CONT=  Continue anyway? (y/N) "
     if /i not "!CONT!"=="y" (
         echo.
-        echo   已取消。
+        echo   Cancelled.
         pause
         exit /b 1
     )
 ) else (
-    echo   [OK] 所有检查通过!
+    echo   [OK] All checks passed!
     echo -----------------------------------------------------------
 )
 
 echo.
-echo [7] 启动 ComputerAsset 服务 ...
-echo     端口 %PORT%
-echo     模式 生产模式 (前后端合一)
+echo [7] Starting ComputerAsset ...
+echo     PORT %PORT%
+echo     MODE Production (frontend + backend)
 echo.
 
 cd /d "%BACKEND_DIR%"
-start "[ComputerAsset]" /D "%BACKEND_DIR%" cmd /k "title [ComputerAsset] 服务 && node dist/server.js"
+start "ComputerAsset" /D "%BACKEND_DIR%" cmd /k "title ComputerAsset && node dist/server.js"
 
-echo     等待服务启动 ...
+echo     Waiting ...
 set WAIT=0
 :wait_start
 if %WAIT% geq 30 goto :start_timeout
@@ -202,30 +201,30 @@ if !errorlevel! equ 0 (
 goto :wait_start
 
 :start_timeout
-echo     [警告] 服务可能仍在启动中 (已等待 %WAIT%s)
+echo     [WARN] Service may still be starting (%WAIT%s)
 goto :done
 
 :start_ok
-echo     [通过] 服务已就绪 (%WAIT%s)
+echo     [OK] Service ready (%WAIT%s)
 
 :done
 echo.
 echo.
 echo   +---------------------------------------------------+
 echo   ^|                                                   ^|
-echo   ^|   ComputerAsset 部署完成!                         ^|
+echo   ^|   ComputerAsset - OK!                             ^|
 echo   ^|                                                   ^|
-echo   ^|   本机访问  http://127.0.0.1:%PORT%                    ^|
-echo   ^|   局域网    http://本机IP:%PORT%                       ^|
+echo   ^|   Local   http://127.0.0.1:%PORT%                      ^|
+echo   ^|   LAN     http://SERVER_IP:%PORT%                      ^|
 echo   ^|                                                   ^|
-echo   ^|   默认账号  admin                                 ^|
-echo   ^|   默认密码  admin123                               ^|
+echo   ^|   User    admin                                   ^|
+echo   ^|   Pass    admin123                                ^|
 echo   ^|                                                   ^|
-echo   ^|   重要 - 首次登录后请立即修改默认密码!            ^|
+echo   ^|   CHANGE DEFAULT PASSWORD AFTER FIRST LOGIN!      ^|
 echo   ^|                                                   ^|
 echo   +---------------------------------------------------+
 echo.
-echo   停止服务 - 运行 stop.bat 或关闭服务窗口
-echo   重新部署 - 运行 deploy.bat
+echo   [Stop]    stop.bat
+echo   [Restart] deploy.bat
 echo.
 pause

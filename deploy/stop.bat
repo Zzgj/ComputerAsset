@@ -13,7 +13,7 @@ if exist "%BACKEND_DIR%\.env" (
 )
 
 echo.
-echo   ComputerAsset - 停止服务
+echo   ComputerAsset - Stop Service
 echo   -----------------------------------------------------------
 echo.
 
@@ -22,18 +22,18 @@ for /f "tokens=5" %%p in ('netstat -ano 2^>nul ^| findstr ":%PORT% " ^| findstr 
     if not defined DONE (
         set "DONE=1"
         set "FOUND=1"
-        echo   [信息] 发现服务进程 PID %%p, 端口 %PORT%
+        echo   [INFO] Found process PID %%p on port %PORT%
         taskkill /pid %%p /f >nul 2>&1
         if !errorlevel! equ 0 (
-            echo   [通过] 服务已停止
+            echo   [OK] Service stopped
         ) else (
-            echo   [失败] 无法停止进程, 请手动关闭服务窗口
+            echo   [FAIL] Cannot stop, close the service window manually
         )
     )
 )
 
 if "%FOUND%"=="0" (
-    echo   [信息] 端口 %PORT% 上没有运行中的服务
+    echo   [INFO] No service running on port %PORT%
 )
 
 echo.
