@@ -2,14 +2,9 @@
 chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
-:: ============================================================
-::  ComputerAsset 停止服务脚本
-:: ============================================================
-
 set "BACKEND_DIR=%~dp0backend"
 set "PORT=3000"
 
-:: 读取端口
 if exist "%BACKEND_DIR%\.env" (
     for /f "tokens=1,* delims==" %%a in ('findstr /b "PORT=" "%BACKEND_DIR%\.env" 2^>nul') do (
         set "PORT=%%b"
@@ -18,7 +13,7 @@ if exist "%BACKEND_DIR%\.env" (
 )
 
 echo.
-echo   ComputerAsset 停止服务
+echo   ComputerAsset - 停止服务
 echo   -----------------------------------------------------------
 echo.
 
@@ -27,7 +22,7 @@ for /f "tokens=5" %%p in ('netstat -ano 2^>nul ^| findstr ":%PORT% " ^| findstr 
     if not defined DONE (
         set "DONE=1"
         set "FOUND=1"
-        echo   [信息] 发现服务进程 (PID: %%p, 端口: %PORT%)
+        echo   [信息] 发现服务进程 PID %%p, 端口 %PORT%
         taskkill /pid %%p /f >nul 2>&1
         if !errorlevel! equ 0 (
             echo   [通过] 服务已停止
