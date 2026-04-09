@@ -1,3 +1,5 @@
+import path from 'path'
+import fs from 'fs'
 import express from 'express'
 import cors from 'cors'
 
@@ -27,6 +29,17 @@ app.use(express.urlencoded({ extended: true, limit: '2mb' }))
 app.get('/api/excel/template', requireAuth, requirePermission('excel.import'), sendAssetImportTemplate)
 
 app.use('/api', router)
+
+const staticDir = process.env.STATIC_DIR
+  ? path.resolve(process.env.STATIC_DIR)
+  : path.resolve(__dirname, '../../frontend/dist')
+
+if (fs.existsSync(staticDir)) {
+  app.use(express.static(staticDir))
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(staticDir, 'index.html'))
+  })
+}
 
 app.use(errorHandler)
 
