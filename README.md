@@ -6,7 +6,7 @@
 
 覆盖电脑资产从入库到报废的完整生命周期，提供可视化仪表盘、细粒度权限控制与完整的审计追踪。
 
-[![Version](https://img.shields.io/badge/version-1.1.5-blue.svg)](https://github.com/Zzgj/ComputerAsset)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/Zzgj/ComputerAsset)
 [![License](https://img.shields.io/badge/license-ISC-green.svg)](https://opensource.org/licenses/ISC)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen.svg)](https://nodejs.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D.svg?logo=vue.js)](https://vuejs.org/)
@@ -359,6 +359,45 @@ pnpm run start                    # 启动生产服务器
 ---
 
 ## 更新日志
+
+### v1.2.0
+
+**全新 UI 设计**
+- 建立全局 CSS 设计系统（Indigo/Violet 主色调、Inter 字体、统一阴影/圆角/动画）
+- 登录页重新设计为左右分栏布局，左侧品牌展示面板 + 右侧登录表单
+- 侧边栏深色渐变主题（用户头像、发光导航指示器、SVG 图标按钮）
+- 仪表盘四色渐变统计卡、环形饼图、统一配色柱状图
+- 全部 16 个页面统一标题样式、入场动画、卡片间距、表格头样式
+- 引入 Element Plus 中文语言包
+
+**一键启动脚本**
+- 新增 `start.sh`（macOS/Linux）和 `start.bat`（Windows）
+- 四阶段可视化预检：环境、依赖、端口、服务启动
+- 端口冲突自动检测占用进程并提示终止
+- 后端启动失败时显示故障排查指南
+- Prisma 生成失败自动重试
+- Ctrl+C 一键优雅停止所有服务
+
+**空闲自动退出**
+- 10 分钟无操作自动退出登录，保障账号安全
+- 退出前 60 秒弹出预警对话框（动画时钟 + 倒计时）
+- 用户可点击「继续使用」重置计时器
+- 活动事件 2 秒节流，避免高频触发
+
+**代码质量优化**
+- API 层增加 401 自动跳转登录、响应解析容错
+- 路由守卫 `await logout()` 修复竞态；权限不足时显示提示
+- 仪表盘、出库页、资产详情页补全错误处理和加载状态
+- 资产详情校验无效 ID，防止 NaN 请求
+- 后端 CORS 支持配置白名单（`CORS_ORIGINS` 环境变量）
+- JSON 请求体限制从 20MB 降至 2MB（Excel 走 multipart 不受影响）
+- 服务端增加 SIGINT/SIGTERM 优雅退出
+- 密码重置日志不再记录明文密码
+
+**其他**
+- 删除 `deploy/` 文件夹及 Windows Server 2019 部署方案
+- README.md 全面重构，增加徽章、目录、部署指南、贡献规范
+- 新增 `pnpm-workspace.yaml` 预配置原生模块构建权限
 
 ### v1.1.x
 
