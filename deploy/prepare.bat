@@ -56,6 +56,14 @@ call pnpm install
 call pnpm approve-builds --all >nul 2>&1
 echo     [通过] 后端依赖安装完成
 
+:: -- 确保 .env 存在（prisma generate 需要读取 DATABASE_URL） --
+if not exist "%BACKEND_DIR%\.env" (
+    if exist "%BACKEND_DIR%\.env.example" (
+        copy "%BACKEND_DIR%\.env.example" "%BACKEND_DIR%\.env" >nul
+        echo     [通过] 已从 .env.example 创建 .env
+    )
+)
+
 :: -- 生成 Prisma 客户端（必须在 tsc 构建之前，否则缺少类型定义） --
 echo.
 echo [4] 生成 Prisma 客户端 ...

@@ -49,6 +49,12 @@ pnpm install
 pnpm approve-builds --all 2>/dev/null || true
 echo -e "    ${GREEN}[通过]${NC}"
 
+# 确保 .env 存在（prisma generate 需要读取 DATABASE_URL）
+if [ ! -f "$BACKEND_DIR/.env" ] && [ -f "$BACKEND_DIR/.env.example" ]; then
+  cp "$BACKEND_DIR/.env.example" "$BACKEND_DIR/.env"
+  echo -e "    ${GREEN}[通过]${NC} 已从 .env.example 创建 .env"
+fi
+
 echo ""
 echo "[4] 生成 Prisma 客户端 ..."
 cd "$BACKEND_DIR"
