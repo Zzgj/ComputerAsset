@@ -50,15 +50,15 @@ pnpm approve-builds --all 2>/dev/null || true
 echo -e "    ${GREEN}[通过]${NC}"
 
 echo ""
-echo "[4] 构建后端 ..."
+echo "[4] 生成 Prisma 客户端 ..."
 cd "$BACKEND_DIR"
-pnpm run build
+pnpm exec prisma generate
 echo -e "    ${GREEN}[通过]${NC}"
 
 echo ""
-echo "[5] 生成 Prisma 客户端 ..."
+echo "[5] 构建后端 ..."
 cd "$BACKEND_DIR"
-pnpm exec prisma generate
+pnpm run build
 echo -e "    ${GREEN}[通过]${NC}"
 
 # 4. 前端

@@ -56,21 +56,9 @@ call pnpm install
 call pnpm approve-builds --all >nul 2>&1
 echo     [通过] 后端依赖安装完成
 
-:: -- 构建后端 --
+:: -- 生成 Prisma 客户端（必须在 tsc 构建之前，否则缺少类型定义） --
 echo.
-echo [4] 构建后端 ...
-cd /d "%BACKEND_DIR%"
-call pnpm run build
-if %errorlevel% neq 0 (
-    echo     [失败] 后端构建失败
-    pause
-    exit /b 1
-)
-echo     [通过] 后端构建完成
-
-:: -- 生成 Prisma 客户端 --
-echo.
-echo [5] 生成 Prisma 客户端 ...
+echo [4] 生成 Prisma 客户端 ...
 cd /d "%BACKEND_DIR%"
 call pnpm exec prisma generate
 if %errorlevel% neq 0 (
@@ -79,6 +67,18 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 echo     [通过] Prisma 客户端已生成
+
+:: -- 构建后端 --
+echo.
+echo [5] 构建后端 ...
+cd /d "%BACKEND_DIR%"
+call pnpm run build
+if %errorlevel% neq 0 (
+    echo     [失败] 后端构建失败
+    pause
+    exit /b 1
+)
+echo     [通过] 后端构建完成
 
 :: -- 安装前端依赖并构建 --
 echo.
