@@ -11,125 +11,125 @@ set "FRONTEND_DIR=%ROOT_DIR%\frontend"
 echo.
 echo   +---------------------------------------------------+
 echo   ^|                                                   ^|
-echo   ^|   ComputerAsset deploy package builder            ^|
+echo   ^|   ComputerAsset                                   ^|
 echo   ^|                                                   ^|
-echo   ^|   Run this on a machine WITH internet access.     ^|
-echo   ^|   Output can be copied to air-gapped servers.     ^|
+echo   ^|   本脚本需在有网络的机器上运行                    ^|
+echo   ^|   构建产物可直接拷贝到内网服务器部署              ^|
 echo   ^|                                                   ^|
 echo   +---------------------------------------------------+
 echo.
 
-echo [1] Check environment ...
+echo [1] 检查环境 ...
 where node >nul 2>&1
 if %errorlevel% neq 0 (
-    echo     [FAIL] Node.js not installed
+    echo     [失败] 未安装 Node.js
     pause
     exit /b 1
 )
-for /f "tokens=*" %%v in ('node -v') do echo     [OK] Node.js %%v
+for /f "tokens=*" %%v in ('node -v') do echo     [通过] Node.js %%v
 
 where pnpm >nul 2>&1
 if %errorlevel% neq 0 (
-    echo     [INFO] pnpm not found, installing via npm ...
+    echo     [提示] 未找到 pnpm, 正在通过 npm 安装 ...
     call npm install -g pnpm
 )
-for /f "tokens=*" %%v in ('pnpm -v') do echo     [OK] pnpm v%%v
+for /f "tokens=*" %%v in ('pnpm -v') do echo     [通过] pnpm v%%v
 
 echo.
-echo [2] Clean previous build ...
+echo [2] 清理旧的构建产物 ...
 if exist "%DEPLOY_DIR%" rd /s /q "%DEPLOY_DIR%"
 mkdir "%DEPLOY_DIR%"
-echo     [OK] Cleaned
+echo     [通过] 已清理
 
 echo.
-echo [3] Install backend dependencies ...
+echo [3] 安装后端依赖 ...
 cd /d "%BACKEND_DIR%"
 call pnpm install
 call pnpm approve-builds --all >nul 2>&1
-echo     [OK] Backend dependencies installed
+echo     [通过] 后端依赖安装完成
 
 if not exist "%BACKEND_DIR%\.env" (
     if exist "%BACKEND_DIR%\.env.example" (
         copy "%BACKEND_DIR%\.env.example" "%BACKEND_DIR%\.env" >nul
-        echo     [OK] Created .env from .env.example
+        echo     [通过] 已从 .env.example 创建 .env
     )
 )
 
 echo.
-echo [4] Generate Prisma client ...
+echo [4] 生成 Prisma 客户端 ...
 cd /d "%BACKEND_DIR%"
 call pnpm exec prisma generate
 if %errorlevel% neq 0 (
-    echo     [FAIL] Prisma generate failed
+    echo     [失败] Prisma 客户端生成失败
     pause
     exit /b 1
 )
-echo     [OK] Prisma client generated
+echo     [通过] Prisma 客户端已生成
 
 echo.
-echo [5] Build backend ...
+echo [5] 构建后端 ...
 cd /d "%BACKEND_DIR%"
 call pnpm run build
 if %errorlevel% neq 0 (
-    echo     [FAIL] Backend build failed
+    echo     [失败] 后端构建失败
     pause
     exit /b 1
 )
-echo     [OK] Backend built
+echo     [通过] 后端构建完成
 
 echo.
-echo [6] Install frontend dependencies and build ...
+echo [6] 安装前端依赖并构建 ...
 cd /d "%FRONTEND_DIR%"
 call pnpm install
 call pnpm approve-builds --all >nul 2>&1
 call pnpm run build
 if %errorlevel% neq 0 (
-    echo     [FAIL] Frontend build failed
+    echo     [失败] 前端构建失败
     pause
     exit /b 1
 )
-echo     [OK] Frontend built
+echo     [通过] 前端构建完成
 
 echo.
-echo [7] Assemble deploy package ...
-echo     Copying backend dist ...
+echo [7] 组装部署包 ...
+echo     正在复制后端构建产物 ...
 mkdir "%DEPLOY_DIR%\backend\dist" >nul 2>&1
 robocopy "%BACKEND_DIR%\dist" "%DEPLOY_DIR%\backend\dist" /e /nfl /ndl /njh /njs /nc /ns /np >nul
 
-echo     Copying backend node_modules (this may take a minute) ...
+echo     正在复制后端依赖 (文件较多, 请耐心等待) ...
 mkdir "%DEPLOY_DIR%\backend\node_modules" >nul 2>&1
 robocopy "%BACKEND_DIR%\node_modules" "%DEPLOY_DIR%\backend\node_modules" /e /nfl /ndl /njh /njs /nc /ns /np >nul
 
-echo     Copying prisma schema and migrations ...
+echo     正在复制 Prisma 数据库文件 ...
 mkdir "%DEPLOY_DIR%\backend\prisma\migrations" >nul 2>&1
 copy "%BACKEND_DIR%\prisma\schema.prisma" "%DEPLOY_DIR%\backend\prisma\" >nul
 robocopy "%BACKEND_DIR%\prisma\migrations" "%DEPLOY_DIR%\backend\prisma\migrations" /e /nfl /ndl /njh /njs /nc /ns /np >nul
 
-echo     Copying config files ...
+echo     正在复制配置文件 ...
 copy "%BACKEND_DIR%\prisma.config.ts" "%DEPLOY_DIR%\backend\" >nul
 copy "%BACKEND_DIR%\package.json" "%DEPLOY_DIR%\backend\" >nul
 copy "%BACKEND_DIR%\.env.example" "%DEPLOY_DIR%\backend\" >nul
 
-echo     Copying frontend dist ...
+echo     正在复制前端静态文件 ...
 mkdir "%DEPLOY_DIR%\frontend\dist" >nul 2>&1
 robocopy "%FRONTEND_DIR%\dist" "%DEPLOY_DIR%\frontend\dist" /e /nfl /ndl /njh /njs /nc /ns /np >nul
 
-echo     Copying deploy scripts ...
+echo     正在复制部署脚本 ...
 copy "%ROOT_DIR%\deploy\deploy.bat" "%DEPLOY_DIR%\" >nul
 copy "%ROOT_DIR%\deploy\stop.bat" "%DEPLOY_DIR%\" >nul
 copy "%ROOT_DIR%\deploy\README.txt" "%DEPLOY_DIR%\" >nul
 
-echo     [OK] Deploy package assembled
+echo     [通过] 部署包组装完成
 
 echo.
 echo   +---------------------------------------------------+
 echo   ^|                                                   ^|
-echo   ^|   Build complete!                                 ^|
+echo   ^|   构建完成!                                       ^|
 echo   ^|                                                   ^|
-echo   ^|   Output: deploy-package\                         ^|
+echo   ^|   部署包位置: deploy-package\                     ^|
 echo   ^|                                                   ^|
-echo   ^|   Copy the entire deploy-package folder to the    ^|
-echo   ^|   target server, then run deploy.bat              ^|
+echo   ^|   将整个 deploy-package 文件夹拷贝到目标服务器    ^|
+echo   ^|   然后运行 deploy.bat 即可一键部署                ^|
 echo   ^|                                                   ^|
 echo   +---------------------------------------------------+
 echo.
