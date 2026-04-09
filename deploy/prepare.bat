@@ -44,7 +44,7 @@ echo     [通过] 已清理
 echo.
 echo [3] 安装后端依赖 ...
 cd /d "%BACKEND_DIR%"
-call pnpm install
+call pnpm install --force
 call pnpm approve-builds --all >nul 2>&1
 echo     [通过] 后端依赖安装完成
 
@@ -80,7 +80,7 @@ echo     [通过] 后端构建完成
 echo.
 echo [6] 安装前端依赖并构建 ...
 cd /d "%FRONTEND_DIR%"
-call pnpm install
+call pnpm install --force
 call pnpm approve-builds --all >nul 2>&1
 call pnpm run build
 if %errorlevel% neq 0 (

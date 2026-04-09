@@ -45,7 +45,7 @@ echo -e "    ${GREEN}[通过]${NC} 已清理"
 echo ""
 echo "[3] 安装后端依赖 ..."
 cd "$BACKEND_DIR"
-pnpm install
+pnpm install --force
 pnpm approve-builds --all 2>/dev/null || true
 echo -e "    ${GREEN}[通过]${NC}"
 
@@ -71,7 +71,7 @@ echo -e "    ${GREEN}[通过]${NC}"
 echo ""
 echo "[6] 安装前端依赖并构建 ..."
 cd "$FRONTEND_DIR"
-pnpm install
+pnpm install --force
 pnpm approve-builds --all 2>/dev/null || true
 pnpm run build
 echo -e "    ${GREEN}[通过]${NC}"
