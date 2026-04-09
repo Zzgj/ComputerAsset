@@ -84,21 +84,38 @@ mkdir -p "$DEPLOY_DIR/backend/dist"
 mkdir -p "$DEPLOY_DIR/backend/prisma/migrations"
 mkdir -p "$DEPLOY_DIR/frontend/dist"
 
+echo "    正在复制后端构建产物 ..."
 cp -r "$BACKEND_DIR/dist/"* "$DEPLOY_DIR/backend/dist/"
-cp -r "$BACKEND_DIR/node_modules" "$DEPLOY_DIR/backend/node_modules"
 cp "$BACKEND_DIR/prisma/schema.prisma" "$DEPLOY_DIR/backend/prisma/"
 cp -r "$BACKEND_DIR/prisma/migrations/"* "$DEPLOY_DIR/backend/prisma/migrations/"
 cp "$BACKEND_DIR/prisma.config.ts" "$DEPLOY_DIR/backend/"
 cp "$BACKEND_DIR/package.json" "$DEPLOY_DIR/backend/"
 cp "$BACKEND_DIR/.env.example" "$DEPLOY_DIR/backend/"
 
+echo "    正在安装生产依赖 (使用 npm, 生成标准 node_modules) ..."
+cd "$DEPLOY_DIR/backend"
+npm install --production --ignore-scripts 2>/dev/null
+echo -e "    ${GREEN}[通过]${NC} 生产依赖安装完成"
+
+echo "    正在复制 Prisma 引擎和客户端 ..."
+cp -r "$BACKEND_DIR/node_modules/.prisma" "$DEPLOY_DIR/backend/node_modules/.prisma"
+if [ -d "$BACKEND_DIR/node_modules/@prisma/engines" ]; then
+  mkdir -p "$DEPLOY_DIR/backend/node_modules/@prisma/engines"
+  cp -r "$BACKEND_DIR/node_modules/@prisma/engines/"* "$DEPLOY_DIR/backend/node_modules/@prisma/engines/"
+fi
+if [ ! -d "$DEPLOY_DIR/backend/node_modules/prisma" ]; then
+  cp -r "$BACKEND_DIR/node_modules/prisma" "$DEPLOY_DIR/backend/node_modules/prisma"
+fi
+echo -e "    ${GREEN}[通过]${NC} Prisma 文件复制完成"
+
+echo "    正在复制前端静态文件 ..."
 cp -r "$FRONTEND_DIR/dist/"* "$DEPLOY_DIR/frontend/dist/"
 
 cp "$ROOT_DIR/deploy/deploy.bat" "$DEPLOY_DIR/"
 cp "$ROOT_DIR/deploy/stop.bat" "$DEPLOY_DIR/"
 cp "$ROOT_DIR/deploy/README.txt" "$DEPLOY_DIR/"
 
-echo -e "    ${GREEN}[通过]${NC}"
+echo -e "    ${GREEN}[通过]${NC} 部署包组装完成"
 
 # 6. 输出
 SIZE=$(du -sh "$DEPLOY_DIR" | cut -f1)

@@ -92,13 +92,10 @@ echo     [通过] 前端构建完成
 
 echo.
 echo [7] 组装部署包 ...
+
 echo     正在复制后端构建产物 ...
 mkdir "%DEPLOY_DIR%\backend\dist" >nul 2>&1
 robocopy "%BACKEND_DIR%\dist" "%DEPLOY_DIR%\backend\dist" /e /nfl /ndl /njh /njs /nc /ns /np >nul
-
-echo     正在复制后端依赖 (文件较多, 请耐心等待) ...
-mkdir "%DEPLOY_DIR%\backend\node_modules" >nul 2>&1
-robocopy "%BACKEND_DIR%\node_modules" "%DEPLOY_DIR%\backend\node_modules" /e /nfl /ndl /njh /njs /nc /ns /np >nul
 
 echo     正在复制 Prisma 数据库文件 ...
 mkdir "%DEPLOY_DIR%\backend\prisma\migrations" >nul 2>&1
@@ -109,6 +106,27 @@ echo     正在复制配置文件 ...
 copy "%BACKEND_DIR%\prisma.config.ts" "%DEPLOY_DIR%\backend\" >nul
 copy "%BACKEND_DIR%\package.json" "%DEPLOY_DIR%\backend\" >nul
 copy "%BACKEND_DIR%\.env.example" "%DEPLOY_DIR%\backend\" >nul
+
+echo     正在安装生产依赖 (使用 npm, 生成标准 node_modules) ...
+cd /d "%DEPLOY_DIR%\backend"
+call npm install --production --ignore-scripts 2>nul
+echo     [通过] 生产依赖安装完成
+
+echo     正在复制 Prisma 引擎和客户端 ...
+mkdir "%DEPLOY_DIR%\backend\node_modules\.prisma" >nul 2>&1
+robocopy "%BACKEND_DIR%\node_modules\.prisma" "%DEPLOY_DIR%\backend\node_modules\.prisma" /e /nfl /ndl /njh /njs /nc /ns /np >nul
+if exist "%BACKEND_DIR%\node_modules\@prisma\engines" (
+    mkdir "%DEPLOY_DIR%\backend\node_modules\@prisma\engines" >nul 2>&1
+    robocopy "%BACKEND_DIR%\node_modules\@prisma\engines" "%DEPLOY_DIR%\backend\node_modules\@prisma\engines" /e /nfl /ndl /njh /njs /nc /ns /np >nul
+)
+echo     [通过] Prisma 文件复制完成
+
+echo     正在复制 prisma CLI ...
+if not exist "%DEPLOY_DIR%\backend\node_modules\prisma" (
+    mkdir "%DEPLOY_DIR%\backend\node_modules\prisma" >nul 2>&1
+    robocopy "%BACKEND_DIR%\node_modules\prisma" "%DEPLOY_DIR%\backend\node_modules\prisma" /e /nfl /ndl /njh /njs /nc /ns /np >nul
+)
+echo     [通过] prisma CLI 复制完成
 
 echo     正在复制前端静态文件 ...
 mkdir "%DEPLOY_DIR%\frontend\dist" >nul 2>&1
