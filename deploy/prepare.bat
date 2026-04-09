@@ -109,7 +109,7 @@ copy "%BACKEND_DIR%\.env.example" "%DEPLOY_DIR%\backend\" >nul
 
 echo     正在安装生产依赖 (使用 npm, 生成标准 node_modules) ...
 cd /d "%DEPLOY_DIR%\backend"
-call npm install --production --ignore-scripts 2>nul
+call npm install --production
 echo     [通过] 生产依赖安装完成
 
 echo     正在复制 Prisma 引擎和客户端 ...

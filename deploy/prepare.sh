@@ -94,7 +94,7 @@ cp "$BACKEND_DIR/.env.example" "$DEPLOY_DIR/backend/"
 
 echo "    正在安装生产依赖 (使用 npm, 生成标准 node_modules) ..."
 cd "$DEPLOY_DIR/backend"
-npm install --production --ignore-scripts 2>/dev/null
+npm install --production
 echo -e "    ${GREEN}[通过]${NC} 生产依赖安装完成"
 
 echo "    正在复制 Prisma 引擎和客户端 ..."
