@@ -2,11 +2,6 @@
 chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
-:: ============================================================
-::  ComputerAsset 部署包构建脚本
-::  在有网络的机器上运行，生成可直接部署到内网服务器的完整包
-:: ============================================================
-
 set "ROOT_DIR=%~dp0.."
 if "%ROOT_DIR:~-1%"=="\" set "ROOT_DIR=%ROOT_DIR:~0,-1%"
 set "DEPLOY_DIR=%ROOT_DIR%\deploy-package"
@@ -16,138 +11,125 @@ set "FRONTEND_DIR=%ROOT_DIR%\frontend"
 echo.
 echo   +---------------------------------------------------+
 echo   ^|                                                   ^|
-echo   ^|   ComputerAsset 部署包构建工具                    ^|
+echo   ^|   ComputerAsset deploy package builder            ^|
 echo   ^|                                                   ^|
-echo   ^|   本脚本需在有网络的机器上运行                    ^|
-echo   ^|   构建产物可直接拷贝到内网服务器部署              ^|
+echo   ^|   Run this on a machine WITH internet access.     ^|
+echo   ^|   Output can be copied to air-gapped servers.     ^|
 echo   ^|                                                   ^|
 echo   +---------------------------------------------------+
 echo.
 
-:: -- 检查环境 --
-echo [1] 检查环境 ...
+echo [1] Check environment ...
 where node >nul 2>&1
 if %errorlevel% neq 0 (
-    echo     [失败] 未安装 Node.js
+    echo     [FAIL] Node.js not installed
     pause
     exit /b 1
 )
-for /f "tokens=*" %%v in ('node -v') do echo     [通过] Node.js %%v
+for /f "tokens=*" %%v in ('node -v') do echo     [OK] Node.js %%v
 
 where pnpm >nul 2>&1
 if %errorlevel% neq 0 (
-    echo     [提示] 未找到 pnpm, 正在通过 npm 安装 ...
+    echo     [INFO] pnpm not found, installing via npm ...
     call npm install -g pnpm
 )
-for /f "tokens=*" %%v in ('pnpm -v') do echo     [通过] pnpm v%%v
+for /f "tokens=*" %%v in ('pnpm -v') do echo     [OK] pnpm v%%v
 
-:: -- 清理旧的构建产物 --
 echo.
-echo [2] 清理旧的构建产物 ...
+echo [2] Clean previous build ...
 if exist "%DEPLOY_DIR%" rd /s /q "%DEPLOY_DIR%"
 mkdir "%DEPLOY_DIR%"
-echo     [通过] 已清理
+echo     [OK] Cleaned
 
-:: -- 安装后端依赖 --
 echo.
-echo [3] 安装后端依赖 ...
+echo [3] Install backend dependencies ...
 cd /d "%BACKEND_DIR%"
 call pnpm install
 call pnpm approve-builds --all >nul 2>&1
-echo     [通过] 后端依赖安装完成
+echo     [OK] Backend dependencies installed
 
-:: -- 确保 .env 存在（prisma generate 需要读取 DATABASE_URL） --
 if not exist "%BACKEND_DIR%\.env" (
     if exist "%BACKEND_DIR%\.env.example" (
         copy "%BACKEND_DIR%\.env.example" "%BACKEND_DIR%\.env" >nul
-        echo     [通过] 已从 .env.example 创建 .env
+        echo     [OK] Created .env from .env.example
     )
 )
 
-:: -- 生成 Prisma 客户端（必须在 tsc 构建之前，否则缺少类型定义） --
 echo.
-echo [4] 生成 Prisma 客户端 ...
+echo [4] Generate Prisma client ...
 cd /d "%BACKEND_DIR%"
 call pnpm exec prisma generate
 if %errorlevel% neq 0 (
-    echo     [失败] Prisma 客户端生成失败
+    echo     [FAIL] Prisma generate failed
     pause
     exit /b 1
 )
-echo     [通过] Prisma 客户端已生成
+echo     [OK] Prisma client generated
 
-:: -- 构建后端 --
 echo.
-echo [5] 构建后端 ...
+echo [5] Build backend ...
 cd /d "%BACKEND_DIR%"
 call pnpm run build
 if %errorlevel% neq 0 (
-    echo     [失败] 后端构建失败
+    echo     [FAIL] Backend build failed
     pause
     exit /b 1
 )
-echo     [通过] 后端构建完成
+echo     [OK] Backend built
 
-:: -- 安装前端依赖并构建 --
 echo.
-echo [6] 安装前端依赖并构建 ...
+echo [6] Install frontend dependencies and build ...
 cd /d "%FRONTEND_DIR%"
 call pnpm install
 call pnpm approve-builds --all >nul 2>&1
 call pnpm run build
 if %errorlevel% neq 0 (
-    echo     [失败] 前端构建失败
+    echo     [FAIL] Frontend build failed
     pause
     exit /b 1
 )
-echo     [通过] 前端构建完成
+echo     [OK] Frontend built
 
-:: -- 组装部署包 --
 echo.
-echo [7] 组装部署包 ...
+echo [7] Assemble deploy package ...
+echo     Copying backend dist ...
+mkdir "%DEPLOY_DIR%\backend\dist" >nul 2>&1
+robocopy "%BACKEND_DIR%\dist" "%DEPLOY_DIR%\backend\dist" /e /nfl /ndl /njh /njs /nc /ns /np >nul
 
-:: 后端运行时
-mkdir "%DEPLOY_DIR%\backend"
-mkdir "%DEPLOY_DIR%\backend\dist"
-mkdir "%DEPLOY_DIR%\backend\prisma"
-mkdir "%DEPLOY_DIR%\backend\prisma\migrations"
-xcopy "%BACKEND_DIR%\dist" "%DEPLOY_DIR%\backend\dist" /e /q /y >nul
-xcopy "%BACKEND_DIR%\node_modules" "%DEPLOY_DIR%\backend\node_modules" /e /q /y >nul
-xcopy "%BACKEND_DIR%\prisma\schema.prisma" "%DEPLOY_DIR%\backend\prisma\" /q /y >nul
-xcopy "%BACKEND_DIR%\prisma\migrations" "%DEPLOY_DIR%\backend\prisma\migrations" /e /q /y >nul
+echo     Copying backend node_modules (this may take a minute) ...
+mkdir "%DEPLOY_DIR%\backend\node_modules" >nul 2>&1
+robocopy "%BACKEND_DIR%\node_modules" "%DEPLOY_DIR%\backend\node_modules" /e /nfl /ndl /njh /njs /nc /ns /np >nul
+
+echo     Copying prisma schema and migrations ...
+mkdir "%DEPLOY_DIR%\backend\prisma\migrations" >nul 2>&1
+copy "%BACKEND_DIR%\prisma\schema.prisma" "%DEPLOY_DIR%\backend\prisma\" >nul
+robocopy "%BACKEND_DIR%\prisma\migrations" "%DEPLOY_DIR%\backend\prisma\migrations" /e /nfl /ndl /njh /njs /nc /ns /np >nul
+
+echo     Copying config files ...
 copy "%BACKEND_DIR%\prisma.config.ts" "%DEPLOY_DIR%\backend\" >nul
 copy "%BACKEND_DIR%\package.json" "%DEPLOY_DIR%\backend\" >nul
 copy "%BACKEND_DIR%\.env.example" "%DEPLOY_DIR%\backend\" >nul
 
-:: 前端静态文件
-mkdir "%DEPLOY_DIR%\frontend"
-xcopy "%FRONTEND_DIR%\dist" "%DEPLOY_DIR%\frontend\dist" /e /q /y >nul
+echo     Copying frontend dist ...
+mkdir "%DEPLOY_DIR%\frontend\dist" >nul 2>&1
+robocopy "%FRONTEND_DIR%\dist" "%DEPLOY_DIR%\frontend\dist" /e /nfl /ndl /njh /njs /nc /ns /np >nul
 
-:: 部署脚本
+echo     Copying deploy scripts ...
 copy "%ROOT_DIR%\deploy\deploy.bat" "%DEPLOY_DIR%\" >nul
 copy "%ROOT_DIR%\deploy\stop.bat" "%DEPLOY_DIR%\" >nul
 copy "%ROOT_DIR%\deploy\README.txt" "%DEPLOY_DIR%\" >nul
 
-echo     [通过] 部署包组装完成
-
-:: -- 统计大小 --
-echo.
-echo [8] 部署包信息 ...
-echo     位置 : %DEPLOY_DIR%
-for /f "tokens=3" %%s in ('dir "%DEPLOY_DIR%" /s /-c 2^>nul ^| findstr "个文件"') do (
-    set /a SIZE_MB=%%s/1024/1024
-    echo     大小 : 约 !SIZE_MB! MB
-)
+echo     [OK] Deploy package assembled
 
 echo.
 echo   +---------------------------------------------------+
 echo   ^|                                                   ^|
-echo   ^|   构建完成!                                       ^|
+echo   ^|   Build complete!                                 ^|
 echo   ^|                                                   ^|
-echo   ^|   部署包位置: deploy-package\                     ^|
+echo   ^|   Output: deploy-package\                         ^|
 echo   ^|                                                   ^|
-echo   ^|   将整个 deploy-package 文件夹拷贝到目标服务器    ^|
-echo   ^|   然后运行 deploy.bat 即可一键部署                ^|
+echo   ^|   Copy the entire deploy-package folder to the    ^|
+echo   ^|   target server, then run deploy.bat              ^|
 echo   ^|                                                   ^|
 echo   +---------------------------------------------------+
 echo.
