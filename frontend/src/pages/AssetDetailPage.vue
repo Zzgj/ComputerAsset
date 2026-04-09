@@ -297,6 +297,7 @@ import DepartmentCascader from '../components/DepartmentCascader.vue'
 const route = useRoute()
 const router = useRouter()
 const assetId = Number(route.params.id)
+const detailLoading = ref(true)
 
 function backToAssetList() {
   router.push({ name: 'assets', query: route.query })
@@ -414,16 +415,23 @@ async function loadDepartments() {
 }
 
 async function reload() {
-  const [a, r, rep, logs] = await Promise.all([
-    apiRequest<any>(`/api/assets/${assetId}`),
-    apiRequest<{ records: any[] }>(`/api/assets/${assetId}/records`),
-    apiRequest<{ repairs: any[] }>(`/api/assets/${assetId}/repairs`),
-    apiRequest<{ logs: any[] }>(`/api/assets/${assetId}/change-logs`),
-  ])
-  asset.value = a.asset ?? a
-  records.value = r.records ?? []
-  repairs.value = rep.repairs ?? []
-  changeLogs.value = logs.logs ?? []
+  detailLoading.value = true
+  try {
+    const [a, r, rep, logs] = await Promise.all([
+      apiRequest<any>(`/api/assets/${assetId}`),
+      apiRequest<{ records: any[] }>(`/api/assets/${assetId}/records`),
+      apiRequest<{ repairs: any[] }>(`/api/assets/${assetId}/repairs`),
+      apiRequest<{ logs: any[] }>(`/api/assets/${assetId}/change-logs`),
+    ])
+    asset.value = a.asset ?? a
+    records.value = r.records ?? []
+    repairs.value = rep.repairs ?? []
+    changeLogs.value = logs.logs ?? []
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '加载资产详情失败')
+  } finally {
+    detailLoading.value = false
+  }
 }
 
 // ---- 对话框与表单状态 ----
@@ -668,6 +676,11 @@ async function submitRetire() {
 }
 
 onMounted(async () => {
+  if (!Number.isFinite(assetId) || assetId <= 0) {
+    ElMessage.error('无效的资产 ID')
+    router.push('/assets')
+    return
+  }
   await reload()
   if (canOperations.value) await loadDepartments()
 })

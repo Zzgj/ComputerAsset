@@ -189,7 +189,8 @@ function goAsset(id: number) {
 const stats = ref<Stats | null>(null)
 const notifications = ref<any>(null)
 const records = ref<any[]>([])
-const recordsLoading = ref(false)
+const pageLoading = ref(true)
+const recordsLoading = ref(true)
 const multiExpanded = ref(false)
 
 const visibleMultiHolders = computed(() => {
@@ -199,17 +200,21 @@ const visibleMultiHolders = computed(() => {
 })
 
 onMounted(async () => {
-  const [s, n, r] = await Promise.all([
-    apiRequest<Stats>('/api/dashboard/stats'),
-    apiRequest<any>('/api/dashboard/notifications'),
-    apiRequest<any>('/api/dashboard/recent-records').then((x) => {
-      recordsLoading.value = false
-      return x
-    }),
-  ])
-  stats.value = s
-  notifications.value = n
-  records.value = r.records ?? []
+  try {
+    const [s, n, r] = await Promise.all([
+      apiRequest<Stats>('/api/dashboard/stats'),
+      apiRequest<any>('/api/dashboard/notifications'),
+      apiRequest<any>('/api/dashboard/recent-records'),
+    ])
+    stats.value = s
+    notifications.value = n
+    records.value = r.records ?? []
+  } catch (e: any) {
+    console.error('[Dashboard] 数据加载失败', e)
+  } finally {
+    pageLoading.value = false
+    recordsLoading.value = false
+  }
 })
 
 const pieColors = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']

@@ -156,7 +156,7 @@ router.beforeEach(async (to, _from, next) => {
     try {
       await authStore.fetchMe()
     } catch {
-      authStore.logout()
+      await authStore.logout()
       return next('/login')
     }
   }
@@ -165,8 +165,12 @@ router.beforeEach(async (to, _from, next) => {
   if (required?.length) {
     const bypass = authStore.me?.bypassAll
     if (!bypass) {
-      const ok = required.some((p) => authStore.can(p))
-      if (!ok) return next('/dashboard')
+      const hasPermission = required.some((p) => authStore.can(p))
+      if (!hasPermission) {
+        const { ElMessage } = await import('element-plus')
+        ElMessage.warning('您没有访问该页面的权限')
+        return next('/dashboard')
+      }
     }
   }
 

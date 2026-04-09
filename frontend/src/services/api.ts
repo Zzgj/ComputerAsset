@@ -42,12 +42,23 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   })
 
   const contentType = res.headers.get('content-type') ?? ''
-  const payload =
-    contentType.includes('application/json') ? await res.json() : await res.text()
+  let payload: any
+  try {
+    payload = contentType.includes('application/json') ? await res.json() : await res.text()
+  } catch {
+    payload = null
+  }
 
   if (!res.ok) {
+    if (res.status === 401 && !path.includes('/auth/login')) {
+      localStorage.removeItem('token')
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        window.location.href = '/login'
+      }
+    }
+
     const message =
-      payload?.error?.message ?? payload?.message ?? `Request failed (${res.status})`
+      payload?.error?.message ?? payload?.message ?? `请求失败 (${res.status})`
     throw {
       status: res.status,
       code: payload?.error?.code,

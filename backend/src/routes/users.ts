@@ -167,7 +167,7 @@ usersRouter.post('/:id/reset-password', requireAuth, requirePermission('users.ma
       action: '重置密码',
       targetType: 'User',
       targetId: id,
-      detail: { resetTo: '123456' },
+      detail: { action: '密码已重置为默认值' },
       ipAddress: req.ip ?? 'unknown',
     },
   })

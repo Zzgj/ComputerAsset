@@ -356,6 +356,8 @@ async function doAssign() {
     assign.userName = ''
     assign.departmentId = null
     assign.remark = ''
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '分配失败')
   } finally {
     submitting.value = false
   }
@@ -466,6 +468,8 @@ async function doPickUp() {
     await loadAssets()
     pickup.assetId = null
     pickup.remark = ''
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '确认领用失败')
   } finally {
     submitting.value = false
   }
@@ -482,6 +486,8 @@ async function doCancelAssign() {
     await loadAssets()
     pickup.assetId = null
     pickup.remark = ''
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '取消分配失败')
   } finally {
     submitting.value = false
   }

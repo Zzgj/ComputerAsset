@@ -2,6 +2,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 
 const IDLE_TIMEOUT = 10 * 60 * 1000
 const WARNING_BEFORE = 60 * 1000
+const THROTTLE_MS = 2000
 
 const ACTIVITY_EVENTS: (keyof DocumentEventMap)[] = [
   'mousedown',
@@ -16,8 +17,10 @@ const ACTIVITY_EVENTS: (keyof DocumentEventMap)[] = [
 export function useIdleTimer(onWarning: () => void, onTimeout: () => void) {
   let idleTimer: ReturnType<typeof setTimeout> | null = null
   let warningTimer: ReturnType<typeof setTimeout> | null = null
-  const remaining = ref(0)
   let countdownInterval: ReturnType<typeof setInterval> | null = null
+  let lastActivity = 0
+
+  const remaining = ref(0)
   const isWarning = ref(false)
 
   function clearTimers() {
@@ -54,10 +57,14 @@ export function useIdleTimer(onWarning: () => void, onTimeout: () => void) {
 
   function onActivity() {
     if (isWarning.value) return
+    const now = Date.now()
+    if (now - lastActivity < THROTTLE_MS) return
+    lastActivity = now
     resetTimer()
   }
 
   function continueSession() {
+    lastActivity = Date.now()
     resetTimer()
   }
 
@@ -65,6 +72,7 @@ export function useIdleTimer(onWarning: () => void, onTimeout: () => void) {
     for (const evt of ACTIVITY_EVENTS) {
       document.addEventListener(evt, onActivity, { passive: true })
     }
+    lastActivity = Date.now()
     resetTimer()
   }
 
