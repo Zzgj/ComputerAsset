@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { apiRequest } from './services/api'
 import { useAuthStore } from './stores/auth'
+import { useIdleTimer } from './composables/useIdleTimer'
 
 const route = useRoute()
 const router = useRouter()
@@ -12,6 +13,32 @@ const authStore = useAuthStore()
 const isLogin = computed(() => route.path === '/login')
 const navKeyword = ref('')
 const sidebarCollapsed = ref(false)
+
+const idleWarningVisible = ref(false)
+
+const { isWarning: idleIsWarning, remaining: idleRemaining, continueSession, stop: stopIdleTimer, start: startIdleTimer } = useIdleTimer(
+  () => { idleWarningVisible.value = true },
+  async () => {
+    idleWarningVisible.value = false
+    await authStore.logout()
+    router.push('/login')
+    ElMessage.warning('您已超过 10 分钟未操作，系统已自动退出')
+  },
+)
+
+function onIdleContinue() {
+  idleWarningVisible.value = false
+  continueSession()
+}
+
+watch(isLogin, (login) => {
+  if (login) {
+    stopIdleTimer()
+    idleWarningVisible.value = false
+  } else {
+    startIdleTimer()
+  }
+})
 
 const activeMenu = computed(() => {
   if (route.path.startsWith('/assets/')) return '/assets'
@@ -258,6 +285,39 @@ async function submitChangePassword() {
       <el-button type="primary" :loading="changingPwd" @click="submitChangePassword">确认修改</el-button>
     </template>
   </el-dialog>
+
+  <el-dialog
+    v-model="idleWarningVisible"
+    title="会话即将过期"
+    width="420px"
+    :close-on-click-modal="false"
+    :close-on-press-escape="false"
+    :show-close="false"
+    align-center
+    class="idle-dialog"
+  >
+    <div class="idle-dialog-body">
+      <div class="idle-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--ca-warning)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <polyline points="12 6 12 12 16 14" />
+        </svg>
+      </div>
+      <div class="idle-text">
+        <p class="idle-title">检测到长时间未操作</p>
+        <p class="idle-desc">
+          为保障账号安全，系统将在
+          <span class="idle-countdown">{{ idleRemaining }}</span>
+          秒后自动退出登录。
+        </p>
+      </div>
+    </div>
+    <template #footer>
+      <el-button type="primary" size="large" @click="onIdleContinue" style="width: 100%">
+        继续使用
+      </el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>
@@ -483,5 +543,46 @@ async function submitChangePassword() {
   background: var(--ca-bg);
   min-height: 100vh;
   overflow-x: hidden;
+}
+
+.idle-dialog-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 8px 0;
+}
+
+.idle-icon {
+  margin-bottom: 16px;
+  animation: idle-pulse 2s ease-in-out infinite;
+}
+
+@keyframes idle-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.08); opacity: 0.85; }
+}
+
+.idle-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ca-text-primary);
+  margin: 0 0 8px;
+}
+
+.idle-desc {
+  font-size: 14px;
+  color: var(--ca-text-secondary);
+  margin: 0;
+  line-height: 1.6;
+}
+
+.idle-countdown {
+  display: inline-block;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--ca-warning);
+  min-width: 28px;
+  font-variant-numeric: tabular-nums;
 }
 </style>
