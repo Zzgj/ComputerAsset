@@ -121,6 +121,8 @@ ComputerAsset/
 │   ├── .env.example              # 环境变量模板
 │   └── package.json
 │
+├── start.sh                  # 一键启动脚本（macOS / Linux）
+├── start.bat                 # 一键启动脚本（Windows）
 ├── .gitignore
 └── README.md
 ```
@@ -141,11 +143,42 @@ git clone https://github.com/Zzgj/ComputerAsset.git
 cd ComputerAsset
 ```
 
-### 2. 启动后端
+### 2. 一键启动（推荐）
+
+项目提供一键启动脚本，会自动完成环境检查、依赖安装、数据库迁移和服务启动：
+
+**macOS / Linux：**
+
+```bash
+./start.sh
+```
+
+**Windows（双击或命令行）：**
+
+```cmd
+start.bat
+```
+
+启动脚本会依次执行以下可视化检查：
+
+| 阶段 | 检查项 |
+|------|--------|
+| 环境检查 | Node.js 版本、pnpm 安装、项目目录、网络连通性 |
+| 依赖与配置 | `.env` 配置文件、后端/前端依赖、数据库迁移 |
+| 端口检查 | 后端端口 3000、前端端口 5173 是否被占用 |
+| 启动服务 | 后端 → 等待就绪 → 前端 → 输出访问地址 |
+
+所有检查通过后，前后端将同时启动，按 `Ctrl+C` 可一键停止所有服务。
+
+### 3. 手动启动（可选）
+
+如需分别启动前后端：
+
+**启动后端：**
 
 ```bash
 cd backend
-cp .env.example .env          # 复制环境变量（Windows: copy .env.example .env）
+cp .env.example .env          # 首次运行需复制环境变量
 pnpm install                  # 安装依赖
 pnpm exec prisma migrate deploy   # 执行数据库迁移
 pnpm run dev                  # 启动开发服务器
@@ -153,7 +186,7 @@ pnpm run dev                  # 启动开发服务器
 
 后端默认地址：`http://127.0.0.1:3000`
 
-### 3. 启动前端
+**启动前端：**
 
 ```bash
 cd frontend
