@@ -10,12 +10,12 @@ dist-ssr/
 backend/.prisma/
 backend/prisma/.prisma/
 
-# Environment & secrets（勿提交真实密钥）
+# Environment & secrets
 .env
 .env.*
 !.env.example
 
-# SQLite 数据库与本地备份（克隆后本地生成）
+# SQLite database & backups
 backend/data/*.db
 *.db
 backup/
@@ -43,11 +43,10 @@ Thumbs.db
 *.timestamp-*-*.mjs
 frontend/.vite/
 
-# 根目录临时导出/测试用 Excel（按需保留或删除）
 /*.xlsx
-
-# 若曾将 `Cursor/` 复制为 `frontend/` 后残留旧目录，可忽略以免误提交重复代码；清理后请删除本行与 `Cursor/` 文件夹
 /Cursor/
-
-# 本地测试文件
 /Test/
+
+# Deploy output
+/deploy-package/
+/ComputerAsset-*.zip
