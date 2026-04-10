@@ -59,6 +59,7 @@ templatesRouter.get('/all', requireAuth, async (req, res) => {
     if (q.includes('台式机') || ql.includes('desktop')) or.push({ deviceType: DeviceType.desktop })
     if (q.includes('一体机') || ql.includes('aio')) or.push({ deviceType: DeviceType.aio })
     if (q.includes('服务器') || ql.includes('server')) or.push({ deviceType: DeviceType.server })
+    if (q.includes('其他') || ql.includes('other')) or.push({ deviceType: DeviceType.other })
     where.OR = or
   }
 

@@ -2,7 +2,7 @@
   <div class="page-wrap">
     <el-card shadow="never" class="intro-card">
       <div class="page-title">入库登记</div>
-      <div class="page-subtitle">新设备首次入账：关联型号模板、生成或填写电脑编号与序列号，并指定归属部门。</div>
+      <div class="page-subtitle">新设备首次入账：支持电脑/服务器等设备，按设备类型选择模板或手动填写参数并入库。</div>
     </el-card>
 
     <el-card shadow="never" class="main-card" v-loading="pageLoading">
@@ -15,12 +15,24 @@
 
       <el-form :model="form" class="in-form" label-width="112px" label-position="right">
         <div class="form-section-label">资产标识</div>
-        <el-form-item label="设备型号模板" required>
-          <el-select v-model="form.templateId" placeholder="选择已登记的型号模板" class="field-lg" filterable>
-            <el-option v-for="t in templates" :key="t.id" :label="t.name" :value="t.id" />
+        <el-form-item label="设备类型" required>
+          <el-select v-model="form.deviceType" placeholder="请选择设备类型" class="field-lg" @change="onDeviceTypeChange">
+            <el-option v-for="o in deviceTypeOptions" :key="o.value" :label="o.label" :value="o.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="电脑编号" required>
+        <el-form-item label="设备型号模板">
+          <el-select
+            v-model="form.templateId"
+            placeholder="可选：选择已登记模板，或留空手动填写"
+            class="field-lg"
+            filterable
+            clearable
+            @change="onTemplateChange"
+          >
+            <el-option v-for="t in filteredTemplates" :key="t.id" :label="t.name" :value="t.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="资产编号" required>
           <div class="inline-row">
             <el-input v-model="form.assetCode" class="field-md" placeholder="可点击右侧生成" clearable />
             <el-button @click="genCode" :loading="genLoading">生成编号</el-button>
@@ -28,6 +40,28 @@
         </el-form-item>
         <el-form-item label="序列号" required>
           <el-input v-model="form.serialNumber" class="field-lg" placeholder="设备机身序列号，需唯一" clearable />
+        </el-form-item>
+
+        <el-divider class="section-divider" />
+
+        <div class="form-section-label">设备参数</div>
+        <el-form-item label="品牌" :required="!isOtherDeviceType">
+          <el-input v-model="form.brand" class="field-lg" placeholder="如：Dell / H3C / Huawei" clearable />
+        </el-form-item>
+        <el-form-item label="型号" :required="!isOtherDeviceType">
+          <el-input v-model="form.model" class="field-lg" placeholder="如：R750 / S6520X-26C-SI" clearable />
+        </el-form-item>
+        <el-form-item label="操作系统">
+          <el-input v-model="form.os" class="field-lg" placeholder="服务器/网络设备可留空" clearable />
+        </el-form-item>
+        <el-form-item label="CPU">
+          <el-input v-model="form.cpu" class="field-lg" placeholder="可选" clearable />
+        </el-form-item>
+        <el-form-item label="内存">
+          <el-input v-model="form.memory" class="field-lg" placeholder="可选" clearable />
+        </el-form-item>
+        <el-form-item label="存储">
+          <el-input v-model="form.storage" class="field-lg" placeholder="可选" clearable />
         </el-form-item>
 
         <el-divider class="section-divider" />
@@ -64,8 +98,8 @@
       <div class="hint-box">
         <div class="hint-title">填写说明</div>
         <ul class="hint-list">
-          <li>模板决定默认品牌、型号、配置等；入库后仍可由超级管理员调整关键字段（会解除模板关联）。</li>
-          <li>电脑编号在系统内唯一；序列号在系统内唯一，请与实物一致。</li>
+          <li>可按设备类型筛选模板；也可以不选模板，直接手动填写品牌、型号等参数。</li>
+          <li>资产编号在系统内唯一；序列号在系统内唯一，请与实物一致。</li>
           <li>部门请按园区展开后点选具体部门（支持选中间层级，如仅选「综合部门」）。</li>
           <li>提交成功后资产状态为「在库」，可在出库/借用页办理领用或借出。</li>
         </ul>
@@ -75,11 +109,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { apiRequest } from '../services/api'
 import { ElMessage } from 'element-plus'
 import DepartmentCascader from '../components/DepartmentCascader.vue'
+import { DEVICE_TYPE_OPTIONS } from '../constants/deviceType'
 
 const router = useRouter()
 
@@ -89,15 +124,51 @@ const departments = ref<any[]>([])
 const genLoading = ref(false)
 const submitting = ref(false)
 const pageLoading = ref(true)
+const deviceTypeOptions = [...DEVICE_TYPE_OPTIONS]
 
 const form = reactive<any>({
+  deviceType: 'laptop',
   templateId: null as number | null,
   assetCode: '',
   serialNumber: '',
+  brand: '',
+  model: '',
+  os: '',
+  cpu: '',
+  memory: '',
+  storage: '',
   departmentId: null as number | null,
   purchaseDate: null as string | null,
   remark: '',
 })
+const isOtherDeviceType = computed(() => form.deviceType === 'other')
+const filteredTemplates = computed(() =>
+  templates.value.filter((t) => !form.deviceType || String(t.deviceType) === String(form.deviceType)),
+)
+
+function onTemplateChange() {
+  const id = Number(form.templateId || 0)
+  const t = templates.value.find((x) => Number(x.id) === id)
+  if (!t) return
+  if (t.deviceType) form.deviceType = t.deviceType
+  form.brand = t.brand ?? ''
+  form.model = t.model ?? ''
+  form.os = t.os ?? ''
+  form.cpu = t.cpu ?? ''
+  form.memory = t.memory ?? ''
+  form.storage = t.storage ?? ''
+}
+
+async function onDeviceTypeChange() {
+  form.templateId = null
+  form.brand = ''
+  form.model = ''
+  form.os = ''
+  form.cpu = ''
+  form.memory = ''
+  form.storage = ''
+  await genCode()
+}
 
 async function load() {
   pageLoading.value = true
@@ -118,7 +189,8 @@ async function load() {
 async function genCode() {
   genLoading.value = true
   try {
-    const data = await apiRequest<{ assetCode: string }>('/api/assets/generate-code')
+    const qs = form.deviceType ? `?deviceType=${encodeURIComponent(form.deviceType)}` : ''
+    const data = await apiRequest<{ assetCode: string }>(`/api/assets/generate-code${qs}`)
     form.assetCode = data.assetCode
   } finally {
     genLoading.value = false
@@ -126,9 +198,11 @@ async function genCode() {
 }
 
 async function submit() {
-  if (!form.templateId) return ElMessage.error('请选择模板')
-  if (!form.assetCode) return ElMessage.error('请生成电脑编号')
+  if (!form.deviceType) return ElMessage.error('请选择设备类型')
+  if (!form.assetCode) return ElMessage.error('请生成资产编号')
   if (!form.serialNumber) return ElMessage.error('请填写序列号')
+  if (!isOtherDeviceType.value && !String(form.brand ?? '').trim()) return ElMessage.error('请填写品牌')
+  if (!isOtherDeviceType.value && !String(form.model ?? '').trim()) return ElMessage.error('请填写型号')
   if (!form.departmentId) return ElMessage.error('请选择所属部门')
 
   submitting.value = true
@@ -139,8 +213,15 @@ async function submit() {
       body: {
         requestId,
         assetCode: form.assetCode,
-        templateId: form.templateId,
+        templateId: form.templateId ?? undefined,
+        deviceType: form.deviceType,
         serialNumber: form.serialNumber,
+        brand: String(form.brand ?? '').trim(),
+        model: String(form.model ?? '').trim(),
+        os: form.os || '',
+        cpu: form.cpu || '',
+        memory: form.memory || '',
+        storage: form.storage || '',
         departmentId: form.departmentId,
         purchaseDate: form.purchaseDate ? new Date(form.purchaseDate).toISOString() : undefined,
         remark: form.remark || undefined,

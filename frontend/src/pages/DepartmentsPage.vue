@@ -8,7 +8,13 @@
             先选园区，仅展示该园区下的部门树。路径示例：<strong>泰鼎 - 综合部门 - 信息中心</strong>。新增默认落在当前园区；变更上级可跨园区移动。
           </div>
         </div>
-        <el-button type="primary" :disabled="!activeCampusId" @click="openAdd">在当前园区新增</el-button>
+        <div style="display: flex; gap: 8px">
+          <el-button v-if="isSuperAdmin" @click="openAddCampus">新增园区</el-button>
+          <el-button v-if="isSuperAdmin" type="danger" plain :disabled="!activeCampusId" @click="removeCampus">
+            删除当前园区
+          </el-button>
+          <el-button type="primary" :disabled="!activeCampusId" @click="openAdd">在当前园区新增</el-button>
+        </div>
       </div>
     </el-card>
 
@@ -85,9 +91,6 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="排序号">
-          <el-input-number v-model="form.sortOrder" :min="0" style="width: 100%" />
-        </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="form.isActive" />
         </el-form-item>
@@ -98,6 +101,21 @@
         <el-button type="primary" @click="save">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="campusDialogVisible" title="新增园区" width="500px" destroy-on-close>
+      <el-form :model="campusForm" label-width="90px">
+        <el-form-item label="园区名称" required>
+          <el-input v-model="campusForm.name" placeholder="如：滨江园区" />
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="campusForm.isActive" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="campusDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveCampus">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -105,6 +123,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { apiRequest, type ApiError } from '../services/api'
+import { useAuthStore } from '../stores/auth'
 
 type CampusItem = { id: number; name: string; sortOrder: number }
 type DeptItem = {
@@ -125,6 +144,9 @@ const flatItems = ref<DeptItem[]>([])
 const campuses = ref<CampusItem[]>([])
 const activeCampusId = ref<number | null>(null)
 const dialogVisible = ref(false)
+const campusDialogVisible = ref(false)
+const authStore = useAuthStore()
+const isSuperAdmin = computed(() => Boolean(authStore.me?.bypassAll))
 
 const form = reactive<{
   id: number | null
@@ -142,8 +164,14 @@ const form = reactive<{
   isActive: true,
 })
 
+const campusForm = reactive({
+  name: '',
+  sortOrder: 0,
+  isActive: true,
+})
+
 const displayCampuses = computed(() =>
-  [...campuses.value].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id).slice(0, 3),
+  [...campuses.value].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id),
 )
 
 const currentCampusName = computed(() => {
@@ -256,6 +284,12 @@ function openAdd() {
   dialogVisible.value = true
 }
 
+function openAddCampus() {
+  const maxSort = campuses.value.length ? Math.max(...campuses.value.map((x) => x.sortOrder)) + 1 : 0
+  Object.assign(campusForm, { name: '', sortOrder: maxSort, isActive: true })
+  campusDialogVisible.value = true
+}
+
 function openEdit(row: DeptItem) {
   Object.assign(form, {
     id: row.id,
@@ -290,6 +324,50 @@ async function save() {
   dialogVisible.value = false
   await load()
   pickDefaultCampus()
+}
+
+async function saveCampus() {
+  const name = campusForm.name.trim()
+  if (!name) return ElMessage.error('请填写园区名称')
+  try {
+    const res = await apiRequest<{ campus: CampusItem }>('/api/campuses', {
+      method: 'POST',
+      body: {
+        name,
+        sortOrder: campusForm.sortOrder,
+        isActive: campusForm.isActive,
+      },
+    })
+    ElMessage.success('园区新增成功')
+    campusDialogVisible.value = false
+    await loadCampuses()
+    activeCampusId.value = res.campus?.id ?? activeCampusId.value
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '新增园区失败')
+  }
+}
+
+async function removeCampus() {
+  if (!activeCampusId.value) return
+  const current = campuses.value.find((c) => c.id === activeCampusId.value)
+  try {
+    await ElMessageBox.confirm(
+      `确认删除园区「${current?.name ?? activeCampusId.value}」？\n若园区下有关联资产/部门/角色范围将无法删除。`,
+      '删除园区',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await apiRequest(`/api/campuses/${activeCampusId.value}`, { method: 'DELETE' })
+    ElMessage.success('园区删除成功')
+    await loadCampuses()
+    await load()
+    pickDefaultCampus()
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '删除园区失败')
+  }
 }
 
 async function remove(row: DeptItem) {

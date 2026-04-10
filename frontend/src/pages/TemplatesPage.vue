@@ -23,7 +23,9 @@
     <el-card shadow="never" v-loading="loading">
       <el-table :data="templates" style="width: 100%" size="small">
         <el-table-column prop="name" label="模板名称" min-width="140" />
-        <el-table-column prop="deviceType" label="设备类型" width="100" />
+        <el-table-column label="设备类型" width="100">
+          <template #default="{ row }">{{ deviceTypeLabel(row.deviceType) }}</template>
+        </el-table-column>
         <el-table-column prop="brand" label="品牌" min-width="100" />
         <el-table-column prop="model" label="型号" min-width="120" />
         <el-table-column prop="cpu" label="CPU" min-width="100" />
@@ -97,18 +99,14 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { apiRequest } from '../services/api'
+import { DEVICE_TYPE_OPTIONS, deviceTypeLabel } from '../constants/deviceType'
 
 const templates = ref<any[]>([])
 const loading = ref(false)
 const saving = ref(false)
 const searchQ = ref('')
 
-const deviceTypeOptions = [
-  { label: '笔记本', value: 'laptop' },
-  { label: '台式机', value: 'desktop' },
-  { label: '一体机', value: 'aio' },
-  { label: '服务器', value: 'server' },
-]
+const deviceTypeOptions = [...DEVICE_TYPE_OPTIONS]
 
 const dialogVisible = ref(false)
 const form = reactive<any>({
