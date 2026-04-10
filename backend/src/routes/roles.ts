@@ -1,3 +1,5 @@
+import { randomBytes } from 'crypto'
+import type { Prisma } from '@prisma/client'
 import { Router } from 'express'
 
 import { prisma } from '../prisma'
@@ -27,6 +29,20 @@ function slugify(raw: string): string {
     .slice(0, 64)
 }
 
+async function allocateUniqueRoleSlug(tx: Prisma.TransactionClient, name: string): Promise<string> {
+  let slug = slugify(name)
+  if (slug) {
+    const taken = await tx.accessRole.findUnique({ where: { slug } })
+    if (!taken) return slug
+  }
+  for (let i = 0; i < 50; i++) {
+    const candidate = `role_${randomBytes(8).toString('hex')}`
+    const taken = await tx.accessRole.findUnique({ where: { slug: candidate } })
+    if (!taken) return candidate
+  }
+  badRequest('无法生成角色标识，请重试')
+}
+
 export const rolesRouter = Router()
 
 rolesRouter.get('/meta', requireAuth, requireAnyPermission('roles.manage', 'users.manage'), (_req, res) => {
@@ -40,6 +56,7 @@ rolesRouter.get('/', requireAuth, requireAnyPermission('roles.manage', 'users.ma
     orderBy: [{ isSystem: 'desc' }, { id: 'asc' }],
     include: {
       _count: { select: { users: true, permissions: true, campuses: true } },
+      campuses: { include: { campus: { select: { name: true } } } },
     },
   })
   res.json({
@@ -51,6 +68,7 @@ rolesRouter.get('/', requireAuth, requireAnyPermission('roles.manage', 'users.ma
       isSystem: r.isSystem,
       bypassAll: r.bypassAll,
       campusesAll: r.campusesAll,
+      campusNames: r.campuses.map((c) => c.campus.name),
       userCount: r._count.users,
       permissionCount: r._count.permissions,
       campusScopeCount: r._count.campuses,
@@ -81,7 +99,6 @@ rolesRouter.get('/:id', requireAuth, requirePermission('roles.manage'), async (r
 rolesRouter.post('/', requireAuth, requirePermission('roles.manage'), async (req, res) => {
   const body = req.body as {
     name?: unknown
-    slug?: unknown
     description?: unknown
     campusesAll?: unknown
     permissionKeys?: unknown
@@ -89,12 +106,6 @@ rolesRouter.post('/', requireAuth, requirePermission('roles.manage'), async (req
   }
   const name = typeof body.name === 'string' ? body.name.trim() : ''
   if (!name) badRequest('name is required')
-  let slug = typeof body.slug === 'string' ? slugify(body.slug) : ''
-  if (!slug) slug = slugify(name)
-  if (!slug) badRequest('slug is invalid')
-
-  const existSlug = await prisma.accessRole.findUnique({ where: { slug } })
-  if (existSlug) badRequest('slug already exists')
 
   const campusesAll = typeof body.campusesAll === 'boolean' ? body.campusesAll : true
   const keys = Array.isArray(body.permissionKeys)
@@ -109,6 +120,7 @@ rolesRouter.post('/', requireAuth, requirePermission('roles.manage'), async (req
   }
 
   const created = await prisma.$transaction(async (tx) => {
+    const slug = await allocateUniqueRoleSlug(tx, name)
     const r = await tx.accessRole.create({
       data: {
         name,

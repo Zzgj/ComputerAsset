@@ -538,6 +538,15 @@ async function submitEditCore() {
     String(editCoreForm.remark ?? '') !== String(asset.value.remark ?? '')
   if (!changed) return ElMessage.warning('未检测到变更')
 
+  // 仅当模板字段发生变化时才解绑模板；仅改编号/序列号不应影响模板关联。
+  const shouldDetachTemplate =
+    String(editCoreForm.brand ?? '') !== String(asset.value.brand ?? '') ||
+    String(editCoreForm.model ?? '') !== String(asset.value.model ?? '') ||
+    String(editCoreForm.os ?? '') !== String(asset.value.os ?? '') ||
+    String(editCoreForm.cpu ?? '') !== String(asset.value.cpu ?? '') ||
+    String(editCoreForm.memory ?? '') !== String(asset.value.memory ?? '') ||
+    String(editCoreForm.storage ?? '') !== String(asset.value.storage ?? '')
+
   // 高风险强提示：要求再次确认
   const ok = window.confirm(
     '高风险操作：你正在修改资产关键标识（编号/序列号/品牌等）。这会影响后续追溯与对账，确定继续吗？',
@@ -550,7 +559,7 @@ async function submitEditCore() {
       method: 'PUT',
       body: {
         version: asset.value.version,
-        forceCustom: true,
+        forceCustom: shouldDetachTemplate,
         assetCode: editCoreForm.assetCode.trim(),
         serialNumber: editCoreForm.serialNumber.trim(),
         brand: editCoreForm.brand ?? '',

@@ -21,42 +21,53 @@
         <el-select v-model="query.status" placeholder="状态" style="width: 140px" clearable>
           <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
+        <el-select v-model="query.deviceType" placeholder="设备类型" style="width: 120px" clearable>
+          <el-option v-for="o in deviceTypeFilterOptions" :key="o.value" :label="o.label" :value="o.value" />
+        </el-select>
         <el-select v-model="query.campusId" placeholder="园区" style="width: 130px" clearable>
           <el-option v-for="c in campuses" :key="c.id" :label="c.name" :value="c.id" />
         </el-select>
         <el-select v-model="query.departmentId" placeholder="部门" style="width: 220px" filterable clearable>
           <el-option v-for="d in departments" :key="d.id" :label="d.displayPath ?? d.name" :value="d.id" />
         </el-select>
-        <el-button type="primary" @click="loadAssets">搜索</el-button>
+        <el-button type="primary" @click="search">搜索</el-button>
+        <el-popover placement="bottom-end" :width="240" trigger="click">
+          <template #reference>
+            <el-button>列设置</el-button>
+          </template>
+          <div class="assets-col-settings">
+            <div v-for="c in columnDefs" :key="c.key" class="assets-col-settings__row">
+              <el-checkbox v-model="colVisible[c.key]" @change="persistColumnPrefs">{{ c.label }}</el-checkbox>
+            </div>
+            <div class="assets-col-settings__hint">设置保存在本浏览器</div>
+          </div>
+        </el-popover>
       </div>
     </el-card>
 
     <el-card shadow="never">
       <el-table :data="assets" v-loading="loading" style="width: 100%" border class="assets-table">
         <el-table-column prop="assetCode" label="电脑编号" min-width="140" />
-        <el-table-column label="品牌" min-width="120">
+        <el-table-column v-if="colVisible.deviceType" label="设备类型" min-width="100">
+          <template #default="{ row }">{{ deviceTypeLabel(row.deviceType) }}</template>
+        </el-table-column>
+        <el-table-column v-if="colVisible.brand" label="品牌" min-width="120">
           <template #default="{ row }">{{ formatText(row.brand) }}</template>
         </el-table-column>
-        <el-table-column label="型号" min-width="150">
+        <el-table-column v-if="colVisible.model" label="型号" min-width="150">
           <template #default="{ row }">{{ formatText(row.model) }}</template>
         </el-table-column>
-        <el-table-column label="设备模板" min-width="140">
-          <template #default="{ row }">
-            <el-tag v-if="row.template?.name" type="primary" effect="plain">{{ row.template.name }}</el-tag>
-            <el-tag v-else type="info" effect="plain">自定义</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="序列号" min-width="160">
+        <el-table-column v-if="colVisible.serial" label="序列号" min-width="160">
           <template #default="{ row }">{{ formatSerial(row.serialNumber) }}</template>
         </el-table-column>
-        <el-table-column label="状态" min-width="100">
+        <el-table-column v-if="colVisible.status" label="状态" min-width="100">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" effect="light">
               {{ statusOptions.find((s) => s.value === row.status)?.label ?? row.status }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="使用人" min-width="140">
+        <el-table-column v-if="colVisible.currentUser" label="使用人" min-width="140">
           <template #default="{ row }">
             <template v-if="!String(row.currentUserName ?? '').trim()">
               {{ formatText(row.currentUserName) }}
@@ -67,11 +78,17 @@
             <span v-else>{{ row.currentUserName }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="园区" min-width="100">
+        <el-table-column v-if="colVisible.campus" label="园区" min-width="100">
           <template #default="{ row }">{{ formatText(row.department?.campus?.name) }}</template>
         </el-table-column>
-        <el-table-column label="部门" min-width="200">
+        <el-table-column v-if="colVisible.department" label="部门" min-width="200">
           <template #default="{ row }">{{ formatText(row.department?.deptPathOnly ?? row.department?.name) }}</template>
+        </el-table-column>
+        <el-table-column v-if="colVisible.template" label="设备模板" min-width="140">
+          <template #default="{ row }">
+            <el-tag v-if="row.template?.name" type="primary" effect="plain">{{ row.template.name }}</el-tag>
+            <el-tag v-else type="info" effect="plain">自定义</el-tag>
+          </template>
         </el-table-column>
         <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
@@ -100,6 +117,71 @@ import { useRoute, useRouter } from 'vue-router'
 import type { LocationQuery } from 'vue-router'
 import { apiRequest } from '../services/api'
 import { useAuthStore } from '../stores/auth'
+import { DEVICE_TYPE_OPTIONS, deviceTypeLabel } from '../constants/deviceType'
+
+const ASSETS_LIST_COLUMNS_KEY = 'ca_assets_list_columns_v2'
+
+type AssetListColKey =
+  | 'brand'
+  | 'model'
+  | 'template'
+  | 'deviceType'
+  | 'serial'
+  | 'status'
+  | 'currentUser'
+  | 'campus'
+  | 'department'
+
+const columnDefs: { key: AssetListColKey; label: string }[] = [
+  { key: 'deviceType', label: '设备类型' },
+  { key: 'brand', label: '品牌' },
+  { key: 'model', label: '型号' },
+  { key: 'serial', label: '序列号' },
+  { key: 'status', label: '状态' },
+  { key: 'currentUser', label: '使用人' },
+  { key: 'campus', label: '园区' },
+  { key: 'department', label: '部门' },
+  { key: 'template', label: '设备模板' },
+]
+
+function defaultColumnVisibility(): Record<AssetListColKey, boolean> {
+  return {
+    deviceType: true,
+    brand: true,
+    model: true,
+    serial: true,
+    status: true,
+    currentUser: true,
+    campus: true,
+    department: true,
+    template: false,
+  }
+}
+
+function loadColumnPrefs(): Record<AssetListColKey, boolean> {
+  const base = defaultColumnVisibility()
+  try {
+    const raw = localStorage.getItem(ASSETS_LIST_COLUMNS_KEY)
+    if (!raw) return base
+    const parsed = JSON.parse(raw) as Partial<Record<AssetListColKey, boolean>>
+    for (const k of Object.keys(base) as AssetListColKey[]) {
+      if (typeof parsed[k] === 'boolean') base[k] = parsed[k]
+    }
+    return base
+  } catch {
+    return defaultColumnVisibility()
+  }
+}
+
+const colVisible = reactive(loadColumnPrefs())
+
+function persistColumnPrefs() {
+  try {
+    localStorage.setItem(ASSETS_LIST_COLUMNS_KEY, JSON.stringify({ ...colVisible }))
+  } catch {
+    /* ignore */
+  }
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -113,6 +195,8 @@ const total = ref(0)
 const multiHolderUserNames = ref<Set<string>>(new Set())
 const campuses = ref<Array<{ id: number; name: string }>>([])
 const departments = ref<Array<{ id: number; name: string; displayPath?: string }>>([])
+
+const deviceTypeFilterOptions = [...DEVICE_TYPE_OPTIONS]
 
 const statusOptions = [
   { label: '在库', value: 'in_stock' },
@@ -138,6 +222,8 @@ function statusTagType(status: string): '' | 'success' | 'warning' | 'danger' | 
 const query = reactive({
   q: '',
   status: '',
+  /** 未选择时为 null，避免 el-select 与空字符串 `''` 产生误显示 */
+  deviceType: null as string | null,
   campusId: null as number | null,
   departmentId: null as number | null,
   page: 1,
@@ -159,6 +245,8 @@ function applyListQueryFromRoute(q: LocationQuery) {
   }
   query.q = str('q')
   query.status = str('status')
+  const dt = str('deviceType')
+  query.deviceType = deviceTypeFilterOptions.some((o) => o.value === dt) ? dt : null
   query.campusId = parseOptionalInt(q.campusId)
   query.departmentId = parseOptionalInt(q.departmentId)
   const p = q.page
@@ -174,6 +262,7 @@ function buildListQueryForRoute(): Record<string, string> {
   const qv = query.q.trim()
   if (qv) o.q = qv
   if (query.status) o.status = query.status
+  if (query.deviceType != null && query.deviceType !== '') o.deviceType = query.deviceType
   if (query.campusId != null) o.campusId = String(query.campusId)
   if (query.departmentId != null) o.departmentId = String(query.departmentId)
   if (query.page > 1) o.page = String(query.page)
@@ -200,6 +289,7 @@ async function loadAssets() {
     const params = new URLSearchParams()
     if (query.q) params.set('q', query.q)
     if (query.status) params.set('status', query.status)
+    if (query.deviceType != null && query.deviceType !== '') params.set('deviceType', query.deviceType)
     if (query.campusId) params.set('campusId', String(query.campusId))
     if (query.departmentId) params.set('departmentId', String(query.departmentId))
     params.set('page', String(query.page))
@@ -279,5 +369,15 @@ onMounted(async () => {
 
 .assets-table :deep(.el-table__body tr td:first-child) {
   border-left-color: transparent;
+}
+
+.assets-col-settings__row {
+  margin-bottom: 8px;
+}
+
+.assets-col-settings__hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--ca-text-muted, #909399);
 }
 </style>
