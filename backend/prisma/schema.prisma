@@ -12,6 +12,7 @@ enum DeviceType {
   desktop
   aio
   server
+  other
 }
 
 enum AssetStatus {

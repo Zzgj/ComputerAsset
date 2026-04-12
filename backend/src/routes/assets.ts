@@ -47,6 +47,7 @@ assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req,
   const userNameFilter = typeof req.query.userName === 'string' ? req.query.userName.trim() : ''
   const departmentId = toInt(req.query.departmentId)
   const campusId = toInt(req.query.campusId)
+  const deviceTypeRaw = typeof req.query.deviceType === 'string' ? req.query.deviceType.trim() : ''
 
   const page = Math.max(1, toInt(req.query.page) ?? 1)
   const pageSize = Math.min(100, Math.max(1, toInt(req.query.pageSize) ?? 20))
@@ -68,6 +69,9 @@ assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req,
   }
   if (campusId) {
     where.department = { ...(typeof where.department === 'object' && where.department ? where.department : {}), campusId }
+  }
+  if (deviceTypeRaw && Object.values(DeviceType).includes(deviceTypeRaw as DeviceType)) {
+    where.deviceType = deviceTypeRaw as DeviceType
   }
 
   const scoped = assetCodeFilter.length > 0 || userNameFilter.length > 0
@@ -130,7 +134,11 @@ assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req,
   res.json({ items: itemsWithPath, total, page, pageSize, multiHolderUserNames })
 })
 
-assetsRouter.get('/generate-code', requireAuth, requirePermission('assets.write'), async (_req, res) => {
+assetsRouter.get('/generate-code', requireAuth, requirePermission('assets.write'), async (req, res) => {
+  const rawType = typeof req.query.deviceType === 'string' ? req.query.deviceType.trim() : ''
+  const deviceType = Object.values(DeviceType).includes(rawType as DeviceType)
+    ? (rawType as DeviceType)
+    : DeviceType.laptop
   const { YEAR, MONTH } = (() => {
     const d = new Date()
     const year = String(d.getFullYear()).slice(-2)
@@ -138,7 +146,14 @@ assetsRouter.get('/generate-code', requireAuth, requirePermission('assets.write'
     return { YEAR: year, MONTH: month }
   })()
 
-  const prefix = `NX-PC-${YEAR}${MONTH}-`
+  const devicePrefix: Record<DeviceType, string> = {
+    [DeviceType.laptop]: 'PC',
+    [DeviceType.desktop]: 'PC',
+    [DeviceType.aio]: 'AIO',
+    [DeviceType.server]: 'SRV',
+    [DeviceType.other]: 'OTH',
+  }
+  const prefix = `NX-${devicePrefix[deviceType]}-${YEAR}${MONTH}-`
   const last = await prisma.asset.findFirst({
     where: { assetCode: { startsWith: prefix } },
     orderBy: { assetCode: 'desc' },
@@ -281,12 +296,16 @@ assetsRouter.post('/', requireAuth, requirePermission('assets.write'), async (re
       : template?.deviceType
   const deviceType: DeviceType = deviceTypeCandidate ?? badRequest('deviceType is required (or templateId provides it)')
 
-  const brand = (typeof body.brand === 'string' ? body.brand : template?.brand) ?? badRequest('brand is required')
-  const model = (typeof body.model === 'string' ? body.model : template?.model) ?? badRequest('model is required')
-  const os = (typeof body.os === 'string' ? body.os : template?.os) ?? badRequest('os is required')
-  const cpu = (typeof body.cpu === 'string' ? body.cpu : template?.cpu) ?? badRequest('cpu is required')
-  const memory = (typeof body.memory === 'string' ? body.memory : template?.memory) ?? badRequest('memory is required')
-  const storage = (typeof body.storage === 'string' ? body.storage : template?.storage) ?? badRequest('storage is required')
+  const brandRaw = typeof body.brand === 'string' ? body.brand.trim() : ''
+  const modelRaw = typeof body.model === 'string' ? body.model.trim() : ''
+  const isOtherDevice = deviceType === DeviceType.other
+  const brand = isOtherDevice ? brandRaw || template?.brand || '' : brandRaw || template?.brand || badRequest('brand is required')
+  const model = isOtherDevice ? modelRaw || template?.model || '' : modelRaw || template?.model || badRequest('model is required')
+  // 对服务器等非电脑设备，OS/CPU/内存/存储允许留空，避免与现有模板流程冲突。
+  const os = typeof body.os === 'string' ? body.os : (template?.os ?? '')
+  const cpu = typeof body.cpu === 'string' ? body.cpu : (template?.cpu ?? '')
+  const memory = typeof body.memory === 'string' ? body.memory : (template?.memory ?? '')
+  const storage = typeof body.storage === 'string' ? body.storage : (template?.storage ?? '')
 
   const purchaseDate = body.purchaseDate ? new Date(body.purchaseDate as any) : new Date()
   if (Number.isNaN(purchaseDate.getTime())) badRequest('purchaseDate is invalid')
@@ -365,7 +384,7 @@ assetsRouter.post('/', requireAuth, requirePermission('assets.write'), async (re
       const metaTarget = (e.meta as any)?.target
       const targets = Array.isArray(metaTarget) ? metaTarget : metaTarget ? [metaTarget] : []
       if (targets.some((t) => String(t).includes('assetCode'))) {
-        throw { statusCode: 400, code: 'DUPLICATE_ASSET_CODE', message: '电脑编号（assetCode）已存在，请勿重复入库' }
+        throw { statusCode: 400, code: 'DUPLICATE_ASSET_CODE', message: '资产编号（assetCode）已存在，请勿重复入库' }
       }
       if (targets.some((t) => String(t).includes('serialNumber'))) {
         throw { statusCode: 400, code: 'DUPLICATE_SERIAL_NUMBER', message: '序列号（serialNumber）已存在，请勿重复入库' }

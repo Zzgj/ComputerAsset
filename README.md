@@ -6,7 +6,7 @@
 
 覆盖电脑资产从入库到报废的完整生命周期，提供可视化仪表盘、细粒度权限控制与完整的审计追踪。
 
-[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/Zzgj/ComputerAsset)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/Zzgj/ComputerAsset)
 [![License](https://img.shields.io/badge/license-ISC-green.svg)](https://opensource.org/licenses/ISC)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen.svg)](https://nodejs.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D.svg?logo=vue.js)](https://vuejs.org/)
@@ -359,6 +359,39 @@ pnpm run start                    # 启动生产服务器
 ---
 
 ## 更新日志
+
+### v1.3.0
+
+**设备类型与入库**
+
+- 设备类型新增「其他」，与后端 Prisma 枚举一致；模板检索支持「其他 / other」关键词
+- 入库页支持先选设备类型；型号模板改为可选，可手动填写品牌、型号、操作系统、CPU、内存、存储
+- 「其他」类型下品牌、型号可为空；非其他类型仍校验品牌、型号
+- 资产编号生成支持按设备类型区分前缀（如笔记本/台式 `PC`、一体机 `AIO`、服务器 `SRV`、其他 `OTH`）
+- 文案统一为「资产编号」；重复入库提示与列表筛选、路由查询参数联动
+
+**资产列表**
+
+- 新增按设备类型筛选
+- 新增「列设置」：可显隐设备类型、品牌、型号、序列号、状态、使用人、园区、部门、设备模板等列；偏好保存在本机浏览器
+
+**园区管理**
+
+- 超级管理员可新增园区、删除当前园区（删除前校验关联资产、部门、角色园区范围）
+- 部门管理页展示全部园区（不再仅显示前若干条）
+
+**角色管理**
+
+- 新建角色时由后端自动分配唯一 `slug`，无需手填
+- 角色列表「园区范围」展示具体园区名称
+
+**资产详情**
+
+- 仅当品牌、型号、操作系统、CPU、内存、存储等模板相关字段变更时才解除模板关联；仅改编号或序列号不再强制解绑
+
+**升级说明**
+
+- 本版本扩展了设备类型枚举；升级时请在 `backend` 目录执行 Prisma 迁移（开发环境可用 `pnpm exec prisma migrate dev` 生成并应用；生产环境在已有迁移文件的前提下执行 `pnpm exec prisma migrate deploy`）
 
 ### v1.2.0
 

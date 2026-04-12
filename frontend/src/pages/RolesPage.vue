@@ -15,7 +15,6 @@
     <el-card shadow="never" v-loading="loading">
       <el-table :data="items" size="small" style="width: 100%">
         <el-table-column prop="name" label="名称" min-width="120" />
-        <el-table-column prop="slug" label="标识" width="140" />
         <el-table-column label="类型" width="100">
           <template #default="{ row }">
             <el-tag v-if="row.bypassAll" type="danger" size="small" effect="light">超管</el-tag>
@@ -23,8 +22,10 @@
             <el-tag v-else type="success" size="small" effect="light">自定义</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="园区范围" width="110">
-          <template #default="{ row }">{{ row.campusesAll ? '全部' : `指定(${row.campusScopeCount})` }}</template>
+        <el-table-column label="园区范围" min-width="220">
+          <template #default="{ row }">
+            {{ row.campusesAll ? '全部' : (row.campusNames?.length ? row.campusNames.join('、') : '未配置') }}
+          </template>
         </el-table-column>
         <el-table-column prop="permissionCount" label="权限数" width="80" />
         <el-table-column prop="userCount" label="用户数" width="80" />
@@ -43,9 +44,6 @@
       <el-form label-width="100px">
         <el-form-item label="名称" required>
           <el-input v-model="form.name" placeholder="如：南浔园区运维" />
-        </el-form-item>
-        <el-form-item v-if="!editingId" label="标识 slug">
-          <el-input v-model="form.slug" placeholder="可选，留空则从名称生成英文标识" />
         </el-form-item>
         <el-form-item label="说明">
           <el-input v-model="form.description" type="textarea" :rows="2" />
@@ -89,6 +87,7 @@ type Row = {
   isSystem: boolean
   bypassAll: boolean
   campusesAll: boolean
+  campusNames: string[]
   userCount: number
   permissionCount: number
   campusScopeCount: number
@@ -104,7 +103,6 @@ const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
 const form = ref({
   name: '',
-  slug: '',
   description: '',
   campusesAll: true,
   campusIds: [] as number[],
@@ -134,7 +132,6 @@ function openCreate() {
   editingId.value = null
   form.value = {
     name: '',
-    slug: '',
     description: '',
     campusesAll: true,
     campusIds: [],
@@ -148,7 +145,6 @@ async function openEdit(row: Row) {
   const detail = await apiRequest<{
     role: {
       name: string
-      slug: string
       description: string | null
       campusesAll: boolean
       bypassAll: boolean
@@ -163,7 +159,6 @@ async function openEdit(row: Row) {
   }
   form.value = {
     name: r.name,
-    slug: r.slug,
     description: r.description ?? '',
     campusesAll: r.campusesAll,
     campusIds: [...r.campusIds],
@@ -185,7 +180,6 @@ async function save() {
   try {
     const body = {
       name: form.value.name.trim(),
-      slug: form.value.slug.trim() || undefined,
       description: form.value.description.trim() || undefined,
       campusesAll: form.value.campusesAll,
       campusIds: form.value.campusesAll ? [] : form.value.campusIds,
