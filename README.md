@@ -6,7 +6,7 @@
 
 覆盖电脑资产从入库到报废的完整生命周期，提供可视化仪表盘、细粒度权限控制与完整的审计追踪。
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/Zzgj/ComputerAsset)
+[![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)](https://github.com/Zzgj/ComputerAsset)
 [![License](https://img.shields.io/badge/license-ISC-green.svg)](https://opensource.org/licenses/ISC)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen.svg)](https://nodejs.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D.svg?logo=vue.js)](https://vuejs.org/)
@@ -366,6 +366,43 @@ pnpm run start                    # 启动生产服务器
 ---
 
 ## 更新日志
+
+### v1.4.0
+
+**出库签名确认**
+- 直接领用出库后自动生成二维码，领用人扫码进入签名页
+- 签名页展示完整领用信息（资产编号、领用人、部门、时间、备注）
+- 手写签名画板支持鼠标和触屏操作，签名存储为图片附在流转记录中
+- 支持复制签名链接，可通过微信等方式分享给领用人
+
+**单账号登录限制**
+- 同一账号同时只能在一处登录，新登录自动踢掉旧会话
+- 被踢出后跳转登录页并显示「已在其他设备登录」提示
+- 退出登录时清除会话令牌
+
+**仪表盘增强**
+- 统计卡片（资产总数/在库/使用中/借用中）点击直接跳转到资产列表并按状态筛选
+
+**借用归还时间**
+- 借用中资产在详情页显示预计归还日期提示
+- 流转时间线中借出记录标注预计归还日期
+
+**曾用人搜索**
+- 资产列表新增「曾用人搜索」，可搜索历史上曾使用过某资产的人员
+- 支持模糊匹配，适用于离职人员设备追溯场景
+
+**归还登记分页**
+- 归还登记页从固定显示 100 条改为分页（20/50/100 可选），显示总数
+
+**角色管理审计**
+- 新建、编辑、删除角色操作均写入操作日志
+
+**设备模板优化**
+- 设备类型支持自定义输入（保留预设选项，也可输入自定义类型）
+- 移除排序号字段，简化模板管理
+
+**搜索修复**
+- 修复资产列表中文搜索无反应（IME 组合输入不触发搜索）
 
 ### v1.3.0
 
