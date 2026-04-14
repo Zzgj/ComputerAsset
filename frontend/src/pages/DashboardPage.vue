@@ -1,19 +1,19 @@
 <template>
   <div class="ca-page ca-animate">
     <div class="stats-grid" v-if="stats">
-      <div class="ca-stat-card stat-total">
+      <div class="ca-stat-card stat-total clickable" @click="goAssets('')">
         <div class="ca-stat-label">资产总数</div>
         <div class="ca-stat-value">{{ stats.totalCount }}</div>
       </div>
-      <div class="ca-stat-card stat-stock">
+      <div class="ca-stat-card stat-stock clickable" @click="goAssets('in_stock')">
         <div class="ca-stat-label">在库</div>
         <div class="ca-stat-value">{{ stats.inStockCount }}</div>
       </div>
-      <div class="ca-stat-card stat-use">
+      <div class="ca-stat-card stat-use clickable" @click="goAssets('in_use')">
         <div class="ca-stat-label">使用中</div>
         <div class="ca-stat-value">{{ stats.inUseCount }}</div>
       </div>
-      <div class="ca-stat-card stat-borrow">
+      <div class="ca-stat-card stat-borrow clickable" @click="goAssets('borrowed')">
         <div class="ca-stat-label">借用中</div>
         <div class="ca-stat-value">{{ stats.borrowedCount }}</div>
       </div>
@@ -186,6 +186,12 @@ function goAsset(id: number) {
   router.push('/assets/' + id)
 }
 
+function goAssets(status: string) {
+  const query: Record<string, string> = {}
+  if (status) query.status = status
+  router.push({ path: '/assets', query })
+}
+
 const stats = ref<Stats | null>(null)
 const notifications = ref<any>(null)
 const records = ref<any[]>([])
@@ -350,6 +356,10 @@ const barOption = computed(() => {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
+}
+
+.clickable {
+  cursor: pointer;
 }
 
 .stat-total::before { background: linear-gradient(90deg, #4f46e5, #818cf8); }

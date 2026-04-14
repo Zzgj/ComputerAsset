@@ -17,6 +17,8 @@
           placeholder="搜索：编号/品牌/型号/序列号/使用人"
           style="width: 320px"
           @keyup.enter="search"
+          @change="search"
+          clearable
         />
         <el-select v-model="query.status" placeholder="状态" style="width: 140px" clearable>
           <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
@@ -30,6 +32,14 @@
         <el-select v-model="query.departmentId" placeholder="部门" style="width: 220px" filterable clearable>
           <el-option v-for="d in departments" :key="d.id" :label="d.displayPath ?? d.name" :value="d.id" />
         </el-select>
+        <el-input
+          v-model="query.historicalUser"
+          placeholder="曾用人搜索"
+          style="width: 160px"
+          clearable
+          @keyup.enter="search"
+          @change="search"
+        />
         <el-button type="primary" @click="search">搜索</el-button>
         <el-popover placement="bottom-end" :width="240" trigger="click">
           <template #reference>
@@ -201,6 +211,7 @@ const deviceTypeFilterOptions = [...DEVICE_TYPE_OPTIONS]
 const statusOptions = [
   { label: '在库', value: 'in_stock' },
   { label: '待领用', value: 'waiting_pickup' },
+  { label: '待签字确认', value: 'pending_confirmation' },
   { label: '使用中', value: 'in_use' },
   { label: '借用中', value: 'borrowed' },
   { label: '维修中', value: 'in_repair' },
@@ -210,6 +221,7 @@ const statusOptions = [
 function statusTagType(status: string): '' | 'success' | 'warning' | 'danger' | 'info' {
   const map: Record<string, '' | 'success' | 'warning' | 'danger' | 'info'> = {
     in_stock: '',
+    pending_confirmation: 'warning',
     waiting_pickup: 'warning',
     in_use: 'success',
     borrowed: 'warning',
@@ -222,10 +234,10 @@ function statusTagType(status: string): '' | 'success' | 'warning' | 'danger' | 
 const query = reactive({
   q: '',
   status: '',
-  /** 未选择时为 null，避免 el-select 与空字符串 `''` 产生误显示 */
   deviceType: null as string | null,
   campusId: null as number | null,
   departmentId: null as number | null,
+  historicalUser: '',
   page: 1,
   pageSize: 20,
 })
@@ -292,6 +304,7 @@ async function loadAssets() {
     if (query.deviceType != null && query.deviceType !== '') params.set('deviceType', query.deviceType)
     if (query.campusId) params.set('campusId', String(query.campusId))
     if (query.departmentId) params.set('departmentId', String(query.departmentId))
+    if (query.historicalUser) params.set('historicalUser', query.historicalUser)
     params.set('page', String(query.page))
     params.set('pageSize', String(query.pageSize))
 

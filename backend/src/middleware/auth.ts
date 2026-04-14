@@ -6,6 +6,7 @@ import { authHasPermission } from '../auth/accessContext'
 import { jwtClaimsToAccessAuth } from '../auth/jwtAccess'
 import type { PermissionKey } from '../auth/permissions'
 import { getEnv } from '../utils/env'
+import { prisma } from '../prisma'
 
 function getTokenFromRequest(req: Request): string | null {
   const header = req.headers.authorization
@@ -15,7 +16,7 @@ function getTokenFromRequest(req: Request): string | null {
   return token
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const token = getTokenFromRequest(req)
   if (!token) {
     return res.status(401).json({ error: { message: 'Missing Authorization token' } })
@@ -29,6 +30,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
       p?: unknown
       ca?: unknown
       ci?: unknown
+      st?: string
     }
     const userId = decoded.sub
     if (typeof userId !== 'string' || !userId) {
@@ -38,6 +40,19 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     const access = jwtClaimsToAccessAuth(Number(userId), decoded as Record<string, unknown>)
     if (!Number.isFinite(access.id) || access.id < 1) {
       return res.status(401).json({ error: { message: 'Invalid Authorization token' } })
+    }
+
+    if (decoded.st) {
+      const user = await prisma.user.findUnique({
+        where: { id: access.id },
+        select: { sessionToken: true, isActive: true },
+      })
+      if (!user || !user.isActive) {
+        return res.status(401).json({ error: { message: 'Account disabled', code: 'ACCOUNT_DISABLED' } })
+      }
+      if (user.sessionToken && user.sessionToken !== decoded.st) {
+        return res.status(401).json({ error: { message: 'Session expired, logged in from another location', code: 'SESSION_REPLACED' } })
+      }
     }
 
     ;(req as any).access = access

@@ -18,6 +18,7 @@ enum DeviceType {
 enum AssetStatus {
   in_stock
   waiting_pickup
+  pending_confirmation
   in_use
   borrowed
   in_repair
@@ -52,6 +53,7 @@ model User {
   accessRole       AccessRole       @relation(fields: [accessRoleId], references: [id])
   isActive         Boolean          @default(true)
   mustChangePass   Boolean          @default(false)
+  sessionToken     String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
@@ -131,7 +133,7 @@ model Department {
 model AssetTemplate {
   id          Int         @id @default(autoincrement())
   name        String      @unique
-  deviceType  DeviceType
+  deviceType  String
   brand       String
   model       String
   os          String
@@ -151,7 +153,7 @@ model Asset {
   templateId        Int?
   template          AssetTemplate?  @relation(fields: [templateId], references: [id])
 
-  deviceType        DeviceType
+  deviceType        String
   brand             String
   model             String
   serialNumber      String          @unique

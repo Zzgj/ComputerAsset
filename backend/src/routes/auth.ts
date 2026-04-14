@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto'
 import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import { sign } from 'jsonwebtoken'
@@ -78,8 +79,14 @@ authRouter.post('/login', async (req, res) => {
     return res.status(500).json({ error: { message: 'User access role is missing' } })
   }
 
+  const sessionToken = randomBytes(32).toString('hex')
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { sessionToken },
+  })
+
   const { JWT_SECRET, JWT_EXPIRES_IN } = getEnv()
-  const claims = accessAuthToJwtClaims(access)
+  const claims = { ...accessAuthToJwtClaims(access), st: sessionToken }
   const token = (sign as any)(
     claims,
     JWT_SECRET,
@@ -158,6 +165,11 @@ authRouter.get('/me', requireAuth, async (req, res) => {
 
 authRouter.post('/logout', requireAuth, async (req, res) => {
   const access = (req as any).access as { id: number; username?: string }
+
+  await prisma.user.update({
+    where: { id: access.id },
+    data: { sessionToken: null },
+  })
 
   await prisma.operationLog.create({
     data: {

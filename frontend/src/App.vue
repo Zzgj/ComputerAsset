@@ -10,7 +10,7 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
-const isLogin = computed(() => route.path === '/login')
+const isLogin = computed(() => route.path === '/login' || route.path === '/sign')
 const navKeyword = ref('')
 const sidebarCollapsed = ref(false)
 

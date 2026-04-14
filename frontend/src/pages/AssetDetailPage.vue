@@ -21,6 +21,15 @@
             </el-tag>
             <el-tag>{{ formatText(asset.currentUserName) }}</el-tag>
           </div>
+          <div v-if="asset.status === 'pending_confirmation' && pendingSignUrl" class="pending-sign-hint">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            <span>待签字确认</span>
+            <el-button type="primary" size="small" text @click="copySignUrl">复制签名链接</el-button>
+          </div>
+          <div v-if="asset.status === 'borrowed' && latestExpectedReturn" class="borrow-return-hint">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            预计归还：{{ latestExpectedReturn }}
+          </div>
           <div v-if="asset.department?.displayPath" style="margin-top: 8px; font-size: 13px; color: #606266">
             全路径：{{ asset.department.displayPath }}
           </div>
@@ -133,10 +142,20 @@
               <el-tag v-if="r.recordOperatorName" type="warning" effect="plain" size="small">
                 操作人：{{ r.recordOperatorName }}
               </el-tag>
+              <el-tag v-if="r.expectedReturnDate" type="danger" effect="plain" size="small">
+                预计归还：{{ r.expectedReturnDate }}
+              </el-tag>
             </div>
             <div class="timeline-remark">
               <span class="timeline-label">备注</span>
               <span class="timeline-value">{{ formatText(r.remark) }}</span>
+            </div>
+            <div v-if="r.proofImage" class="timeline-signature">
+              <span class="timeline-label">领用签名</span>
+              <img :src="r.proofImage" alt="手写签名" class="signature-img" />
+            </div>
+            <div v-if="(r.action === 'check_out' || r.action === 'lend') && !r.proofImage" class="timeline-unsigned">
+              <el-tag type="warning" effect="light" size="small">未签名确认</el-tag>
             </div>
           </div>
           <div class="timeline-body" v-else>
@@ -337,6 +356,7 @@ function statusLabel(statusRaw: string) {
   const map: Record<string, string> = {
     in_stock: '在库',
     waiting_pickup: '待领用',
+    pending_confirmation: '待签字确认',
     in_use: '使用中',
     borrowed: '借用中',
     in_repair: '维修中',
@@ -351,6 +371,37 @@ const uniqueUsers = computed(() => {
     if (typeof r.userName === 'string' && r.userName.trim()) set.add(r.userName)
   }
   return Array.from(set)
+})
+
+const pendingSignUrl = computed(() => {
+  if (asset.value?.status !== 'pending_confirmation') return ''
+  const latestUnsigned = [...records.value]
+    .filter((r) => (r.action === 'check_out' || r.action === 'lend') && !r.proofImage)
+    .sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime())[0]
+  if (!latestUnsigned) return ''
+  const params = new URLSearchParams({
+    recordId: String(latestUnsigned.id),
+    assetCode: asset.value?.assetCode ?? '',
+    userName: latestUnsigned.userName ?? '',
+    department: '',
+    time: new Date(latestUnsigned.actionDate).toLocaleString(),
+    remark: latestUnsigned.remark ?? '',
+  })
+  return `${window.location.origin}/sign?${params.toString()}`
+})
+
+function copySignUrl() {
+  navigator.clipboard?.writeText(pendingSignUrl.value)
+    .then(() => ElMessage.success('签名链接已复制'))
+    .catch(() => ElMessage.warning('复制失败，请手动复制'))
+}
+
+const latestExpectedReturn = computed(() => {
+  const lendRecord = [...records.value]
+    .filter((r) => r.action === 'lend' && r.expectedReturnDate)
+    .sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime())[0]
+  if (!lendRecord?.expectedReturnDate) return ''
+  return new Date(lendRecord.expectedReturnDate).toLocaleDateString()
 })
 
 /** 流转时间线：最新在前，便于看到刚发生的归还等操作 */
@@ -368,6 +419,8 @@ const timelineItems = computed(() => {
     departmentDisplay: r.department?.displayPath ?? r.department?.name ?? '-',
     remark: r.remark ?? '-',
     recordOperatorName: r.operator?.realName?.trim() || r.operator?.username?.trim() || '',
+    expectedReturnDate: r.expectedReturnDate ? new Date(r.expectedReturnDate).toLocaleDateString() : '',
+    proofImage: r.proofImage ?? '',
   }))
   const edits = (changeLogs.value ?? []).map((l: any) => {
     const before = l?.detail?.before ?? {}
@@ -750,6 +803,53 @@ onMounted(async () => {
 .timeline-value {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.timeline-signature {
+  margin-top: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.signature-img {
+  max-width: 280px;
+  max-height: 120px;
+  border: 1px solid var(--ca-border-light);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.timeline-unsigned {
+  margin-top: 8px;
+}
+
+.pending-sign-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.borrow-return-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--ca-warning-bg);
+  border: 1px solid var(--ca-warning-light);
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 600;
 }
 </style>
 

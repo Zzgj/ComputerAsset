@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { DeviceType, Prisma } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 
 import { prisma } from '../prisma'
 import { requireAuth, requirePermission } from '../middleware/auth'
@@ -55,11 +55,11 @@ templatesRouter.get('/all', requireAuth, async (req, res) => {
       { remark: { contains: q } },
     ]
     const ql = q.toLowerCase()
-    if (q.includes('笔记本') || ql.includes('laptop')) or.push({ deviceType: DeviceType.laptop })
-    if (q.includes('台式机') || ql.includes('desktop')) or.push({ deviceType: DeviceType.desktop })
-    if (q.includes('一体机') || ql.includes('aio')) or.push({ deviceType: DeviceType.aio })
-    if (q.includes('服务器') || ql.includes('server')) or.push({ deviceType: DeviceType.server })
-    if (q.includes('其他') || ql.includes('other')) or.push({ deviceType: DeviceType.other })
+    if (q.includes('笔记本') || ql.includes('laptop')) or.push({ deviceType: 'laptop' })
+    if (q.includes('台式机') || ql.includes('desktop')) or.push({ deviceType: 'desktop' })
+    if (q.includes('一体机') || ql.includes('aio')) or.push({ deviceType: 'aio' })
+    if (q.includes('服务器') || ql.includes('server')) or.push({ deviceType: 'server' })
+    if (q.includes('其他') || ql.includes('other')) or.push({ deviceType: 'other' })
     where.OR = or
   }
 
@@ -85,14 +85,14 @@ templatesRouter.post('/', requireAuth, requirePermission('templates.manage'), as
   const body = req.body as any
 
   if (typeof body.name !== 'string' || body.name.trim() === '') badRequest('name is required')
-  if (!Object.values(DeviceType).includes(body.deviceType)) badRequest('deviceType is invalid')
+  if (typeof body.deviceType !== 'string' || body.deviceType.trim() === '') badRequest('deviceType is required')
 
   let created
   try {
     created = await prisma.assetTemplate.create({
       data: {
         name: body.name,
-        deviceType: body.deviceType as DeviceType,
+        deviceType: body.deviceType as any,
         brand: String(body.brand ?? ''),
         model: String(body.model ?? ''),
         os: String(body.os ?? ''),
@@ -136,7 +136,7 @@ templatesRouter.put('/:id', requireAuth, requirePermission('templates.manage'), 
   const body = req.body as any
   const data: any = {}
   if (typeof body.name === 'string' && body.name.trim() !== '') data.name = body.name
-  if (Object.values(DeviceType).includes(body.deviceType)) data.deviceType = body.deviceType as DeviceType
+  if (typeof body.deviceType === 'string' && body.deviceType.trim()) data.deviceType = body.deviceType as any
   if (typeof body.brand === 'string') data.brand = body.brand
   if (typeof body.model === 'string') data.model = body.model
   if (typeof body.os === 'string') data.os = body.os
