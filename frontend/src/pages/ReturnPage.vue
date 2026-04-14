@@ -34,7 +34,7 @@
       <div class="search-bar">
         <el-input v-model="searchAssetCode" clearable class="search-field" placeholder="电脑编号（模糊）" @keyup.enter="load" />
         <el-input v-model="searchUserName" clearable class="search-field" placeholder="使用人姓名（模糊）" @keyup.enter="load" />
-        <el-button type="primary" @click="load">搜索</el-button>
+        <el-button type="primary" @click="page = 1; load()">搜索</el-button>
         <el-button @click="resetSearch">重置</el-button>
       </div>
 
@@ -71,6 +71,19 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <div style="margin-top: 16px; display: flex; justify-content: flex-end">
+        <el-pagination
+          background
+          layout="total, sizes, prev, pager, next"
+          :total="total"
+          :page-size="pageSize"
+          :current-page="page"
+          :page-sizes="[20, 50, 100]"
+          @size-change="onSizeChange"
+          @current-change="onPageChange"
+        />
+      </div>
     </el-card>
 
     <el-dialog
@@ -121,6 +134,9 @@ import { ElMessage } from 'element-plus'
 
 const loading = ref(false)
 const assets = ref<any[]>([])
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(20)
 const searchAssetCode = ref('')
 const searchUserName = ref('')
 
@@ -154,22 +170,35 @@ async function load() {
   try {
     const params = new URLSearchParams()
     params.set('statusIn', 'in_use,borrowed')
-    params.set('page', '1')
-    params.set('pageSize', '100')
+    params.set('page', String(page.value))
+    params.set('pageSize', String(pageSize.value))
     const ac = searchAssetCode.value.trim()
     const un = searchUserName.value.trim()
     if (ac) params.set('assetCode', ac)
     if (un) params.set('userName', un)
-    const data = await apiRequest<{ items: any[] }>('/api/assets?' + params.toString())
+    const data = await apiRequest<{ items: any[]; total: number }>('/api/assets?' + params.toString())
     assets.value = data.items ?? []
+    total.value = data.total ?? 0
   } finally {
     loading.value = false
   }
 }
 
+function onPageChange(p: number) {
+  page.value = p
+  load()
+}
+
+function onSizeChange(s: number) {
+  pageSize.value = s
+  page.value = 1
+  load()
+}
+
 function resetSearch() {
   searchAssetCode.value = ''
   searchUserName.value = ''
+  page.value = 1
   load()
 }
 

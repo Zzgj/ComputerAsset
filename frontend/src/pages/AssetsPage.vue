@@ -17,6 +17,8 @@
           placeholder="搜索：编号/品牌/型号/序列号/使用人"
           style="width: 320px"
           @keyup.enter="search"
+          @change="search"
+          clearable
         />
         <el-select v-model="query.status" placeholder="状态" style="width: 140px" clearable>
           <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />

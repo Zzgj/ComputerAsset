@@ -119,6 +119,8 @@ rolesRouter.post('/', requireAuth, requirePermission('roles.manage'), async (req
     badRequest('未勾选「全部园区」时，请至少选择一个园区')
   }
 
+  const authUser = (req as any).auth as { id: number }
+
   const created = await prisma.$transaction(async (tx) => {
     const slug = await allocateUniqueRoleSlug(tx, name)
     const r = await tx.accessRole.create({
@@ -141,6 +143,16 @@ rolesRouter.post('/', requireAuth, requirePermission('roles.manage'), async (req
         data: campusIds.map((campusId) => ({ roleId: r.id, campusId })),
       })
     }
+    await tx.operationLog.create({
+      data: {
+        operatorId: authUser.id,
+        action: '新建角色',
+        targetType: 'AccessRole',
+        targetId: r.id,
+        detail: { name, slug, campusesAll, permissionCount: keys.length },
+        ipAddress: req.ip ?? 'unknown',
+      },
+    })
     return r
   })
 
@@ -196,6 +208,8 @@ rolesRouter.put('/:id', requireAuth, requirePermission('roles.manage'), async (r
     badRequest('未勾选「全部园区」时，请至少选择一个园区')
   }
 
+  const authUser = (req as any).auth as { id: number }
+
   await prisma.$transaction(async (tx) => {
     await tx.accessRole.update({
       where: { id },
@@ -217,6 +231,16 @@ rolesRouter.put('/:id', requireAuth, requirePermission('roles.manage'), async (r
         })
       }
     }
+    await tx.operationLog.create({
+      data: {
+        operatorId: authUser.id,
+        action: '编辑角色',
+        targetType: 'AccessRole',
+        targetId: id,
+        detail: { name: data.name ?? existing.name, changes: data, permissionKeys: keys, campusIds },
+        ipAddress: req.ip ?? 'unknown',
+      },
+    })
   })
 
   const updated = await prisma.accessRole.findUnique({
@@ -243,6 +267,19 @@ rolesRouter.delete('/:id', requireAuth, requirePermission('roles.manage'), async
   if (existing.isSystem) badRequest('不能删除系统内置角色')
   if (existing._count.users > 0) badRequest('该角色仍有关联用户，无法删除')
 
-  await prisma.accessRole.delete({ where: { id } })
+  const authUser = (req as any).auth as { id: number }
+  await prisma.$transaction(async (tx) => {
+    await tx.accessRole.delete({ where: { id } })
+    await tx.operationLog.create({
+      data: {
+        operatorId: authUser.id,
+        action: '删除角色',
+        targetType: 'AccessRole',
+        targetId: id,
+        detail: { name: existing.name, slug: existing.slug },
+        ipAddress: req.ip ?? 'unknown',
+      },
+    })
+  })
   res.json({ ok: true })
 })
