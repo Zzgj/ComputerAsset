@@ -85,8 +85,20 @@ bash deploy/prepare.sh
 | 构建后端 | TypeScript 编译为 JavaScript |
 | 安装前端依赖并构建 | Vue 3 打包为静态文件 |
 | 组装部署包 | 使用 npm 生成标准 node_modules，复制所有运行时文件 |
+| 前端生产环境变量 | 若存在 `frontend/env.deployment`，构建前会复制为 `frontend/.env.production.local` 再打包（见下节） |
 
 完成后生成 `deploy-package/` 文件夹，这就是完整的部署包。
+
+#### 签名链接与二维码：`VITE_PUBLIC_BASE_URL`（请务必按需修改）
+
+出库、借出后的**签名二维码**和**复制签名链接**中的地址，必须指向用户（手机或其他电脑）能打开的站点根 URL，而不能是构建机或浏览器里的 `localhost`。
+
+1. **配置文件路径**：仓库内 **`frontend/env.deployment`**（仅本部署分支维护；不入 `.gitignore`，可提交团队统一默认值）。
+2. **变量名**：`VITE_PUBLIC_BASE_URL`，例如 `http://10.2.254.29:3000`（**不要**末尾多余 `/`；若使用 HTTPS 或域名，改为 `https://asset.example.com` 等形式即可）。
+3. **何时必须改**：
+   - 服务器 IP、**端口**（与 `backend\.env` 里 `PORT` 一致）、或对外使用**域名**与仓库默认值不一致时；
+   - 修改后必须在**有网络的构建机**上重新运行 **`deploy\prepare.bat`** 或 **`deploy/prepare.sh`**，再拷贝新的 `deploy-package` 到服务器并执行 `deploy.bat`，否则前端包里仍是旧地址。
+4. **机制说明**：`prepare` 在「安装前端依赖并构建」前会把 `frontend/env.deployment` 复制为 `frontend/.env.production.local`，Vite 构建时将其注入前端；未改该文件时沿用仓库中的默认示例值。
 
 **3. 拷贝到内网服务器**
 
