@@ -52,6 +52,7 @@ model User {
   accessRole       AccessRole       @relation(fields: [accessRoleId], references: [id])
   isActive         Boolean          @default(true)
   mustChangePass   Boolean          @default(false)
+  sessionToken     String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 

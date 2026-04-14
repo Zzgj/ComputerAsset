@@ -74,6 +74,11 @@
             </div>
           </div>
 
+          <div v-if="kickedMsg" class="kicked-msg">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            {{ kickedMsg }}
+          </div>
+
           <div v-if="error" class="error-msg">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
             {{ error }}
@@ -90,10 +95,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
+const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
@@ -101,8 +107,16 @@ const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref<string | null>(null)
+const kickedMsg = ref<string | null>(null)
 const userFocus = ref(false)
 const passFocus = ref(false)
+
+onMounted(() => {
+  const msg = route.query.msg
+  if (typeof msg === 'string' && msg) {
+    kickedMsg.value = msg
+  }
+})
 
 async function onLogin() {
   loading.value = true
@@ -319,6 +333,18 @@ async function onLogin() {
 
 .input-wrap input::placeholder {
   color: var(--ca-text-muted);
+}
+
+.kicked-msg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #92400e;
+  font-size: 13px;
+  padding: 10px 14px;
+  background: var(--ca-warning-bg);
+  border-radius: var(--ca-radius-sm);
+  border: 1px solid var(--ca-warning-light);
 }
 
 .error-msg {

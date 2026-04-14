@@ -51,9 +51,13 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 
   if (!res.ok) {
     if (res.status === 401 && !path.includes('/auth/login')) {
+      const code = payload?.error?.code ?? payload?.code
       localStorage.removeItem('token')
       if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-        window.location.href = '/login'
+        const msg = code === 'SESSION_REPLACED'
+          ? encodeURIComponent('您的账号已在其他设备登录，当前会话已失效')
+          : ''
+        window.location.href = msg ? `/login?msg=${msg}` : '/login'
       }
     }
 
