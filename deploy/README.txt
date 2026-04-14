@@ -12,11 +12,10 @@
 
 二、准备部署包（在有网络的机器上执行）
 ------------------------------------------------------------
-  1. 克隆仓库并切换到 deploy/windows-server 分支:
+  1. 克隆仓库（默认 main 分支即可）:
 
      git clone https://github.com/Zzgj/ComputerAsset.git
      cd ComputerAsset
-     git checkout deploy/windows-server
 
   2. 双击运行 deploy\prepare.bat
 
@@ -80,6 +79,7 @@
 ------------------------------------------------------------
   启动服务: 双击 deploy.bat
   停止服务: 双击 stop.bat 或关闭服务命令行窗口
+  重启服务: 双击 restart.bat（先停止再执行 deploy.bat）
   查看日志: 直接查看服务命令行窗口输出
   数据备份: 在系统内使用"数据备份"功能,或直接复制
             backend\data\dev.db 文件

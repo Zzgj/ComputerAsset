@@ -139,6 +139,7 @@ robocopy "%FRONTEND_DIR%\dist" "%DEPLOY_DIR%\frontend\dist" /e /nfl /ndl /njh /n
 echo     正在复制部署脚本 ...
 copy "%ROOT_DIR%\deploy\deploy.bat" "%DEPLOY_DIR%\" >nul
 copy "%ROOT_DIR%\deploy\stop.bat" "%DEPLOY_DIR%\" >nul
+copy "%ROOT_DIR%\deploy\restart.bat" "%DEPLOY_DIR%\" >nul
 copy "%ROOT_DIR%\deploy\README.txt" "%DEPLOY_DIR%\" >nul
 
 echo     [通过] 部署包组装完成

@@ -117,6 +117,7 @@ cp -r "$FRONTEND_DIR/dist/"* "$DEPLOY_DIR/frontend/dist/"
 
 cp "$ROOT_DIR/deploy/deploy.bat" "$DEPLOY_DIR/"
 cp "$ROOT_DIR/deploy/stop.bat" "$DEPLOY_DIR/"
+cp "$ROOT_DIR/deploy/restart.bat" "$DEPLOY_DIR/"
 cp "$ROOT_DIR/deploy/README.txt" "$DEPLOY_DIR/"
 
 echo -e "    ${GREEN}[通过]${NC} 部署包组装完成"

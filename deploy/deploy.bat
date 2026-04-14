@@ -13,7 +13,7 @@ cls
 echo.
 echo   +---------------------------------------------------+
 echo   ^|                                                   ^|
-echo   ^|   ComputerAsset v1.2.0                            ^|
+echo   ^|   ComputerAsset (deploy-package)                  ^|
 echo   ^|                                                   ^|
 echo   +---------------------------------------------------+
 echo.
@@ -225,6 +225,6 @@ echo   ^|                                                   ^|
 echo   +---------------------------------------------------+
 echo.
 echo   [Stop]    stop.bat
-echo   [Restart] deploy.bat
+echo   [Restart] restart.bat
 echo.
 pause

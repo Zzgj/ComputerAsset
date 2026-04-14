@@ -2,7 +2,9 @@
 chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
-set "BACKEND_DIR=%~dp0backend"
+set "ROOT_DIR=%~dp0"
+if "%ROOT_DIR:~-1%"=="\" set "ROOT_DIR=%ROOT_DIR:~0,-1%"
+set "BACKEND_DIR=%ROOT_DIR%\backend"
 set "PORT=3000"
 
 if exist "%BACKEND_DIR%\.env" (
@@ -13,8 +15,10 @@ if exist "%BACKEND_DIR%\.env" (
 )
 
 echo.
-echo   ComputerAsset - Stop Service
+echo   ComputerAsset - Stop (dev backend port)
 echo   -----------------------------------------------------------
+echo   Backend dir: %BACKEND_DIR%
+echo   Port: %PORT%
 echo.
 
 set "FOUND=0"
@@ -22,18 +26,18 @@ for /f "tokens=5" %%p in ('netstat -ano 2^>nul ^| findstr ":%PORT% " ^| findstr 
     if not defined DONE (
         set "DONE=1"
         set "FOUND=1"
-        echo   [INFO] Found process PID %%p on port %PORT%
+        echo   [INFO] Listening PID %%p on port %PORT%
         taskkill /pid %%p /f >nul 2>&1
         if !errorlevel! equ 0 (
-            echo   [OK] Service stopped
+            echo   [OK] Stopped
         ) else (
-            echo   [FAIL] Cannot stop, close the service window manually
+            echo   [FAIL] Cannot stop PID %%p
         )
     )
 )
 
 if "%FOUND%"=="0" (
-    echo   [INFO] No service running on port %PORT%
+    echo   [INFO] No LISTENING process on port %PORT%
 )
 
 echo.
