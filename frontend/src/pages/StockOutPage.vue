@@ -159,17 +159,38 @@
         </el-tab-pane>
       </el-tabs>
     </el-card>
+
+    <el-dialog v-model="qrDialogVisible" title="领用签名确认" width="400px" align-center>
+      <div class="qr-dialog-body">
+        <p class="qr-hint">请让领用人使用手机扫描二维码，核对信息后手写签名确认</p>
+        <img v-if="qrDataUrl" :src="qrDataUrl" alt="签名二维码" class="qr-image" />
+        <div class="qr-link">
+          <el-input :model-value="qrSignUrl" readonly size="small">
+            <template #append>
+              <el-button @click="copyLink">复制链接</el-button>
+            </template>
+          </el-input>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="qrDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import QRCode from 'qrcode'
 import { apiRequest } from '../services/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DepartmentCascader from '../components/DepartmentCascader.vue'
 
 const activeTab = ref('check_out')
 const submitting = ref(false)
+const qrDialogVisible = ref(false)
+const qrDataUrl = ref('')
+const qrSignUrl = ref('')
 
 const campuses = ref<Array<{ id: number; name: string; sortOrder: number }>>([])
 const departments = ref<any[]>([])
@@ -251,6 +272,31 @@ function uuid() {
   return (crypto as any).randomUUID ? (crypto as any).randomUUID() : String(Date.now())
 }
 
+function copyLink() {
+  navigator.clipboard?.writeText(qrSignUrl.value).then(() => ElMessage.success('链接已复制')).catch(() => ElMessage.warning('复制失败，请手动复制'))
+}
+
+async function showSignQr(recordId: number | undefined, assetCode: string, userName: string, remark: string) {
+  if (!recordId) return
+  const baseUrl = window.location.origin
+  const params = new URLSearchParams({
+    recordId: String(recordId),
+    assetCode,
+    userName,
+    department: '',
+    time: new Date().toLocaleString(),
+    remark,
+  })
+  const signUrl = `${baseUrl}/sign?${params.toString()}`
+  qrSignUrl.value = signUrl
+  try {
+    qrDataUrl.value = await QRCode.toDataURL(signUrl, { width: 280, margin: 2 })
+    qrDialogVisible.value = true
+  } catch {
+    ElMessage.warning('二维码生成失败，请手动发送签名链接')
+  }
+}
+
 async function doCheckOut() {
   submitting.value = true
   try {
@@ -276,7 +322,7 @@ async function doCheckOut() {
       }
     }
 
-    await apiRequest('/api/operations/check-out', {
+    const result = await apiRequest<any>('/api/operations/check-out', {
       method: 'POST',
       body: {
         requestId: uuid(),
@@ -287,7 +333,9 @@ async function doCheckOut() {
         remark: checkOut.remark || undefined,
       },
     })
-    ElMessage.success('出库成功')
+    ElMessage.success('出库成功，请让领用人扫码签名确认')
+    const asset = inStockAssets.value.find((a) => a.id === checkOut.assetId)
+    await showSignQr(result.assetRecord?.id, asset?.assetCode ?? '', checkOut.userName.trim(), checkOut.remark || '')
     await loadAssets()
     checkOut.assetId = null
     checkOut.userName = ''
@@ -588,5 +636,30 @@ onMounted(async () => {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.qr-dialog-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.qr-hint {
+  font-size: 14px;
+  color: var(--ca-text-secondary);
+  margin: 0 0 16px;
+}
+
+.qr-image {
+  width: 280px;
+  height: 280px;
+  border-radius: var(--ca-radius-sm);
+  border: 1px solid var(--ca-border-light);
+}
+
+.qr-link {
+  width: 100%;
+  margin-top: 16px;
 }
 </style>

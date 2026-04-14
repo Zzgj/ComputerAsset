@@ -52,9 +52,10 @@
           <el-input v-model="form.name" />
         </el-form-item>
         <el-form-item label="设备类型">
-          <el-select v-model="form.deviceType" style="width: 100%">
+          <el-select v-model="form.deviceType" style="width: 100%" filterable allow-create default-first-option>
             <el-option v-for="o in deviceTypeOptions" :key="o.value" :label="o.label" :value="o.value" />
           </el-select>
+          <div class="form-hint">可从列表选择，也可直接输入自定义类型</div>
         </el-form-item>
         <el-form-item label="品牌">
           <el-input v-model="form.brand" />
@@ -75,9 +76,6 @@
         <el-form-item label="存储">
           <el-input v-model="form.storage" />
           <div class="form-hint">支持多个可选值（如：256GB / 512GB / 1TB），可用「/、,，」分隔</div>
-        </el-form-item>
-        <el-form-item label="排序号">
-          <el-input-number v-model="form.sortOrder" :min="0" style="width: 100%" />
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="form.isActive" />
@@ -121,7 +119,6 @@ const form = reactive<any>({
   storage: '',
   remark: '',
   isActive: true,
-  sortOrder: 0,
 })
 
 async function load() {
@@ -149,7 +146,6 @@ function openAdd() {
     storage: '',
     remark: '',
     isActive: true,
-    sortOrder: 0,
   })
   dialogVisible.value = true
 }
@@ -171,7 +167,7 @@ async function save() {
     storage: form.storage,
     remark: form.remark || undefined,
     isActive: form.isActive,
-    sortOrder: form.sortOrder,
+    sortOrder: form.sortOrder ?? 0,
   }
 
   if (!payload.name) {

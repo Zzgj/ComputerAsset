@@ -762,3 +762,27 @@ operationsRouter.post('/retire', requireAuth, requirePermission('operations.exec
   res.json(result)
 })
 
+operationsRouter.post('/confirm-signature', async (req, res) => {
+  const body = req.body as { recordId?: unknown; signatureImage?: unknown }
+  const recordId = toInt(body.recordId)
+  if (!recordId) return res.status(400).json({ error: { message: 'recordId is required' } })
+  if (typeof body.signatureImage !== 'string' || !body.signatureImage.startsWith('data:image/')) {
+    return res.status(400).json({ error: { message: 'Invalid signature image' } })
+  }
+
+  const record = await prisma.assetRecord.findUnique({ where: { id: recordId } })
+  if (!record) return res.status(404).json({ error: { message: 'Record not found' } })
+  if (record.action !== AssetRecordAction.check_out) {
+    return res.status(400).json({ error: { message: 'Only check_out records can be signed' } })
+  }
+  if (record.proofImage) {
+    return res.status(400).json({ error: { message: 'Already signed' } })
+  }
+
+  await prisma.assetRecord.update({
+    where: { id: recordId },
+    data: { proofImage: body.signatureImage },
+  })
+
+  res.json({ ok: true })
+})

@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
 import LoginPage from '../pages/LoginPage.vue'
+import SignaturePage from '../pages/SignaturePage.vue'
 import DashboardPage from '../pages/DashboardPage.vue'
 import AssetsPage from '../pages/AssetsPage.vue'
 import AssetDetailPage from '../pages/AssetDetailPage.vue'
@@ -38,6 +39,12 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: LoginPage,
+      meta: { public: true } satisfies Meta,
+    },
+    {
+      path: '/sign',
+      name: 'sign',
+      component: SignaturePage,
       meta: { public: true } satisfies Meta,
     },
     {
