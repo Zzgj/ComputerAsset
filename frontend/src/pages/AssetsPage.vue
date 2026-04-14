@@ -32,6 +32,14 @@
         <el-select v-model="query.departmentId" placeholder="部门" style="width: 220px" filterable clearable>
           <el-option v-for="d in departments" :key="d.id" :label="d.displayPath ?? d.name" :value="d.id" />
         </el-select>
+        <el-input
+          v-model="query.historicalUser"
+          placeholder="曾用人搜索"
+          style="width: 160px"
+          clearable
+          @keyup.enter="search"
+          @change="search"
+        />
         <el-button type="primary" @click="search">搜索</el-button>
         <el-popover placement="bottom-end" :width="240" trigger="click">
           <template #reference>
@@ -224,10 +232,10 @@ function statusTagType(status: string): '' | 'success' | 'warning' | 'danger' | 
 const query = reactive({
   q: '',
   status: '',
-  /** 未选择时为 null，避免 el-select 与空字符串 `''` 产生误显示 */
   deviceType: null as string | null,
   campusId: null as number | null,
   departmentId: null as number | null,
+  historicalUser: '',
   page: 1,
   pageSize: 20,
 })
@@ -294,6 +302,7 @@ async function loadAssets() {
     if (query.deviceType != null && query.deviceType !== '') params.set('deviceType', query.deviceType)
     if (query.campusId) params.set('campusId', String(query.campusId))
     if (query.departmentId) params.set('departmentId', String(query.departmentId))
+    if (query.historicalUser) params.set('historicalUser', query.historicalUser)
     params.set('page', String(query.page))
     params.set('pageSize', String(query.pageSize))
 

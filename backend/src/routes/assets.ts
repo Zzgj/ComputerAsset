@@ -45,6 +45,7 @@ assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req,
   const statusInRaw = typeof req.query.statusIn === 'string' ? req.query.statusIn.trim() : ''
   const assetCodeFilter = typeof req.query.assetCode === 'string' ? req.query.assetCode.trim() : ''
   const userNameFilter = typeof req.query.userName === 'string' ? req.query.userName.trim() : ''
+  const historicalUser = typeof req.query.historicalUser === 'string' ? req.query.historicalUser.trim() : ''
   const departmentId = toInt(req.query.departmentId)
   const campusId = toInt(req.query.campusId)
   const deviceTypeRaw = typeof req.query.deviceType === 'string' ? req.query.deviceType.trim() : ''
@@ -86,6 +87,20 @@ assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req,
       { serialNumber: { contains: q } },
       { currentUserName: { contains: q } },
     ]
+  }
+
+  if (historicalUser) {
+    const matchedRecords = await prisma.assetRecord.findMany({
+      where: { userName: { contains: historicalUser } },
+      select: { assetId: true },
+      distinct: ['assetId'],
+    })
+    const assetIds = matchedRecords.map((r) => r.assetId)
+    if (assetIds.length > 0) {
+      where.id = { in: assetIds }
+    } else {
+      where.id = -1
+    }
   }
 
   applyCampusScopeToAssetWhere(where, access)

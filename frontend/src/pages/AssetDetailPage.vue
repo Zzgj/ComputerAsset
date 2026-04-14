@@ -21,6 +21,10 @@
             </el-tag>
             <el-tag>{{ formatText(asset.currentUserName) }}</el-tag>
           </div>
+          <div v-if="asset.status === 'borrowed' && latestExpectedReturn" class="borrow-return-hint">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            预计归还：{{ latestExpectedReturn }}
+          </div>
           <div v-if="asset.department?.displayPath" style="margin-top: 8px; font-size: 13px; color: #606266">
             全路径：{{ asset.department.displayPath }}
           </div>
@@ -132,6 +136,9 @@
               </el-tag>
               <el-tag v-if="r.recordOperatorName" type="warning" effect="plain" size="small">
                 操作人：{{ r.recordOperatorName }}
+              </el-tag>
+              <el-tag v-if="r.expectedReturnDate" type="danger" effect="plain" size="small">
+                预计归还：{{ r.expectedReturnDate }}
               </el-tag>
             </div>
             <div class="timeline-remark">
@@ -353,6 +360,14 @@ const uniqueUsers = computed(() => {
   return Array.from(set)
 })
 
+const latestExpectedReturn = computed(() => {
+  const lendRecord = [...records.value]
+    .filter((r) => r.action === 'lend' && r.expectedReturnDate)
+    .sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime())[0]
+  if (!lendRecord?.expectedReturnDate) return ''
+  return new Date(lendRecord.expectedReturnDate).toLocaleDateString()
+})
+
 /** 流转时间线：最新在前，便于看到刚发生的归还等操作 */
 const sortedRecords = computed(() =>
   [...records.value].sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime()),
@@ -368,6 +383,7 @@ const timelineItems = computed(() => {
     departmentDisplay: r.department?.displayPath ?? r.department?.name ?? '-',
     remark: r.remark ?? '-',
     recordOperatorName: r.operator?.realName?.trim() || r.operator?.username?.trim() || '',
+    expectedReturnDate: r.expectedReturnDate ? new Date(r.expectedReturnDate).toLocaleDateString() : '',
   }))
   const edits = (changeLogs.value ?? []).map((l: any) => {
     const before = l?.detail?.before ?? {}
@@ -750,6 +766,20 @@ onMounted(async () => {
 .timeline-value {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.borrow-return-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--ca-warning-bg);
+  border: 1px solid var(--ca-warning-light);
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 600;
 }
 </style>
 
