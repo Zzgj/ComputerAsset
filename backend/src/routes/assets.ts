@@ -6,7 +6,9 @@ import { prisma } from '../prisma'
 import { requireAuth, requirePermission } from '../middleware/auth'
 import { getEnv } from '../utils/env'
 
-import { AssetStatus, AssetRecordAction, DeviceType, RepairResult, Prisma } from '@prisma/client'
+import { AssetStatus, AssetRecordAction, RepairResult, Prisma } from '@prisma/client'
+
+const KNOWN_DEVICE_TYPES = ['laptop', 'desktop', 'aio', 'server', 'other']
 import {
   attachDepartmentPathFields,
   buildDepartmentPathMap,
@@ -71,8 +73,8 @@ assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req,
   if (campusId) {
     where.department = { ...(typeof where.department === 'object' && where.department ? where.department : {}), campusId }
   }
-  if (deviceTypeRaw && Object.values(DeviceType).includes(deviceTypeRaw as DeviceType)) {
-    where.deviceType = deviceTypeRaw as DeviceType
+  if (deviceTypeRaw && deviceTypeRaw) {
+    where.deviceType = deviceTypeRaw
   }
 
   const scoped = assetCodeFilter.length > 0 || userNameFilter.length > 0
@@ -151,9 +153,9 @@ assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req,
 
 assetsRouter.get('/generate-code', requireAuth, requirePermission('assets.write'), async (req, res) => {
   const rawType = typeof req.query.deviceType === 'string' ? req.query.deviceType.trim() : ''
-  const deviceType = Object.values(DeviceType).includes(rawType as DeviceType)
-    ? (rawType as DeviceType)
-    : DeviceType.laptop
+  const deviceType = KNOWN_DEVICE_TYPES.includes(rawType)
+    ? rawType
+    : "laptop"
   const { YEAR, MONTH } = (() => {
     const d = new Date()
     const year = String(d.getFullYear()).slice(-2)
@@ -161,12 +163,12 @@ assetsRouter.get('/generate-code', requireAuth, requirePermission('assets.write'
     return { YEAR: year, MONTH: month }
   })()
 
-  const devicePrefix: Record<DeviceType, string> = {
-    [DeviceType.laptop]: 'PC',
-    [DeviceType.desktop]: 'PC',
-    [DeviceType.aio]: 'AIO',
-    [DeviceType.server]: 'SRV',
-    [DeviceType.other]: 'OTH',
+  const devicePrefix: Record<string, string> = {
+    ["laptop"]: 'PC',
+    ["desktop"]: 'PC',
+    ["aio"]: 'AIO',
+    ["server"]: 'SRV',
+    ["other"]: 'OTH',
   }
   const prefix = `NX-${devicePrefix[deviceType]}-${YEAR}${MONTH}-`
   const last = await prisma.asset.findFirst({
@@ -306,14 +308,14 @@ assetsRouter.post('/', requireAuth, requirePermission('assets.write'), async (re
         })()
 
   const deviceTypeCandidate =
-    body.deviceType && Object.values(DeviceType).includes(body.deviceType as DeviceType)
-      ? (body.deviceType as DeviceType)
+    body.deviceType && typeof body.deviceType === "string" && body.deviceType.trim()
+      ? body.deviceType
       : template?.deviceType
-  const deviceType: DeviceType = deviceTypeCandidate ?? badRequest('deviceType is required (or templateId provides it)')
+  const deviceType: string = deviceTypeCandidate ?? badRequest('deviceType is required (or templateId provides it)')
 
   const brandRaw = typeof body.brand === 'string' ? body.brand.trim() : ''
   const modelRaw = typeof body.model === 'string' ? body.model.trim() : ''
-  const isOtherDevice = deviceType === DeviceType.other
+  const isOtherDevice = deviceType === "other"
   const brand = isOtherDevice ? brandRaw || template?.brand || '' : brandRaw || template?.brand || badRequest('brand is required')
   const model = isOtherDevice ? modelRaw || template?.model || '' : modelRaw || template?.model || badRequest('model is required')
   // 对服务器等非电脑设备，OS/CPU/内存/存储允许留空，避免与现有模板流程冲突。
@@ -427,10 +429,10 @@ assetsRouter.put('/:id', requireAuth, requirePermission('assets.write'), async (
   const template = templateId ? await prisma.assetTemplate.findUnique({ where: { id: templateId } }) : null
 
   const deviceTypeCandidate =
-    body.deviceType && Object.values(DeviceType).includes(body.deviceType as DeviceType)
-      ? (body.deviceType as DeviceType)
+    body.deviceType && typeof body.deviceType === "string" && body.deviceType.trim()
+      ? body.deviceType
       : template?.deviceType
-  const deviceType: DeviceType = deviceTypeCandidate ?? badRequest('deviceType is required (or templateId provides it)')
+  const deviceType: string = deviceTypeCandidate ?? badRequest('deviceType is required (or templateId provides it)')
 
   const old = await prisma.asset.findUnique({
     where: { id },

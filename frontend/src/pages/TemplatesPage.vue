@@ -52,10 +52,12 @@
           <el-input v-model="form.name" />
         </el-form-item>
         <el-form-item label="设备类型">
-          <el-select v-model="form.deviceType" style="width: 100%" filterable allow-create default-first-option>
-            <el-option v-for="o in deviceTypeOptions" :key="o.value" :label="o.label" :value="o.value" />
-          </el-select>
-          <div class="form-hint">可从列表选择，也可直接输入自定义类型</div>
+          <div style="display: flex; gap: 8px; width: 100%">
+            <el-select v-model="form.deviceType" style="flex: 1" filterable>
+              <el-option v-for="o in allDeviceTypeOptions" :key="o.value" :label="o.label" :value="o.value" />
+            </el-select>
+            <el-button @click="showAddDeviceType = true">新增类型</el-button>
+          </div>
         </el-form-item>
         <el-form-item label="品牌">
           <el-input v-model="form.brand" />
@@ -90,11 +92,23 @@
         <el-button type="primary" :loading="saving" @click="save">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="showAddDeviceType" title="新增设备类型" width="400px">
+      <el-form>
+        <el-form-item label="类型名称">
+          <el-input v-model="newDeviceTypeName" placeholder="例如：平板电脑" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAddDeviceType = false">取消</el-button>
+        <el-button type="primary" @click="confirmAddDeviceType">确认新增</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { apiRequest } from '../services/api'
 import { DEVICE_TYPE_OPTIONS, deviceTypeLabel } from '../constants/deviceType'
@@ -104,7 +118,32 @@ const loading = ref(false)
 const saving = ref(false)
 const searchQ = ref('')
 
-const deviceTypeOptions = [...DEVICE_TYPE_OPTIONS]
+const customDeviceTypes = ref<string[]>([])
+const showAddDeviceType = ref(false)
+const newDeviceTypeName = ref('')
+
+const allDeviceTypeOptions = computed(() => {
+  const base = [...DEVICE_TYPE_OPTIONS]
+  for (const t of customDeviceTypes.value) {
+    if (!base.some((o) => o.value === t)) {
+      base.push({ label: t, value: t })
+    }
+  }
+  return base
+})
+
+function confirmAddDeviceType() {
+  const name = newDeviceTypeName.value.trim()
+  if (!name) return ElMessage.warning('请输入类型名称')
+  if (allDeviceTypeOptions.value.some((o) => o.value === name || o.label === name)) {
+    return ElMessage.warning('该类型已存在')
+  }
+  customDeviceTypes.value.push(name)
+  form.deviceType = name
+  showAddDeviceType.value = false
+  newDeviceTypeName.value = ''
+  ElMessage.success(`已新增设备类型「${name}」`)
+}
 
 const dialogVisible = ref(false)
 const form = reactive<any>({
@@ -128,6 +167,9 @@ async function load() {
     const qs = q ? `?q=${encodeURIComponent(q)}` : ''
     const data = await apiRequest<{ items: any[] }>(`/api/templates/all${qs}`)
     templates.value = data.items ?? []
+    const knownValues = new Set(DEVICE_TYPE_OPTIONS.map((o) => o.value))
+    const extras = [...new Set((data.items ?? []).map((t: any) => t.deviceType).filter((v: string) => v && !knownValues.has(v)))]
+    customDeviceTypes.value = extras
   } finally {
     loading.value = false
   }

@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { DeviceType, Prisma } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 
 import { prisma } from '../prisma'
 import { requireAuth, requirePermission } from '../middleware/auth'
@@ -55,11 +55,11 @@ templatesRouter.get('/all', requireAuth, async (req, res) => {
       { remark: { contains: q } },
     ]
     const ql = q.toLowerCase()
-    if (q.includes('笔记本') || ql.includes('laptop')) or.push({ deviceType: DeviceType.laptop })
-    if (q.includes('台式机') || ql.includes('desktop')) or.push({ deviceType: DeviceType.desktop })
-    if (q.includes('一体机') || ql.includes('aio')) or.push({ deviceType: DeviceType.aio })
-    if (q.includes('服务器') || ql.includes('server')) or.push({ deviceType: DeviceType.server })
-    if (q.includes('其他') || ql.includes('other')) or.push({ deviceType: DeviceType.other })
+    if (q.includes('笔记本') || ql.includes('laptop')) or.push({ deviceType: 'laptop' })
+    if (q.includes('台式机') || ql.includes('desktop')) or.push({ deviceType: 'desktop' })
+    if (q.includes('一体机') || ql.includes('aio')) or.push({ deviceType: 'aio' })
+    if (q.includes('服务器') || ql.includes('server')) or.push({ deviceType: 'server' })
+    if (q.includes('其他') || ql.includes('other')) or.push({ deviceType: 'other' })
     where.OR = or
   }
 

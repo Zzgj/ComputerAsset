@@ -7,7 +7,7 @@ import { randomUUID } from 'crypto'
 import { prisma } from '../prisma'
 import { requireAuth, requirePermission } from '../middleware/auth'
 import type { AssetTemplate, Department } from '@prisma/client'
-import { AssetRecordAction, AssetStatus, DeviceType } from '@prisma/client'
+import { AssetRecordAction, AssetStatus } from '@prisma/client'
 import {
   buildDepartmentPathMap,
   computeDepartmentDisplayPath,
@@ -91,7 +91,7 @@ type UnknownTemplateItem = {
   suggestedName: string
   brand: string
   model: string
-  deviceType: DeviceType
+  deviceType: string
   os: string
   cpu: string
   memory: string
@@ -419,7 +419,7 @@ function classifyTemplateNeed(
   }
 
   const deviceTypeRaw = String(row['设备类型'] ?? row['deviceType'] ?? '').trim()
-  const deviceType = mapDeviceType(deviceTypeRaw) ?? DeviceType.laptop
+  const deviceType = mapDeviceType(deviceTypeRaw) ?? 'laptop'
   const os = strRow(row, ['操作系统', 'os'])
   const cpu = strRow(row, ['CPU', 'cpu'])
   const memory = strRow(row, ['内存', 'memory'])
@@ -488,23 +488,25 @@ function mapStatus(statusRaw: unknown): AssetStatus | null {
   return map[s] ?? map[s.replace(/\s+/g, '')] ?? null
 }
 
-function mapDeviceType(deviceTypeRaw: unknown): DeviceType | null {
+function mapDeviceType(deviceTypeRaw: unknown): string | null {
   if (typeof deviceTypeRaw !== 'string') return null
   const s = deviceTypeRaw.trim()
   if (!s) return null
 
-  const map: Record<string, DeviceType> = {
-    laptop: DeviceType.laptop,
-    desktop: DeviceType.desktop,
-    aio: DeviceType.aio,
-    server: DeviceType.server,
+  const map: Record<string, string> = {
+    laptop: 'laptop',
+    desktop: 'desktop',
+    aio: 'aio',
+    server: 'server',
+    other: 'other',
 
-    笔记本: DeviceType.laptop,
-    台式机: DeviceType.desktop,
-    一体机: DeviceType.aio,
-    服务器: DeviceType.server,
+    笔记本: 'laptop',
+    台式机: 'desktop',
+    一体机: 'aio',
+    服务器: 'server',
+    其他: 'other',
   }
-  return map[s] ?? map[s.replace(/\s+/g, '')] ?? null
+  return map[s] ?? map[s.replace(/\s+/g, '')] ?? s
 }
 
 function normalizeHeader(h: string): string {
@@ -1128,7 +1130,7 @@ excelRouter.post(
 
         const deviceType =
           mapDeviceType(String(row['设备类型'] ?? row['deviceType'] ?? '').trim()) ??
-          (template?.deviceType ?? DeviceType.laptop)
+          (template?.deviceType ?? 'laptop')
 
         const brand = rb || String(template?.brand ?? '')
         const model = rm || String(template?.model ?? '')

@@ -21,6 +21,11 @@
             </el-tag>
             <el-tag>{{ formatText(asset.currentUserName) }}</el-tag>
           </div>
+          <div v-if="asset.status === 'pending_confirmation' && pendingSignUrl" class="pending-sign-hint">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            <span>待签字确认</span>
+            <el-button type="primary" size="small" text @click="copySignUrl">复制签名链接</el-button>
+          </div>
           <div v-if="asset.status === 'borrowed' && latestExpectedReturn" class="borrow-return-hint">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             预计归还：{{ latestExpectedReturn }}
@@ -367,6 +372,29 @@ const uniqueUsers = computed(() => {
   }
   return Array.from(set)
 })
+
+const pendingSignUrl = computed(() => {
+  if (asset.value?.status !== 'pending_confirmation') return ''
+  const latestUnsigned = [...records.value]
+    .filter((r) => (r.action === 'check_out' || r.action === 'lend') && !r.proofImage)
+    .sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime())[0]
+  if (!latestUnsigned) return ''
+  const params = new URLSearchParams({
+    recordId: String(latestUnsigned.id),
+    assetCode: asset.value?.assetCode ?? '',
+    userName: latestUnsigned.userName ?? '',
+    department: '',
+    time: new Date(latestUnsigned.actionDate).toLocaleString(),
+    remark: latestUnsigned.remark ?? '',
+  })
+  return `${window.location.origin}/sign?${params.toString()}`
+})
+
+function copySignUrl() {
+  navigator.clipboard?.writeText(pendingSignUrl.value)
+    .then(() => ElMessage.success('签名链接已复制'))
+    .catch(() => ElMessage.warning('复制失败，请手动复制'))
+}
 
 const latestExpectedReturn = computed(() => {
   const lendRecord = [...records.value]
@@ -794,6 +822,20 @@ onMounted(async () => {
 
 .timeline-unsigned {
   margin-top: 8px;
+}
+
+.pending-sign-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .borrow-return-hint {
