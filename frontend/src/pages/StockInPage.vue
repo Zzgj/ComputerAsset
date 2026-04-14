@@ -115,6 +115,7 @@ import { apiRequest } from '../services/api'
 import { ElMessage } from 'element-plus'
 import DepartmentCascader from '../components/DepartmentCascader.vue'
 import { DEVICE_TYPE_OPTIONS } from '../constants/deviceType'
+import { readStoredCustomDeviceTypes } from '../lib/customDeviceTypesStorage'
 
 const router = useRouter()
 
@@ -124,7 +125,21 @@ const departments = ref<any[]>([])
 const genLoading = ref(false)
 const submitting = ref(false)
 const pageLoading = ref(true)
-const deviceTypeOptions = [...DEVICE_TYPE_OPTIONS]
+const deviceTypeOptions = computed(() => {
+  const known = new Set(DEVICE_TYPE_OPTIONS.map((o) => o.value))
+  const fromTemplates = [
+    ...new Set(templates.value.map((t: any) => String(t.deviceType ?? '').trim()).filter(Boolean)),
+  ]
+  const fromSession = readStoredCustomDeviceTypes()
+  const merged = [...DEVICE_TYPE_OPTIONS]
+  for (const v of [...fromSession, ...fromTemplates]) {
+    if (!known.has(v)) {
+      known.add(v)
+      merged.push({ label: v, value: v })
+    }
+  }
+  return merged
+})
 
 const form = reactive<any>({
   deviceType: 'laptop',

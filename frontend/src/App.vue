@@ -5,10 +5,13 @@ import { ElMessage } from 'element-plus'
 import { apiRequest } from './services/api'
 import { useAuthStore } from './stores/auth'
 import { useIdleTimer } from './composables/useIdleTimer'
+import appPkg from '../package.json'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+
+const appVersion = (appPkg as { version?: string }).version ?? ''
 
 const isLogin = computed(() => route.path === '/login' || route.path === '/sign')
 const navKeyword = ref('')
@@ -169,7 +172,7 @@ async function submitChangePassword() {
         </div>
         <div class="sidebar-brand-text">
           <div class="sidebar-brand-name">ComputerAsset</div>
-          <div class="sidebar-brand-sub">资产管理系统</div>
+          <div class="sidebar-brand-sub">资产管理系统<span v-if="appVersion" class="sidebar-version"> · v{{ appVersion }}</span></div>
         </div>
       </div>
 
@@ -368,6 +371,11 @@ async function submitChangePassword() {
   font-size: 11px;
   color: rgba(165, 180, 252, 0.7);
   margin-top: 1px;
+}
+
+.sidebar-version {
+  font-weight: 600;
+  color: rgba(199, 210, 254, 0.95);
 }
 
 .sidebar-user {

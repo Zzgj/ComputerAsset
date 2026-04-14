@@ -37,9 +37,15 @@ function apiProxyPlugin(apiTarget: string): Plugin {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const apiTarget = env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:3000'
+  const isProd = mode === 'production'
 
   return {
-    plugins: [apiProxyPlugin(apiTarget), vue(), vueDevTools()],
+    plugins: [
+      apiProxyPlugin(apiTarget),
+      vue(),
+      // 生产包勿启用 DevTools：会请求外部脚本，内网离线环境易超时、拖慢首屏
+      ...(isProd ? [] : [vueDevTools()]),
+    ],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),

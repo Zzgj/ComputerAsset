@@ -71,6 +71,10 @@ echo -e "    ${GREEN}[通过]${NC}"
 echo ""
 echo "[6] 安装前端依赖并构建 ..."
 cd "$FRONTEND_DIR"
+if [ -f "$FRONTEND_DIR/env.deployment" ]; then
+  cp "$FRONTEND_DIR/env.deployment" "$FRONTEND_DIR/.env.production.local"
+  echo -e "    ${CYAN}[提示]${NC} 已复制 env.deployment → .env.production.local（签名链接公网地址等）"
+fi
 pnpm install --force
 pnpm approve-builds --all 2>/dev/null || true
 pnpm run build

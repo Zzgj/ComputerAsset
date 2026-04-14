@@ -185,6 +185,8 @@ import QRCode from 'qrcode'
 import { apiRequest } from '../services/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DepartmentCascader from '../components/DepartmentCascader.vue'
+import { getPublicBaseURL } from '../lib/publicBaseUrl'
+import { copyTextToClipboardWithToast } from '../lib/clipboard'
 
 const activeTab = ref('check_out')
 const submitting = ref(false)
@@ -272,13 +274,13 @@ function uuid() {
   return (crypto as any).randomUUID ? (crypto as any).randomUUID() : String(Date.now())
 }
 
-function copyLink() {
-  navigator.clipboard?.writeText(qrSignUrl.value).then(() => ElMessage.success('链接已复制')).catch(() => ElMessage.warning('复制失败，请手动复制'))
+async function copyLink() {
+  await copyTextToClipboardWithToast(qrSignUrl.value, '链接已复制')
 }
 
 async function showSignQr(recordId: number | undefined, assetCode: string, userName: string, remark: string) {
   if (!recordId) return
-  const baseUrl = window.location.origin
+  const baseUrl = getPublicBaseURL()
   const params = new URLSearchParams({
     recordId: String(recordId),
     assetCode,

@@ -80,6 +80,10 @@ echo     [通过] 后端构建完成
 echo.
 echo [6] 安装前端依赖并构建 ...
 cd /d "%FRONTEND_DIR%"
+if exist "%FRONTEND_DIR%\env.deployment" (
+    copy /y "%FRONTEND_DIR%\env.deployment" "%FRONTEND_DIR%\.env.production.local" >nul
+    echo     [提示] 已复制 env.deployment 为 .env.production.local（签名链接站点地址等）
+)
 call pnpm install --force
 call pnpm approve-builds --all >nul 2>&1
 call pnpm run build

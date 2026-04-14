@@ -312,6 +312,8 @@ import { actionLabel } from '../actionLabel'
 import { useAuthStore } from '../stores/auth'
 import { ElMessage } from 'element-plus'
 import DepartmentCascader from '../components/DepartmentCascader.vue'
+import { getPublicBaseURL } from '../lib/publicBaseUrl'
+import { copyTextToClipboardWithToast } from '../lib/clipboard'
 
 const route = useRoute()
 const router = useRouter()
@@ -387,13 +389,11 @@ const pendingSignUrl = computed(() => {
     time: new Date(latestUnsigned.actionDate).toLocaleString(),
     remark: latestUnsigned.remark ?? '',
   })
-  return `${window.location.origin}/sign?${params.toString()}`
+  return `${getPublicBaseURL()}/sign?${params.toString()}`
 })
 
-function copySignUrl() {
-  navigator.clipboard?.writeText(pendingSignUrl.value)
-    .then(() => ElMessage.success('签名链接已复制'))
-    .catch(() => ElMessage.warning('复制失败，请手动复制'))
+async function copySignUrl() {
+  await copyTextToClipboardWithToast(pendingSignUrl.value, '签名链接已复制')
 }
 
 const latestExpectedReturn = computed(() => {

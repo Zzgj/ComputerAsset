@@ -1,5 +1,5 @@
 ============================================================
-  ComputerAsset 电脑资产管理系统 v1.3.0
+  ComputerAsset 电脑资产管理系统 v1.4.2
   Windows Server 2019 内网部署指南
 ============================================================
 
@@ -26,6 +26,11 @@
      - 构建后端 JavaScript
      - 生成 Prisma 数据库客户端
      - 打包所有运行时文件到 deploy-package\ 文件夹
+
+     签名链接 / 出库二维码:
+     - 构建前 prepare 会将 frontend\env.deployment 复制为 .env.production.local
+     - 其中 VITE_PUBLIC_BASE_URL 为局域网访问系统的根地址（默认含服务器 IP 与端口）
+     - 若访问地址变更，请编辑 frontend\env.deployment 后重新运行 prepare
 
   3. 将 deploy-package 文件夹整体拷贝到内网服务器
      (U盘、文件共享等方式均可)

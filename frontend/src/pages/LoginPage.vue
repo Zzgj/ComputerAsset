@@ -28,6 +28,7 @@
       </div>
       <div class="brand-footer">
         <span>Powered by Vue 3 + Express + Prisma</span>
+        <span v-if="appVersion" class="login-version">v{{ appVersion }}</span>
       </div>
     </div>
 
@@ -98,6 +99,7 @@
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import appPkg from '../../package.json'
 
 const route = useRoute()
 const router = useRouter()
@@ -110,6 +112,8 @@ const error = ref<string | null>(null)
 const kickedMsg = ref<string | null>(null)
 const userFocus = ref(false)
 const passFocus = ref(false)
+
+const appVersion = (appPkg as { version?: string }).version ?? ''
 
 onMounted(() => {
   const msg = route.query.msg
@@ -240,6 +244,16 @@ async function onLogin() {
   font-size: 12px;
   color: rgba(165, 180, 252, 0.5);
   z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.login-version {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(199, 210, 254, 0.85);
 }
 
 .login-right {

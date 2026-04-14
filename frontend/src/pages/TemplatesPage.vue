@@ -112,6 +112,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { apiRequest } from '../services/api'
 import { DEVICE_TYPE_OPTIONS, deviceTypeLabel } from '../constants/deviceType'
+import { rememberCustomDeviceType } from '../lib/customDeviceTypesStorage'
 
 const templates = ref<any[]>([])
 const loading = ref(false)
@@ -139,6 +140,7 @@ function confirmAddDeviceType() {
     return ElMessage.warning('该类型已存在')
   }
   customDeviceTypes.value.push(name)
+  rememberCustomDeviceType(name)
   form.deviceType = name
   showAddDeviceType.value = false
   newDeviceTypeName.value = ''

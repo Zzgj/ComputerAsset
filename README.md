@@ -8,7 +8,7 @@
 
 功能代码与 [`main`](https://github.com/Zzgj/ComputerAsset/tree/main) 分支保持同步。
 
-[![Version](https://img.shields.io/badge/version-1.4.1-blue.svg)](https://github.com/Zzgj/ComputerAsset)
+[![Version](https://img.shields.io/badge/version-1.4.2-blue.svg)](https://github.com/Zzgj/ComputerAsset)
 [![Branch](https://img.shields.io/badge/branch-deploy%2Fwindows--server-orange.svg)](https://github.com/Zzgj/ComputerAsset/tree/deploy/windows-server)
 [![License](https://img.shields.io/badge/license-ISC-green.svg)](https://opensource.org/licenses/ISC)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen.svg)](https://nodejs.org/)
@@ -580,6 +580,17 @@ pnpm run start                    # 启动生产服务器
 ---
 
 ## 更新日志
+
+### v1.4.2
+
+**部署与内网体验**
+- 部署构建时注入 `VITE_PUBLIC_BASE_URL`（默认 `http://10.2.254.29:3000`），出库/借出二维码与签名链接指向可被手机与其他电脑访问的服务器地址，避免误用 `localhost`
+- 生产构建关闭 Vue DevTools 插件；移除对 Google Fonts 外链，减轻内网离线环境下的超时与首屏卡顿
+- 复制签名链接在无 `navigator.clipboard` 或 HTTP 场景下增加 `textarea` 降级复制
+
+**功能与界面**
+- 入库登记「设备类型」下拉合并模板中已使用的自定义类型，并在型号管理中新增类型后写入会话，便于入库页立即选用
+- 登录页与侧栏显示当前应用版本号（与 `package.json` 一致）
 
 ### v1.4.1
 
