@@ -6,7 +6,7 @@
 
 覆盖电脑资产从入库到报废的完整生命周期，提供可视化仪表盘、细粒度权限控制与完整的审计追踪。
 
-[![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)](https://github.com/Zzgj/ComputerAsset)
+[![Version](https://img.shields.io/badge/version-1.4.1-blue.svg)](https://github.com/Zzgj/ComputerAsset)
 [![License](https://img.shields.io/badge/license-ISC-green.svg)](https://opensource.org/licenses/ISC)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen.svg)](https://nodejs.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D.svg?logo=vue.js)](https://vuejs.org/)
@@ -366,6 +366,16 @@ pnpm run start                    # 启动生产服务器
 ---
 
 ## 更新日志
+
+### v1.4.1
+
+**Bug 修复与功能增强**
+- 修复设备模板自定义设备类型保存时提示 `deviceType is invalid` 的问题（后端放宽枚举校验）
+- 出库/借出后资产状态改为「待签字确认」，领用人/借用人扫码签名后自动转为「使用中」或「借用中」
+- 签名页改为独立页面，不显示侧边栏和导航，避免影响主账号
+- 借出操作增加扫码签名确认功能，与出库流程一致
+- 资产详情页流转记录中显示手写签名图片，未签名的出库/借出记录标注「未签名确认」
+- 新增 `pending_confirmation`（待签字确认）资产状态，资产列表支持按此状态筛选
 
 ### v1.4.0
 

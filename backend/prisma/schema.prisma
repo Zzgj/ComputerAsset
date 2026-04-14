@@ -18,6 +18,7 @@ enum DeviceType {
 enum AssetStatus {
   in_stock
   waiting_pickup
+  pending_confirmation
   in_use
   borrowed
   in_repair

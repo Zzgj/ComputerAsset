@@ -85,14 +85,14 @@ templatesRouter.post('/', requireAuth, requirePermission('templates.manage'), as
   const body = req.body as any
 
   if (typeof body.name !== 'string' || body.name.trim() === '') badRequest('name is required')
-  if (!Object.values(DeviceType).includes(body.deviceType)) badRequest('deviceType is invalid')
+  if (typeof body.deviceType !== 'string' || body.deviceType.trim() === '') badRequest('deviceType is required')
 
   let created
   try {
     created = await prisma.assetTemplate.create({
       data: {
         name: body.name,
-        deviceType: body.deviceType as DeviceType,
+        deviceType: body.deviceType as any,
         brand: String(body.brand ?? ''),
         model: String(body.model ?? ''),
         os: String(body.os ?? ''),
@@ -136,7 +136,7 @@ templatesRouter.put('/:id', requireAuth, requirePermission('templates.manage'), 
   const body = req.body as any
   const data: any = {}
   if (typeof body.name === 'string' && body.name.trim() !== '') data.name = body.name
-  if (Object.values(DeviceType).includes(body.deviceType)) data.deviceType = body.deviceType as DeviceType
+  if (typeof body.deviceType === 'string' && body.deviceType.trim()) data.deviceType = body.deviceType as any
   if (typeof body.brand === 'string') data.brand = body.brand
   if (typeof body.model === 'string') data.model = body.model
   if (typeof body.os === 'string') data.os = body.os

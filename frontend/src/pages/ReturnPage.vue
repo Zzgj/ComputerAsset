@@ -157,6 +157,7 @@ function statusLabel(status: unknown): string {
   const map: Record<string, string> = {
     in_stock: '在库',
     waiting_pickup: '待领用',
+    pending_confirmation: '待签字确认',
     in_use: '使用中',
     borrowed: '借用中',
     in_repair: '维修中',

@@ -436,7 +436,7 @@ async function doLend() {
       }
     }
 
-    await apiRequest('/api/operations/lend', {
+    const lendResult = await apiRequest<any>('/api/operations/lend', {
       method: 'POST',
       body: {
         requestId: uuid(),
@@ -450,7 +450,9 @@ async function doLend() {
         remark: lend.remark || undefined,
       },
     })
-    ElMessage.success('借出成功')
+    ElMessage.success('借出成功，请让借用人扫码签名确认')
+    const lendAsset = inStockAssets.value.find((a) => a.id === lend.assetId)
+    await showSignQr(lendResult.assetRecord?.id, lendAsset?.assetCode ?? '', lend.userName.trim(), lend.remark || '')
     await loadAssets()
     lend.assetId = null
     lend.userName = ''

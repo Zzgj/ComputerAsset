@@ -2,8 +2,8 @@
   <div class="sign-page">
     <div class="sign-card" v-if="!submitted">
       <div class="sign-header">
-        <h2>电脑资产领用确认</h2>
-        <p>请核对以下信息并手写签名确认领用</p>
+        <h2>电脑资产领用/借用确认</h2>
+        <p>请核对以下信息并手写签名确认</p>
       </div>
 
       <div class="info-section">

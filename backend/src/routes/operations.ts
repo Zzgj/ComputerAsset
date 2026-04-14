@@ -107,7 +107,7 @@ operationsRouter.post('/check-out', requireAuth, requirePermission('operations.e
 
     await tx.asset.update({
       where: { id: assetId },
-      data: { status: AssetStatus.in_use, currentUserName: userName, departmentId },
+      data: { status: AssetStatus.pending_confirmation, currentUserName: userName, departmentId },
     })
 
     const assetRecord = await tx.assetRecord.create({
@@ -131,7 +131,7 @@ operationsRouter.post('/check-out', requireAuth, requirePermission('operations.e
         action: '出库（直接领用）',
         targetType: 'Asset',
         targetId: assetId,
-        detail: { from: asset.status, to: AssetStatus.in_use },
+        detail: { from: asset.status, to: AssetStatus.pending_confirmation },
         ipAddress: req.ip ?? 'unknown',
       },
     })
@@ -378,7 +378,7 @@ operationsRouter.post('/lend', requireAuth, requirePermission('operations.execut
 
     await tx.asset.update({
       where: { id: assetId },
-      data: { status: AssetStatus.borrowed, currentUserName: userName, departmentId },
+      data: { status: AssetStatus.pending_confirmation, currentUserName: userName, departmentId },
     })
 
     const assetRecord = await tx.assetRecord.create({
@@ -402,7 +402,7 @@ operationsRouter.post('/lend', requireAuth, requirePermission('operations.execut
         action: '借出',
         targetType: 'Asset',
         targetId: assetId,
-        detail: { from: asset.status, to: AssetStatus.borrowed, expectedReturnDate },
+        detail: { from: asset.status, to: AssetStatus.pending_confirmation, expectedReturnDate },
         ipAddress: req.ip ?? 'unknown',
       },
     })
@@ -772,16 +772,27 @@ operationsRouter.post('/confirm-signature', async (req, res) => {
 
   const record = await prisma.assetRecord.findUnique({ where: { id: recordId } })
   if (!record) return res.status(404).json({ error: { message: 'Record not found' } })
-  if (record.action !== AssetRecordAction.check_out) {
-    return res.status(400).json({ error: { message: 'Only check_out records can be signed' } })
+  if (record.action !== AssetRecordAction.check_out && record.action !== AssetRecordAction.lend) {
+    return res.status(400).json({ error: { message: 'Only check_out or lend records can be signed' } })
   }
   if (record.proofImage) {
     return res.status(400).json({ error: { message: 'Already signed' } })
   }
 
-  await prisma.assetRecord.update({
-    where: { id: recordId },
-    data: { proofImage: body.signatureImage },
+  await prisma.$transaction(async (tx) => {
+    await tx.assetRecord.update({
+      where: { id: recordId },
+      data: { proofImage: body.signatureImage as string },
+    })
+
+    const asset = await tx.asset.findUnique({ where: { id: record.assetId } })
+    if (asset && asset.status === AssetStatus.pending_confirmation) {
+      const targetStatus = record.action === AssetRecordAction.lend ? AssetStatus.borrowed : AssetStatus.in_use
+      await tx.asset.update({
+        where: { id: record.assetId },
+        data: { status: targetStatus },
+      })
+    }
   })
 
   res.json({ ok: true })

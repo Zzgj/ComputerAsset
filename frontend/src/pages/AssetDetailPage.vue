@@ -145,6 +145,13 @@
               <span class="timeline-label">备注</span>
               <span class="timeline-value">{{ formatText(r.remark) }}</span>
             </div>
+            <div v-if="r.proofImage" class="timeline-signature">
+              <span class="timeline-label">领用签名</span>
+              <img :src="r.proofImage" alt="手写签名" class="signature-img" />
+            </div>
+            <div v-if="(r.action === 'check_out' || r.action === 'lend') && !r.proofImage" class="timeline-unsigned">
+              <el-tag type="warning" effect="light" size="small">未签名确认</el-tag>
+            </div>
           </div>
           <div class="timeline-body" v-else>
             <div class="timeline-meta">
@@ -344,6 +351,7 @@ function statusLabel(statusRaw: string) {
   const map: Record<string, string> = {
     in_stock: '在库',
     waiting_pickup: '待领用',
+    pending_confirmation: '待签字确认',
     in_use: '使用中',
     borrowed: '借用中',
     in_repair: '维修中',
@@ -384,6 +392,7 @@ const timelineItems = computed(() => {
     remark: r.remark ?? '-',
     recordOperatorName: r.operator?.realName?.trim() || r.operator?.username?.trim() || '',
     expectedReturnDate: r.expectedReturnDate ? new Date(r.expectedReturnDate).toLocaleDateString() : '',
+    proofImage: r.proofImage ?? '',
   }))
   const edits = (changeLogs.value ?? []).map((l: any) => {
     const before = l?.detail?.before ?? {}
@@ -766,6 +775,25 @@ onMounted(async () => {
 .timeline-value {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.timeline-signature {
+  margin-top: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.signature-img {
+  max-width: 280px;
+  max-height: 120px;
+  border: 1px solid var(--ca-border-light);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.timeline-unsigned {
+  margin-top: 8px;
 }
 
 .borrow-return-hint {

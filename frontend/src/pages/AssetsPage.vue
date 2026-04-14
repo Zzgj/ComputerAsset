@@ -211,6 +211,7 @@ const deviceTypeFilterOptions = [...DEVICE_TYPE_OPTIONS]
 const statusOptions = [
   { label: '在库', value: 'in_stock' },
   { label: '待领用', value: 'waiting_pickup' },
+  { label: '待签字确认', value: 'pending_confirmation' },
   { label: '使用中', value: 'in_use' },
   { label: '借用中', value: 'borrowed' },
   { label: '维修中', value: 'in_repair' },
@@ -220,6 +221,7 @@ const statusOptions = [
 function statusTagType(status: string): '' | 'success' | 'warning' | 'danger' | 'info' {
   const map: Record<string, '' | 'success' | 'warning' | 'danger' | 'info'> = {
     in_stock: '',
+    pending_confirmation: 'warning',
     waiting_pickup: 'warning',
     in_use: 'success',
     borrowed: 'warning',
