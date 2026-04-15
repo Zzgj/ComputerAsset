@@ -180,13 +180,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, reactive, ref } from 'vue'
 import QRCode from 'qrcode'
 import { apiRequest } from '../services/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DepartmentCascader from '../components/DepartmentCascader.vue'
 import { getPublicBaseURL } from '../lib/publicBaseUrl'
 import { copyTextToClipboardWithToast } from '../lib/clipboard'
+import { formatDepartmentDisplayLabel } from '../lib/departmentDisplay'
 
 const activeTab = ref('check_out')
 const submitting = ref(false)
@@ -278,14 +279,29 @@ async function copyLink() {
   await copyTextToClipboardWithToast(qrSignUrl.value, '链接已复制')
 }
 
-async function showSignQr(recordId: number | undefined, assetCode: string, userName: string, remark: string) {
-  if (!recordId) return
+function resolveRecordIdFromOpResult(result: any): number | undefined {
+  if (!result || typeof result !== 'object') return undefined
+  const id = result.assetRecord?.id ?? result.assetRecordId
+  return typeof id === 'number' && Number.isFinite(id) ? id : undefined
+}
+
+async function showSignQr(
+  recordId: number | undefined,
+  assetCode: string,
+  userName: string,
+  departmentLabel: string,
+  remark: string,
+) {
+  if (!recordId) {
+    ElMessage.warning('未获取到签名记录编号，请从资产详情页复制签名链接')
+    return
+  }
   const baseUrl = getPublicBaseURL()
   const params = new URLSearchParams({
     recordId: String(recordId),
     assetCode,
     userName,
-    department: '',
+    department: departmentLabel,
     time: new Date().toLocaleString(),
     remark,
   })
@@ -293,9 +309,11 @@ async function showSignQr(recordId: number | undefined, assetCode: string, userN
   qrSignUrl.value = signUrl
   try {
     qrDataUrl.value = await QRCode.toDataURL(signUrl, { width: 280, margin: 2 })
+    await nextTick()
     qrDialogVisible.value = true
   } catch {
     ElMessage.warning('二维码生成失败，请手动发送签名链接')
+    qrDialogVisible.value = true
   }
 }
 
@@ -324,10 +342,12 @@ async function doCheckOut() {
       }
     }
 
+    const reqId = uuid()
+    const deptLabel = formatDepartmentDisplayLabel(checkOut.departmentId, departments.value, campuses.value)
     const result = await apiRequest<any>('/api/operations/check-out', {
       method: 'POST',
       body: {
-        requestId: uuid(),
+        requestId: reqId,
         assetId: checkOut.assetId,
         userName: checkOut.userName.trim(),
         departmentId: checkOut.departmentId,
@@ -337,7 +357,8 @@ async function doCheckOut() {
     })
     ElMessage.success('出库成功，请让领用人扫码签名确认')
     const asset = inStockAssets.value.find((a) => a.id === checkOut.assetId)
-    await showSignQr(result.assetRecord?.id, asset?.assetCode ?? '', checkOut.userName.trim(), checkOut.remark || '')
+    const recordId = resolveRecordIdFromOpResult(result)
+    await showSignQr(recordId, asset?.assetCode ?? '', checkOut.userName.trim(), deptLabel, checkOut.remark || '')
     await loadAssets()
     checkOut.assetId = null
     checkOut.userName = ''
@@ -359,10 +380,12 @@ async function doCheckOut() {
           '一人一机冲突警告',
           { type: 'warning', confirmButtonText: '继续', cancelButtonText: '取消' },
         )
-        await apiRequest('/api/operations/check-out', {
+        const retryReqId = uuid()
+        const deptLabelRetry = formatDepartmentDisplayLabel(checkOut.departmentId, departments.value, campuses.value)
+        const retryResult = await apiRequest<any>('/api/operations/check-out', {
           method: 'POST',
           body: {
-            requestId: uuid(),
+            requestId: retryReqId,
             assetId: checkOut.assetId,
             userName: checkOut.userName.trim(),
             departmentId: checkOut.departmentId,
@@ -370,7 +393,15 @@ async function doCheckOut() {
             remark: checkOut.remark || undefined,
           },
         })
-        ElMessage.success('出库成功')
+        ElMessage.success('出库成功，请让领用人扫码签名确认')
+        const assetRetry = inStockAssets.value.find((a) => a.id === checkOut.assetId)
+        await showSignQr(
+          resolveRecordIdFromOpResult(retryResult),
+          assetRetry?.assetCode ?? '',
+          checkOut.userName.trim(),
+          deptLabelRetry,
+          checkOut.remark || '',
+        )
         await loadAssets()
         checkOut.assetId = null
         checkOut.userName = ''
@@ -438,10 +469,12 @@ async function doLend() {
       }
     }
 
+    const lendReqId = uuid()
+    const lendDeptLabel = formatDepartmentDisplayLabel(lend.departmentId, departments.value, campuses.value)
     const lendResult = await apiRequest<any>('/api/operations/lend', {
       method: 'POST',
       body: {
-        requestId: uuid(),
+        requestId: lendReqId,
         assetId: lend.assetId,
         userName: lend.userName.trim(),
         departmentId: lend.departmentId,
@@ -454,7 +487,13 @@ async function doLend() {
     })
     ElMessage.success('借出成功，请让借用人扫码签名确认')
     const lendAsset = inStockAssets.value.find((a) => a.id === lend.assetId)
-    await showSignQr(lendResult.assetRecord?.id, lendAsset?.assetCode ?? '', lend.userName.trim(), lend.remark || '')
+    await showSignQr(
+      resolveRecordIdFromOpResult(lendResult),
+      lendAsset?.assetCode ?? '',
+      lend.userName.trim(),
+      lendDeptLabel,
+      lend.remark || '',
+    )
     await loadAssets()
     lend.assetId = null
     lend.userName = ''
@@ -477,10 +516,12 @@ async function doLend() {
           '一人一机冲突警告',
           { type: 'warning', confirmButtonText: '继续', cancelButtonText: '取消' },
         )
-        await apiRequest('/api/operations/lend', {
+        const lendRetryReqId = uuid()
+        const lendDeptLabelRetry = formatDepartmentDisplayLabel(lend.departmentId, departments.value, campuses.value)
+        const lendRetryResult = await apiRequest<any>('/api/operations/lend', {
           method: 'POST',
           body: {
-            requestId: uuid(),
+            requestId: lendRetryReqId,
             assetId: lend.assetId,
             userName: lend.userName.trim(),
             departmentId: lend.departmentId,
@@ -491,7 +532,15 @@ async function doLend() {
             remark: lend.remark || undefined,
           },
         })
-        ElMessage.success('借出成功')
+        ElMessage.success('借出成功，请让借用人扫码签名确认')
+        const lendAssetRetry = inStockAssets.value.find((a) => a.id === lend.assetId)
+        await showSignQr(
+          resolveRecordIdFromOpResult(lendRetryResult),
+          lendAssetRetry?.assetCode ?? '',
+          lend.userName.trim(),
+          lendDeptLabelRetry,
+          lend.remark || '',
+        )
         await loadAssets()
         lend.assetId = null
         lend.userName = ''

@@ -381,11 +381,16 @@ const pendingSignUrl = computed(() => {
     .filter((r) => (r.action === 'check_out' || r.action === 'lend') && !r.proofImage)
     .sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime())[0]
   if (!latestUnsigned) return ''
+  const dept =
+    latestUnsigned.department?.displayPath ??
+    latestUnsigned.department?.deptPathOnly ??
+    latestUnsigned.department?.name ??
+    ''
   const params = new URLSearchParams({
     recordId: String(latestUnsigned.id),
     assetCode: asset.value?.assetCode ?? '',
     userName: latestUnsigned.userName ?? '',
-    department: '',
+    department: dept,
     time: new Date(latestUnsigned.actionDate).toLocaleString(),
     remark: latestUnsigned.remark ?? '',
   })
