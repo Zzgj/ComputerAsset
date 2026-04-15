@@ -504,7 +504,12 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
 
     await tx.asset.update({
       where: { id: assetId },
-      data: { status: AssetStatus.in_use, currentUserName: body.userName, departmentId },
+      data: {
+        status: AssetStatus.pending_confirmation,
+        // 签字确认前仍显示原使用人/部门；确认后更新为目标人/部门
+        currentUserName: asset.currentUserName,
+        departmentId: asset.departmentId,
+      },
     })
 
     const assetRecord = await tx.assetRecord.create({
@@ -528,7 +533,13 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
         action: '调拨',
         targetType: 'Asset',
         targetId: assetId,
-        detail: { fromUser: asset.currentUserName, toUser: body.userName, fromDept: asset.departmentId, toDept: departmentId },
+        detail: {
+          fromUser: asset.currentUserName,
+          toUser: body.userName,
+          fromDept: asset.departmentId,
+          toDept: departmentId,
+          pendingSignature: true,
+        },
         ipAddress: req.ip ?? 'unknown',
       },
     })
@@ -772,8 +783,12 @@ operationsRouter.post('/confirm-signature', async (req, res) => {
 
   const record = await prisma.assetRecord.findUnique({ where: { id: recordId } })
   if (!record) return res.status(404).json({ error: { message: 'Record not found' } })
-  if (record.action !== AssetRecordAction.check_out && record.action !== AssetRecordAction.lend) {
-    return res.status(400).json({ error: { message: 'Only check_out or lend records can be signed' } })
+  if (
+    record.action !== AssetRecordAction.check_out &&
+    record.action !== AssetRecordAction.lend &&
+    record.action !== AssetRecordAction.transfer
+  ) {
+    return res.status(400).json({ error: { message: 'This record type cannot be signed' } })
   }
   if (record.proofImage) {
     return res.status(400).json({ error: { message: 'Already signed' } })
@@ -787,11 +802,22 @@ operationsRouter.post('/confirm-signature', async (req, res) => {
 
     const asset = await tx.asset.findUnique({ where: { id: record.assetId } })
     if (asset && asset.status === AssetStatus.pending_confirmation) {
-      const targetStatus = record.action === AssetRecordAction.lend ? AssetStatus.borrowed : AssetStatus.in_use
-      await tx.asset.update({
-        where: { id: record.assetId },
-        data: { status: targetStatus },
-      })
+      if (record.action === AssetRecordAction.transfer) {
+        await tx.asset.update({
+          where: { id: record.assetId },
+          data: {
+            status: AssetStatus.in_use,
+            currentUserName: record.userName,
+            departmentId: record.departmentId,
+          },
+        })
+      } else {
+        const targetStatus = record.action === AssetRecordAction.lend ? AssetStatus.borrowed : AssetStatus.in_use
+        await tx.asset.update({
+          where: { id: record.assetId },
+          data: { status: targetStatus },
+        })
+      }
     }
   })
 

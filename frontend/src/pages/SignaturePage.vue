@@ -2,8 +2,8 @@
   <div class="sign-page">
     <div class="sign-card" v-if="!submitted">
       <div class="sign-header">
-        <h2>电脑资产领用/借用确认</h2>
-        <p>请核对以下信息并手写签名确认</p>
+        <h2>{{ signTitle }}</h2>
+        <p>{{ signSubtitle }}</p>
       </div>
 
       <div class="info-section">
@@ -49,7 +49,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { apiRequest } from '../services/api'
@@ -72,8 +72,17 @@ const submitting = ref(false)
 const submitted = ref(false)
 const errorMsg = ref('')
 
+const signKind = ref('')
+const signTitle = computed(() =>
+  signKind.value === 'transfer' ? '电脑资产调拨确认' : '电脑资产领用/借用确认',
+)
+const signSubtitle = computed(() =>
+  signKind.value === 'transfer' ? '请核对调拨信息并手写签名确认' : '请核对以下信息并手写签名确认',
+)
+
 onMounted(() => {
   const q = route.query
+  signKind.value = String(q.kind ?? '').trim()
   info.value = {
     recordId: String(q.recordId ?? ''),
     assetCode: String(q.assetCode ?? ''),

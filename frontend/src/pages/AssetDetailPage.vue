@@ -301,11 +301,29 @@
         <el-button type="danger" :loading="submittingEditCore" @click="submitEditCore">确认修改</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="transferQrDialogVisible" title="调拨签字确认" width="400px" align-center>
+      <div class="qr-dialog-body">
+        <p class="qr-hint">请让接收人使用手机扫描二维码，核对调拨信息后手写签名确认</p>
+        <img v-if="transferQrDataUrl" :src="transferQrDataUrl" alt="签名二维码" class="qr-image" />
+        <div class="qr-link">
+          <el-input :model-value="transferQrSignUrl" readonly size="small">
+            <template #append>
+              <el-button @click="copyTransferQrLink">复制链接</el-button>
+            </template>
+          </el-input>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="transferQrDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import QRCode from 'qrcode'
 import { useRoute, useRouter } from 'vue-router'
 import { apiRequest } from '../services/api'
 import { actionLabel } from '../actionLabel'
@@ -314,6 +332,7 @@ import { ElMessage } from 'element-plus'
 import DepartmentCascader from '../components/DepartmentCascader.vue'
 import { getPublicBaseURL } from '../lib/publicBaseUrl'
 import { copyTextToClipboardWithToast } from '../lib/clipboard'
+import { formatDepartmentDisplayLabel } from '../lib/departmentDisplay'
 
 const route = useRoute()
 const router = useRouter()
@@ -334,6 +353,10 @@ const authStore = useAuthStore()
 const canOperations = computed(() => authStore.can('operations.execute'))
 const canEditAsset = computed(() => authStore.can('assets.write'))
 const changeLogs = ref<any[]>([])
+
+const transferQrDialogVisible = ref(false)
+const transferQrDataUrl = ref('')
+const transferQrSignUrl = ref('')
 
 function toDate(d: any) {
   if (!d) return '暂无'
@@ -378,7 +401,7 @@ const uniqueUsers = computed(() => {
 const pendingSignUrl = computed(() => {
   if (asset.value?.status !== 'pending_confirmation') return ''
   const latestUnsigned = [...records.value]
-    .filter((r) => (r.action === 'check_out' || r.action === 'lend') && !r.proofImage)
+    .filter((r) => (r.action === 'check_out' || r.action === 'lend' || r.action === 'transfer') && !r.proofImage)
     .sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime())[0]
   if (!latestUnsigned) return ''
   const dept =
@@ -394,11 +417,50 @@ const pendingSignUrl = computed(() => {
     time: new Date(latestUnsigned.actionDate).toLocaleString(),
     remark: latestUnsigned.remark ?? '',
   })
+  if (latestUnsigned.action === 'transfer') params.set('kind', 'transfer')
   return `${getPublicBaseURL()}/sign?${params.toString()}`
 })
 
 async function copySignUrl() {
   await copyTextToClipboardWithToast(pendingSignUrl.value, '签名链接已复制')
+}
+
+function resolveRecordIdFromOpResult(result: any): number | undefined {
+  if (!result || typeof result !== 'object') return undefined
+  const id = result.assetRecord?.id ?? result.assetRecordId
+  return typeof id === 'number' && Number.isFinite(id) ? id : undefined
+}
+
+async function copyTransferQrLink() {
+  await copyTextToClipboardWithToast(transferQrSignUrl.value, '链接已复制')
+}
+
+async function showTransferSignQr(recordId: number | undefined, userName: string, departmentId: number | null, remark: string) {
+  if (!recordId) {
+    ElMessage.warning('未获取到签名记录编号，请刷新后从上方复制签名链接')
+    return
+  }
+  const deptLabel = formatDepartmentDisplayLabel(departmentId, departments.value, campuses.value)
+  const baseUrl = getPublicBaseURL()
+  const params = new URLSearchParams({
+    recordId: String(recordId),
+    assetCode: asset.value?.assetCode ?? '',
+    userName,
+    department: deptLabel,
+    time: new Date().toLocaleString(),
+    remark,
+    kind: 'transfer',
+  })
+  const signUrl = `${baseUrl}/sign?${params.toString()}`
+  transferQrSignUrl.value = signUrl
+  try {
+    transferQrDataUrl.value = await QRCode.toDataURL(signUrl, { width: 280, margin: 2 })
+    await nextTick()
+    transferQrDialogVisible.value = true
+  } catch {
+    ElMessage.warning('二维码生成失败，请使用复制链接')
+    transferQrDialogVisible.value = true
+  }
 }
 
 const latestExpectedReturn = computed(() => {
@@ -649,7 +711,7 @@ async function submitTransfer() {
 
   submittingTransfer.value = true
   try {
-    await apiRequest('/api/operations/transfer', {
+    const result = await apiRequest<any>('/api/operations/transfer', {
       method: 'POST',
       body: {
         requestId: uuid(),
@@ -659,8 +721,10 @@ async function submitTransfer() {
         remark: transferForm.remark || undefined,
       },
     })
-    ElMessage.success('调拨成功')
+    ElMessage.success('调拨已提交，请让接收人扫码签名确认')
     transferDialogVisible.value = false
+    const rid = resolveRecordIdFromOpResult(result)
+    await showTransferSignQr(rid, transferForm.userName.trim(), transferForm.departmentId, transferForm.remark || '')
     await reload()
   } catch (e: any) {
     ElMessage.error(e?.message ?? '调拨失败')
@@ -855,6 +919,31 @@ onMounted(async () => {
   color: #92400e;
   font-size: 13px;
   font-weight: 600;
+}
+
+.qr-dialog-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.qr-hint {
+  font-size: 14px;
+  color: var(--ca-text-secondary);
+  margin: 0 0 16px;
+}
+
+.qr-image {
+  width: 280px;
+  height: 280px;
+  border-radius: var(--ca-radius-sm);
+  border: 1px solid var(--ca-border-light);
+}
+
+.qr-link {
+  width: 100%;
+  margin-top: 16px;
 }
 </style>
 
