@@ -6,7 +6,7 @@
 
 覆盖电脑资产从入库到报废的完整生命周期，提供可视化仪表盘、细粒度权限控制与完整的审计追踪。
 
-[![Version](https://img.shields.io/badge/version-1.4.3-blue.svg)](https://github.com/Zzgj/ComputerAsset)
+[![Version](https://img.shields.io/badge/version-1.4.4-blue.svg)](https://github.com/Zzgj/ComputerAsset)
 [![License](https://img.shields.io/badge/license-ISC-green.svg)](https://opensource.org/licenses/ISC)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen.svg)](https://nodejs.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D.svg?logo=vue.js)](https://vuejs.org/)
@@ -420,6 +420,16 @@ pnpm run start                    # 启动生产服务器（默认读取 fronten
 ---
 
 ## 更新日志
+
+### v1.4.4
+
+**资产流转与审计增强**
+- 资产流转操作增加乐观锁校验，避免多人同时操作同一资产时互相覆盖
+- 新增在库调拨入口，支持在库电脑直接跨园区/部门调整归属
+- 签字确认增加已完成状态校验，刷新或重复打开签字页时显示链接已失效
+- 资产备注纳入关键信息变更日志，流转历史可查看具体修改前后内容
+- 归还登记统计改为按筛选条件统计总量，不再仅统计当前分页
+- 优化仪表盘一人多资产状态展示与操作日志详情中文可读性
 
 ### v1.4.3
 

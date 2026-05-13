@@ -515,6 +515,7 @@ assetsRouter.put('/:id', requireAuth, requirePermission('assets.write'), async (
     cpu: old.cpu,
     memory: old.memory,
     storage: old.storage,
+    remark: old.remark,
   }
   const after = {
     templateId: asset?.templateId,
@@ -526,6 +527,7 @@ assetsRouter.put('/:id', requireAuth, requirePermission('assets.write'), async (
     cpu: asset?.cpu,
     memory: asset?.memory,
     storage: asset?.storage,
+    remark: asset?.remark,
   }
   await prisma.operationLog.create({
     data: {
@@ -582,4 +584,3 @@ assetsRouter.delete('/:id', requireAuth, requirePermission('assets.delete'), asy
 
   res.json({ ok: true })
 })
-

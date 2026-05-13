@@ -1,6 +1,13 @@
 <template>
   <div class="sign-page">
-    <div class="sign-card" v-if="!submitted">
+    <div class="sign-card" v-if="loading">
+      <div class="sign-header">
+        <h2>正在校验签字记录</h2>
+        <p>请稍候</p>
+      </div>
+    </div>
+
+    <div class="sign-card" v-else-if="!submitted && !errorMsg">
       <div class="sign-header">
         <h2>{{ signTitle }}</h2>
         <p>{{ signSubtitle }}</p>
@@ -34,15 +41,15 @@
       </div>
     </div>
 
-    <div class="sign-card success-card" v-else>
+    <div class="sign-card success-card" v-else-if="submitted">
       <div class="success-icon">
         <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
       </div>
       <h2>签名提交成功</h2>
-      <p>领用确认已完成，可关闭此页面</p>
+      <p>{{ submittedMessage }}</p>
     </div>
 
-    <div class="sign-card" v-if="errorMsg">
+    <div class="sign-card" v-if="!loading && errorMsg">
       <div class="error-box">{{ errorMsg }}</div>
     </div>
   </div>
@@ -68,8 +75,10 @@ const info = ref({
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const drawing = ref(false)
 const hasDrawn = ref(false)
+const loading = ref(false)
 const submitting = ref(false)
 const submitted = ref(false)
+const submittedMessage = ref('领用确认已完成，可关闭此页面')
 const errorMsg = ref('')
 
 const signKind = ref('')
@@ -80,7 +89,7 @@ const signSubtitle = computed(() =>
   signKind.value === 'transfer' ? '请核对调拨信息并手写签名确认' : '请核对以下信息并手写签名确认',
 )
 
-onMounted(() => {
+onMounted(async () => {
   const q = route.query
   signKind.value = String(q.kind ?? '').trim()
   info.value = {
@@ -97,6 +106,9 @@ onMounted(() => {
     return
   }
 
+  await loadRecordState()
+  if (submitted.value || errorMsg.value) return
+
   const canvas = canvasRef.value
   if (canvas) {
     canvas.width = canvas.offsetWidth
@@ -112,6 +124,36 @@ onMounted(() => {
     }
   }
 })
+
+async function loadRecordState() {
+  loading.value = true
+  try {
+    const data = await apiRequest<{ record: any }>(
+      `/api/operations/signature-record/${Number(info.value.recordId)}`,
+      { token: null },
+    )
+    const record = data.record
+    if (record?.signed) {
+      submitted.value = true
+      submittedMessage.value = '该签字已完成，链接已失效'
+      return
+    }
+    if (record?.asset?.assetCode) info.value.assetCode = record.asset.assetCode
+    if (record?.userName) info.value.userName = record.userName
+    if (record?.department) {
+      const dept = record.department
+      const campus = dept.campus?.name ? `${dept.campus.name} / ` : ''
+      info.value.department = `${campus}${dept.name ?? ''}`
+    }
+    if (record?.actionDate) info.value.time = new Date(record.actionDate).toLocaleString()
+    info.value.remark = record?.remark ?? info.value.remark
+    signKind.value = record?.action === 'transfer' ? 'transfer' : signKind.value
+  } catch (e: any) {
+    errorMsg.value = e?.message ?? '签字记录无效或已过期'
+  } finally {
+    loading.value = false
+  }
+}
 
 function getCtx() {
   return canvasRef.value?.getContext('2d') ?? null
@@ -182,14 +224,21 @@ async function submitSignature() {
   try {
     await apiRequest('/api/operations/confirm-signature', {
       method: 'POST',
+      token: null,
       body: {
         recordId: Number(info.value.recordId),
         signatureImage: dataUrl,
       },
     })
     submitted.value = true
+    submittedMessage.value = '领用确认已完成，可关闭此页面'
   } catch (e: any) {
-    ElMessage.error(e?.message ?? '提交签名失败')
+    if (e?.code === 'SIGNATURE_ALREADY_COMPLETED' || e?.status === 409) {
+      submitted.value = true
+      submittedMessage.value = '该签字已完成，链接已失效'
+    } else {
+      ElMessage.error(e?.message ?? '提交签名失败')
+    }
   } finally {
     submitting.value = false
   }

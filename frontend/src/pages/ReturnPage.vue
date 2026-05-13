@@ -17,7 +17,7 @@
           </div>
           <div class="chip chip-total">
             <span class="chip-label">待归还合计</span>
-            <span class="chip-num">{{ assets.length }}</span>
+            <span class="chip-num">{{ total }}</span>
           </div>
         </div>
       </div>
@@ -135,6 +135,8 @@ import { ElMessage } from 'element-plus'
 const loading = ref(false)
 const assets = ref<any[]>([])
 const total = ref(0)
+const inUseCount = ref(0)
+const borrowedCount = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 const searchAssetCode = ref('')
@@ -143,9 +145,6 @@ const searchUserName = ref('')
 const hasActiveSearch = computed(
   () => searchAssetCode.value.trim().length > 0 || searchUserName.value.trim().length > 0,
 )
-
-const inUseCount = computed(() => assets.value.filter((a) => a.status === 'in_use').length)
-const borrowedCount = computed(() => assets.value.filter((a) => a.status === 'borrowed').length)
 
 const dialogVisible = ref(false)
 const selected = ref<any | null>(null)
@@ -169,17 +168,34 @@ function statusLabel(status: unknown): string {
 async function load() {
   loading.value = true
   try {
-    const params = new URLSearchParams()
-    params.set('statusIn', 'in_use,borrowed')
-    params.set('page', String(page.value))
-    params.set('pageSize', String(pageSize.value))
+    const baseParams = new URLSearchParams()
     const ac = searchAssetCode.value.trim()
     const un = searchUserName.value.trim()
-    if (ac) params.set('assetCode', ac)
-    if (un) params.set('userName', un)
-    const data = await apiRequest<{ items: any[]; total: number }>('/api/assets?' + params.toString())
+    if (ac) baseParams.set('assetCode', ac)
+    if (un) baseParams.set('userName', un)
+
+    const listParams = new URLSearchParams(baseParams)
+    listParams.set('statusIn', 'in_use,borrowed')
+    listParams.set('page', String(page.value))
+    listParams.set('pageSize', String(pageSize.value))
+
+    const countParams = (status: string) => {
+      const params = new URLSearchParams(baseParams)
+      params.set('status', status)
+      params.set('page', '1')
+      params.set('pageSize', '1')
+      return params
+    }
+
+    const [data, inUseData, borrowedData] = await Promise.all([
+      apiRequest<{ items: any[]; total: number }>('/api/assets?' + listParams.toString()),
+      apiRequest<{ total: number }>('/api/assets?' + countParams('in_use').toString()),
+      apiRequest<{ total: number }>('/api/assets?' + countParams('borrowed').toString()),
+    ])
     assets.value = data.items ?? []
     total.value = data.total ?? 0
+    inUseCount.value = inUseData.total ?? 0
+    borrowedCount.value = borrowedData.total ?? 0
   } finally {
     loading.value = false
   }

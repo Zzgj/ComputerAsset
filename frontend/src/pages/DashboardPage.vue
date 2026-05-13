@@ -61,9 +61,18 @@
           </el-table-column>
           <el-table-column label="状态" width="280">
             <template #default="{ row }">
-              <span v-for="(a, idx) in row.assets" :key="'s' + a.id">
-                {{ heldStatusLabel(a.status) }}<span v-if="idx < row.assets.length - 1">；</span>
-              </span>
+              <div class="multi-status-list">
+                <el-tag
+                  v-for="a in row.assets"
+                  :key="'s' + a.id"
+                  :type="heldStatusTagType(a.status)"
+                  effect="light"
+                  size="small"
+                  round
+                >
+                  {{ a.assetCode }}：{{ heldStatusLabel(a.status) }}
+                </el-tag>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -180,6 +189,16 @@ function heldStatusLabel(status: string) {
     in_repair: '维修中',
   }
   return m[status] ?? status
+}
+
+function heldStatusTagType(status: string): '' | 'success' | 'warning' | 'danger' | 'info' {
+  const m: Record<string, '' | 'success' | 'warning' | 'danger' | 'info'> = {
+    in_use: 'success',
+    waiting_pickup: 'warning',
+    borrowed: 'warning',
+    in_repair: 'danger',
+  }
+  return m[status] ?? 'info'
 }
 
 function goAsset(id: number) {
@@ -392,6 +411,12 @@ const barOption = computed(() => {
 .multi-holder-title {
   font-weight: 800;
   font-size: 16px;
+}
+
+.multi-status-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .charts-grid {

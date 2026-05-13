@@ -87,6 +87,12 @@
         </el-card>
 
         <el-card shadow="never" style="border: 1px solid #eee" body-style="padding: 14px">
+          <div style="font-weight: 700; margin-bottom: 8px">在库调拨</div>
+          <div style="color: #666; font-size: 13px; margin-bottom: 10px">在库电脑：跨园区或部门移动库存归属</div>
+          <el-button type="primary" plain :disabled="asset.status !== 'in_stock'" @click="openStockTransfer">在库调拨</el-button>
+        </el-card>
+
+        <el-card shadow="never" style="border: 1px solid #eee" body-style="padding: 14px">
           <div style="font-weight: 700; margin-bottom: 8px">送修</div>
           <div style="color: #666; font-size: 13px; margin-bottom: 10px">任意状态（非已报废）：填写故障与维修商</div>
           <el-button type="primary" :disabled="asset.status === 'retired'" @click="openRepair">送修</el-button>
@@ -201,6 +207,29 @@
       <template #footer>
         <el-button @click="transferDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="submittingTransfer" @click="submitTransfer">提交调拨</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 在库调拨 -->
+    <el-dialog v-model="stockTransferDialogVisible" title="在库调拨" width="620px" :close-on-click-modal="false">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="仅移动在库电脑的园区/部门归属，不产生领用签字。"
+        style="margin-bottom: 12px"
+      />
+      <el-form :model="stockTransferForm" label-width="100px">
+        <el-form-item label="目标部门">
+          <DepartmentCascader v-model="stockTransferForm.departmentId" :departments="departments" :campuses="campuses" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input type="textarea" v-model="stockTransferForm.remark" :rows="4" placeholder="可选：调拨原因、交接说明等" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="stockTransferDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submittingStockTransfer" @click="submitStockTransfer">提交在库调拨</el-button>
       </template>
     </el-dialog>
 
@@ -492,7 +521,7 @@ const timelineItems = computed(() => {
   const edits = (changeLogs.value ?? []).map((l: any) => {
     const before = l?.detail?.before ?? {}
     const after = l?.detail?.after ?? {}
-    const keys = ['assetCode', 'serialNumber', 'brand', 'model', 'os', 'cpu', 'memory', 'storage'] as const
+    const keys = ['assetCode', 'serialNumber', 'brand', 'model', 'os', 'cpu', 'memory', 'storage', 'remark'] as const
     const labelMap: Record<(typeof keys)[number], string> = {
       assetCode: '电脑编号',
       serialNumber: '序列号',
@@ -502,6 +531,7 @@ const timelineItems = computed(() => {
       cpu: 'CPU',
       memory: '内存',
       storage: '存储',
+      remark: '资产备注',
     }
     const changed = keys.filter((k) => String(before?.[k] ?? '') !== String(after?.[k] ?? ''))
     const fmt = (v: unknown) => {
@@ -556,11 +586,13 @@ async function reload() {
 
 // ---- 对话框与表单状态 ----
 const transferDialogVisible = ref(false)
+const stockTransferDialogVisible = ref(false)
 const repairDialogVisible = ref(false)
 const repairDoneDialogVisible = ref(false)
 const retireDialogVisible = ref(false)
 
 const submittingTransfer = ref(false)
+const submittingStockTransfer = ref(false)
 const submittingRepair = ref(false)
 const submittingRepairDone = ref(false)
 const submittingRetire = ref(false)
@@ -569,6 +601,11 @@ const submittingEditCore = ref(false)
 
 const transferForm = reactive<any>({
   userName: '',
+  departmentId: null as number | null,
+  remark: '',
+})
+
+const stockTransferForm = reactive<any>({
   departmentId: null as number | null,
   remark: '',
 })
@@ -605,6 +642,12 @@ function openTransfer() {
   transferForm.departmentId = asset.value?.department?.id ?? null
   transferForm.remark = ''
   transferDialogVisible.value = true
+}
+
+function openStockTransfer() {
+  stockTransferForm.departmentId = asset.value?.department?.id ?? null
+  stockTransferForm.remark = ''
+  stockTransferDialogVisible.value = true
 }
 
 function openRepair() {
@@ -730,6 +773,32 @@ async function submitTransfer() {
     ElMessage.error(e?.message ?? '调拨失败')
   } finally {
     submittingTransfer.value = false
+  }
+}
+
+async function submitStockTransfer() {
+  if (!asset.value) return
+  if (!stockTransferForm.departmentId) return ElMessage.error('请选择目标部门')
+  if (stockTransferForm.departmentId === asset.value.departmentId) return ElMessage.warning('目标部门与当前部门一致')
+
+  submittingStockTransfer.value = true
+  try {
+    await apiRequest<any>('/api/operations/stock-transfer', {
+      method: 'POST',
+      body: {
+        requestId: uuid(),
+        assetId,
+        departmentId: stockTransferForm.departmentId,
+        remark: stockTransferForm.remark || undefined,
+      },
+    })
+    ElMessage.success('在库调拨成功')
+    stockTransferDialogVisible.value = false
+    await reload()
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '在库调拨失败')
+  } finally {
+    submittingStockTransfer.value = false
   }
 }
 
@@ -946,4 +1015,3 @@ onMounted(async () => {
   margin-top: 16px;
 }
 </style>
-

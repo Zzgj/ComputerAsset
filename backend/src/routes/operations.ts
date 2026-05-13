@@ -40,6 +40,39 @@ function toBoolean(value: unknown): boolean {
 
 type TxOps = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
 
+function staleAssetConflict(): never {
+  throw {
+    statusCode: 409,
+    code: 'ASSET_VERSION_CONFLICT',
+    message: '资产已被其他人修改，请刷新后重试',
+  }
+}
+
+async function updateAssetWithVersion(
+  tx: TxOps,
+  asset: { id: number; version: number; status: AssetStatus },
+  data: any,
+  expectedStatus?: AssetStatus | AssetStatus[],
+) {
+  const statusWhere = Array.isArray(expectedStatus)
+    ? { in: expectedStatus }
+    : expectedStatus
+      ? expectedStatus
+      : undefined
+  const updated = await tx.asset.updateMany({
+    where: {
+      id: asset.id,
+      version: asset.version,
+      ...(statusWhere ? { status: statusWhere } : {}),
+    },
+    data: {
+      ...data,
+      version: { increment: 1 },
+    },
+  })
+  if (updated.count !== 1) staleAssetConflict()
+}
+
 async function getUnassignedDepartmentIdForCampus(tx: TxOps, campusId: number) {
   const dept = await tx.department.findFirst({
     where: { name: '未分配', campusId, parentId: null },
@@ -105,10 +138,12 @@ operationsRouter.post('/check-out', requireAuth, requirePermission('operations.e
     assertCampusAccess(access, asset.department.campusId)
     await assertDeptCampus(tx, access, departmentId)
 
-    await tx.asset.update({
-      where: { id: assetId },
-      data: { status: AssetStatus.pending_confirmation, currentUserName: userName, departmentId },
-    })
+    await updateAssetWithVersion(
+      tx,
+      asset,
+      { status: AssetStatus.pending_confirmation, currentUserName: userName, departmentId },
+      AssetStatus.in_stock,
+    )
 
     const assetRecord = await tx.assetRecord.create({
       data: {
@@ -167,10 +202,12 @@ operationsRouter.post('/assign', requireAuth, requirePermission('operations.exec
     assertCampusAccess(access, asset.department.campusId)
     await assertDeptCampus(tx, access, departmentId)
 
-    await tx.asset.update({
-      where: { id: assetId },
-      data: { status: AssetStatus.waiting_pickup, currentUserName: body.userName, departmentId },
-    })
+    await updateAssetWithVersion(
+      tx,
+      asset,
+      { status: AssetStatus.waiting_pickup, currentUserName: body.userName, departmentId },
+      AssetStatus.in_stock,
+    )
 
     const assetRecord = await tx.assetRecord.create({
       data: {
@@ -228,10 +265,12 @@ operationsRouter.post('/cancel-assign', requireAuth, requirePermission('operatio
 
     const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
 
-    await tx.asset.update({
-      where: { id: assetId },
-      data: { status: AssetStatus.in_stock, currentUserName: '', departmentId: unassignedDepartmentId },
-    })
+    await updateAssetWithVersion(
+      tx,
+      asset,
+      { status: AssetStatus.in_stock, currentUserName: '', departmentId: unassignedDepartmentId },
+      AssetStatus.waiting_pickup,
+    )
 
     const assetRecord = await tx.assetRecord.create({
       data: {
@@ -287,10 +326,7 @@ operationsRouter.post('/pick-up', requireAuth, requirePermission('operations.exe
     if (asset.status !== AssetStatus.waiting_pickup) badRequest('Asset must be waiting_pickup for pick-up')
     assertCampusAccess(access, asset.department.campusId)
 
-    await tx.asset.update({
-      where: { id: assetId },
-      data: { status: AssetStatus.in_use },
-    })
+    await updateAssetWithVersion(tx, asset, { status: AssetStatus.in_use }, AssetStatus.waiting_pickup)
 
     const assetRecord = await tx.assetRecord.create({
       data: {
@@ -376,10 +412,12 @@ operationsRouter.post('/lend', requireAuth, requirePermission('operations.execut
     assertCampusAccess(access, asset.department.campusId)
     await assertDeptCampus(tx, access, departmentId)
 
-    await tx.asset.update({
-      where: { id: assetId },
-      data: { status: AssetStatus.pending_confirmation, currentUserName: userName, departmentId },
-    })
+    await updateAssetWithVersion(
+      tx,
+      asset,
+      { status: AssetStatus.pending_confirmation, currentUserName: userName, departmentId },
+      AssetStatus.in_stock,
+    )
 
     const assetRecord = await tx.assetRecord.create({
       data: {
@@ -439,10 +477,12 @@ operationsRouter.post('/return', requireAuth, requirePermission('operations.exec
 
     const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
 
-    await tx.asset.update({
-      where: { id: assetId },
-      data: { status: AssetStatus.in_stock, currentUserName: '', departmentId: unassignedDepartmentId },
-    })
+    await updateAssetWithVersion(
+      tx,
+      asset,
+      { status: AssetStatus.in_stock, currentUserName: '', departmentId: unassignedDepartmentId },
+      [AssetStatus.in_use, AssetStatus.borrowed],
+    )
 
     const assetRecord = await tx.assetRecord.create({
       data: {
@@ -502,15 +542,17 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
     assertCampusAccess(access, asset.department.campusId)
     await assertDeptCampus(tx, access, departmentId)
 
-    await tx.asset.update({
-      where: { id: assetId },
-      data: {
+    await updateAssetWithVersion(
+      tx,
+      asset,
+      {
         status: AssetStatus.pending_confirmation,
         // 签字确认前仍显示原使用人/部门；确认后更新为目标人/部门
         currentUserName: asset.currentUserName,
         departmentId: asset.departmentId,
       },
-    })
+      AssetStatus.in_use,
+    )
 
     const assetRecord = await tx.assetRecord.create({
       data: {
@@ -550,6 +592,77 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
   res.json(result)
 })
 
+operationsRouter.post('/stock-transfer', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
+  const authUser = (req as any).auth as { id: number }
+  const body = req.body as any
+  if (typeof body.requestId !== 'string') badRequest('requestId is required')
+  const assetId = toInt(body.assetId)
+  if (!assetId) badRequest('assetId is required')
+  const departmentId = toInt(body.departmentId)
+  if (!departmentId) badRequest('departmentId is required')
+
+  const exist = await prisma.assetRecord.findUnique({ where: { requestId: body.requestId } })
+  if (exist) return res.json({ alreadyProcessed: true, assetRecord: exist })
+
+  const now = new Date()
+
+  const result = await prisma.$transaction(async (tx) => {
+    const asset = await tx.asset.findUnique({
+      where: { id: assetId },
+      include: { department: { select: { campusId: true } } },
+    })
+    if (!asset) badNotFound('Asset not found')
+    if (asset.status !== AssetStatus.in_stock) badRequest('Asset must be in_stock for stock-transfer')
+    assertCampusAccess(access, asset.department.campusId)
+    await assertDeptCampus(tx, access, departmentId)
+    if (asset.departmentId === departmentId) badRequest('目标部门与当前部门一致，无需调拨')
+
+    await updateAssetWithVersion(
+      tx,
+      asset,
+      { status: AssetStatus.in_stock, currentUserName: '', departmentId },
+      AssetStatus.in_stock,
+    )
+
+    const assetRecord = await tx.assetRecord.create({
+      data: {
+        assetId,
+        action: AssetRecordAction.transfer,
+        userName: '',
+        departmentId,
+        actionDate: now,
+        expectedReturnDate: undefined,
+        proofImage: undefined,
+        remark: typeof body.remark === 'string' ? body.remark : undefined,
+        operatorId: authUser.id,
+        requestId: body.requestId,
+      },
+    })
+
+    await tx.operationLog.create({
+      data: {
+        operatorId: authUser.id,
+        action: '在库调拨',
+        targetType: 'Asset',
+        targetId: assetId,
+        detail: {
+          fromStatus: asset.status,
+          toStatus: AssetStatus.in_stock,
+          fromDept: asset.departmentId,
+          toDept: departmentId,
+          remark: typeof body.remark === 'string' ? body.remark : undefined,
+        },
+        ipAddress: req.ip ?? 'unknown',
+      },
+    })
+
+    return { assetId, assetRecord }
+  })
+
+  res.json(result)
+})
+
 operationsRouter.post('/repair', requireAuth, requirePermission('operations.execute'), async (req, res) => {
   const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }
@@ -573,10 +686,7 @@ operationsRouter.post('/repair', requireAuth, requirePermission('operations.exec
     if (!asset) badNotFound('Asset not found')
     assertCampusAccess(access, asset.department.campusId)
 
-    await tx.asset.update({
-      where: { id: assetId },
-      data: { status: AssetStatus.in_repair },
-    })
+    await updateAssetWithVersion(tx, asset, { status: AssetStatus.in_repair })
 
     const repair = await tx.repairRecord.create({
       data: {
@@ -671,14 +781,16 @@ operationsRouter.post('/repair-done', requireAuth, requirePermission('operations
 
     const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
 
-    await tx.asset.update({
-      where: { id: assetId },
-      data: {
+    await updateAssetWithVersion(
+      tx,
+      asset,
+      {
         status: toStatus,
         currentUserName: '',
         departmentId: unassignedDepartmentId,
       },
-    })
+      AssetStatus.in_repair,
+    )
 
     const assetRecord = await tx.assetRecord.create({
       data: {
@@ -736,10 +848,11 @@ operationsRouter.post('/retire', requireAuth, requirePermission('operations.exec
 
     const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
 
-    await tx.asset.update({
-      where: { id: assetId },
-      data: { status: AssetStatus.retired, currentUserName: '', departmentId: unassignedDepartmentId },
-    })
+    await updateAssetWithVersion(
+      tx,
+      asset,
+      { status: AssetStatus.retired, currentUserName: '', departmentId: unassignedDepartmentId },
+    )
 
     const assetRecord = await tx.assetRecord.create({
       data: {
@@ -795,31 +908,67 @@ operationsRouter.post('/confirm-signature', async (req, res) => {
   }
 
   await prisma.$transaction(async (tx) => {
-    await tx.assetRecord.update({
-      where: { id: recordId },
+    const signed = await tx.assetRecord.updateMany({
+      where: { id: recordId, proofImage: null },
       data: { proofImage: body.signatureImage as string },
     })
+    if (signed.count !== 1) {
+      throw { statusCode: 409, code: 'SIGNATURE_ALREADY_COMPLETED', message: '该签字已完成，请勿重复提交' }
+    }
 
     const asset = await tx.asset.findUnique({ where: { id: record.assetId } })
     if (asset && asset.status === AssetStatus.pending_confirmation) {
       if (record.action === AssetRecordAction.transfer) {
-        await tx.asset.update({
-          where: { id: record.assetId },
-          data: {
+        await updateAssetWithVersion(
+          tx,
+          asset,
+          {
             status: AssetStatus.in_use,
             currentUserName: record.userName,
             departmentId: record.departmentId,
           },
-        })
+          AssetStatus.pending_confirmation,
+        )
       } else {
         const targetStatus = record.action === AssetRecordAction.lend ? AssetStatus.borrowed : AssetStatus.in_use
-        await tx.asset.update({
-          where: { id: record.assetId },
-          data: { status: targetStatus },
-        })
+        await updateAssetWithVersion(tx, asset, { status: targetStatus }, AssetStatus.pending_confirmation)
       }
     }
   })
 
   res.json({ ok: true })
+})
+
+operationsRouter.get('/signature-record/:id', async (req, res) => {
+  const id = toInt(req.params.id)
+  if (!id) return res.status(400).json({ error: { message: 'recordId is required' } })
+
+  const record = await prisma.assetRecord.findUnique({
+    where: { id },
+    include: {
+      asset: { select: { id: true, assetCode: true, status: true } },
+      department: { include: { campus: true } },
+    },
+  })
+  if (!record) return res.status(404).json({ error: { message: 'Record not found' } })
+  if (
+    record.action !== AssetRecordAction.check_out &&
+    record.action !== AssetRecordAction.lend &&
+    record.action !== AssetRecordAction.transfer
+  ) {
+    return res.status(400).json({ error: { message: 'This record type cannot be signed' } })
+  }
+
+  res.json({
+    record: {
+      id: record.id,
+      action: record.action,
+      signed: Boolean(record.proofImage),
+      userName: record.userName,
+      department: record.department,
+      actionDate: record.actionDate,
+      remark: record.remark,
+      asset: record.asset,
+    },
+  })
 })

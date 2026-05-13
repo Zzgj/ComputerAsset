@@ -64,7 +64,13 @@
     </el-card>
 
     <el-dialog v-model="detailVisible" title="操作详情" width="720px">
-      <pre class="detail-pre">{{ selectedDetailText }}</pre>
+      <div class="detail-readable" v-if="selectedDetailRows.length">
+        <div v-for="row in selectedDetailRows" :key="row.label" class="detail-readable-row">
+          <span class="detail-readable-label">{{ row.label }}</span>
+          <span class="detail-readable-value">{{ row.value }}</span>
+        </div>
+      </div>
+      <pre v-else class="detail-pre">{{ selectedDetailText }}</pre>
       <template #footer>
         <el-button type="primary" @click="detailVisible = false">关闭</el-button>
       </template>
@@ -82,6 +88,7 @@ const items = ref<any[]>([])
 const total = ref(0)
 const detailVisible = ref(false)
 const selectedDetailText = ref('')
+const selectedDetailRows = ref<Array<{ label: string; value: string }>>([])
 
 const categoryOptions = ref<Array<{ key: string; label: string }>>([{ key: 'all', label: '全部' }])
 
@@ -127,25 +134,149 @@ function detailSummary(detail: unknown): string {
   const keys = Object.keys(obj)
   if (!keys.length) return '-'
 
-  const first = keys.slice(0, 3).map((k) => `${k}: ${briefValue(obj[k])}`)
+  const rows = readableDetailRows(obj)
+  if (rows.length) {
+    const first = rows.slice(0, 3).map((x) => `${x.label}：${x.value}`)
+    const more = rows.length > 3 ? ` 等${rows.length}项` : ''
+    return `${first.join('；')}${more}`
+  }
+
+  const first = keys.slice(0, 3).map((k) => `${detailKeyLabel(k)}：${briefValue(obj[k])}`)
   const more = keys.length > 3 ? ` 等${keys.length}项` : ''
-  return `${first.join(' | ')}${more}`
+  return `${first.join('；')}${more}`
 }
 
 function briefValue(v: unknown): string {
   if (v === null || v === undefined || v === '') return '-'
   if (typeof v === 'object') return '[对象]'
+  if (typeof v === 'boolean') return v ? '是' : '否'
   return String(v)
 }
 
 function openDetail(row: any) {
   const detail = row?.detail
+  selectedDetailRows.value =
+    detail && typeof detail === 'object' && !Array.isArray(detail)
+      ? readableDetailRows(detail as Record<string, unknown>)
+      : []
   try {
     selectedDetailText.value = JSON.stringify(detail ?? {}, null, 2)
   } catch {
     selectedDetailText.value = String(detail ?? '')
   }
   detailVisible.value = true
+}
+
+function statusLabel(v: unknown) {
+  const map: Record<string, string> = {
+    in_stock: '在库',
+    waiting_pickup: '待领用',
+    pending_confirmation: '待签字确认',
+    in_use: '使用中',
+    borrowed: '借用中',
+    in_repair: '维修中',
+    retired: '已报废',
+    fixed: '已修复',
+    unfixable: '无法修复',
+  }
+  const s = String(v ?? '')
+  return map[s] ?? briefValue(v)
+}
+
+function detailKeyLabel(key: string) {
+  const map: Record<string, string> = {
+    from: '原状态',
+    to: '新状态',
+    fromStatus: '原状态',
+    toStatus: '新状态',
+    fromUser: '原使用人',
+    toUser: '新使用人',
+    fromDept: '原部门ID',
+    toDept: '目标部门ID',
+    pendingSignature: '是否待签字',
+    expectedReturnDate: '预计归还时间',
+    repairResult: '维修结果',
+    repairCost: '维修费用',
+    faultDescription: '故障描述',
+    assetCode: '电脑编号',
+    serialNumber: '序列号',
+    username: '账号',
+    accessRoleId: '角色ID',
+    accessRoleSlug: '角色标识',
+    reason: '原因',
+    detachedTemplate: '是否脱离模板',
+    versionFrom: '原版本',
+    versionTo: '新版本',
+    name: '名称',
+    sortOrder: '排序',
+    isActive: '是否启用',
+    campusId: '园区ID',
+    parentId: '上级部门ID',
+    displayPath: '部门路径',
+    permissionCount: '权限数量',
+    campusesAll: '全部园区',
+    remark: '备注',
+  }
+  return map[key] ?? key
+}
+
+function readableDetailRows(detail: Record<string, unknown>) {
+  const rows: Array<{ label: string; value: string }> = []
+  const push = (key: string, value: unknown, formatter = briefValue) => {
+    if (typeof value === 'undefined') return
+    rows.push({ label: detailKeyLabel(key), value: formatter(value) })
+  }
+
+  if (detail.before && detail.after && typeof detail.before === 'object' && typeof detail.after === 'object') {
+    const before = detail.before as Record<string, unknown>
+    const after = detail.after as Record<string, unknown>
+    const labels: Record<string, string> = {
+      templateId: '设备模板ID',
+      assetCode: '电脑编号',
+      serialNumber: '序列号',
+      brand: '品牌',
+      model: '型号',
+      os: '操作系统',
+      cpu: 'CPU',
+      memory: '内存',
+      storage: '存储',
+      remark: '资产备注',
+    }
+    for (const key of Object.keys(labels) as Array<keyof typeof labels>) {
+      if (String(before[key] ?? '') !== String(after[key] ?? '')) {
+        const label = labels[key] ?? String(key)
+        rows.push({
+          label,
+          value: `${briefValue(before[key])} -> ${briefValue(after[key])}`,
+        })
+      }
+    }
+  }
+
+  push('from', detail.from, statusLabel)
+  push('to', detail.to, statusLabel)
+  push('fromStatus', detail.fromStatus, statusLabel)
+  push('toStatus', detail.toStatus, statusLabel)
+  push('fromUser', detail.fromUser)
+  push('toUser', detail.toUser)
+  push('fromDept', detail.fromDept)
+  push('toDept', detail.toDept)
+  push('pendingSignature', detail.pendingSignature)
+  push('expectedReturnDate', detail.expectedReturnDate, (v) => v ? new Date(String(v)).toLocaleString() : '-')
+  push('repairResult', detail.repairResult, statusLabel)
+  push('repairCost', detail.repairCost)
+  push('faultDescription', detail.faultDescription)
+  push('assetCode', detail.assetCode)
+  push('serialNumber', detail.serialNumber)
+  push('remark', detail.remark)
+
+  if (!rows.length) {
+    for (const [key, value] of Object.entries(detail)) {
+      if (key === 'before' || key === 'after') continue
+      push(key, value)
+    }
+  }
+  return rows
 }
 
 async function loadMeta() {
@@ -200,5 +331,34 @@ onMounted(async () => {
   line-height: 1.6;
   font-size: 12px;
   color: var(--ca-text-primary);
+}
+
+.detail-readable {
+  display: grid;
+  gap: 10px;
+  max-height: 460px;
+  overflow: auto;
+}
+
+.detail-readable-row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid var(--ca-border-light);
+  border-radius: var(--ca-radius-sm);
+}
+
+.detail-readable-label {
+  color: var(--ca-text-secondary);
+  font-size: 13px;
+}
+
+.detail-readable-value {
+  color: var(--ca-text-primary);
+  font-weight: 600;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>
