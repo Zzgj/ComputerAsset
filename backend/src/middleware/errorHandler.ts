@@ -1,5 +1,10 @@
 import type { NextFunction, Request, Response } from 'express'
 
+import { logger } from '../utils/logger'
+
+/** stack 截断长度：足够定位调用链，又不会让单条日志膨胀到几 KB */
+const STACK_LOG_MAX = 1500
+
 type AppError = {
   statusCode?: number
   message?: string
@@ -8,8 +13,8 @@ type AppError = {
 }
 
 export function errorHandler(
-  err: AppError & { code?: string; meta?: unknown },
-  _req: Request,
+  err: AppError & { code?: string; meta?: unknown; stack?: string },
+  req: Request,
   res: Response,
   _next: NextFunction,
 ) {
@@ -52,6 +57,22 @@ export function errorHandler(
     }
   }
 
+  // 5xx 之前完全静默；现在统一上报，便于内网生产环境复盘
+  if (statusCode >= 500) {
+    const stack = typeof err.stack === 'string' && err.stack.length > STACK_LOG_MAX
+      ? err.stack.slice(0, STACK_LOG_MAX) + '…(truncated)'
+      : err.stack
+    logger.error('request failed', {
+      requestId: res.locals.requestId,
+      method: req.method,
+      path: req.originalUrl,
+      statusCode,
+      code,
+      message,
+      stack,
+    })
+  }
+
   res.status(statusCode).json({
     error: {
       message,
@@ -60,4 +81,3 @@ export function errorHandler(
     },
   })
 }
-

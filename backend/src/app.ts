@@ -6,7 +6,9 @@ import cors from 'cors'
 import { router } from './routes'
 import { errorHandler } from './middleware/errorHandler'
 import { requireAuth, requirePermission } from './middleware/auth'
+import { requestId } from './middleware/requestId'
 import { sendAssetImportTemplate } from './routes/excel'
+import { getEnv } from './utils/env'
 
 const allowedOrigins = (process.env.CORS_ORIGINS ?? '')
   .split(',')
@@ -15,6 +17,10 @@ const allowedOrigins = (process.env.CORS_ORIGINS ?? '')
 
 export const app = express()
 
+// 反代环境下 req.ip 才能反映真实客户端，否则审计日志全是 127.0.0.1
+app.set('trust proxy', getEnv().TRUST_PROXY)
+
+app.use(requestId)
 app.use(
   cors(
     allowedOrigins.length > 0
