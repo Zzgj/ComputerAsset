@@ -25,6 +25,7 @@
      - 构建后端 JavaScript
      - 生成 Prisma 数据库客户端
      - 打包所有运行时文件到 deploy-package\ 文件夹
+     - 将 deploy\package-scripts\ 下的运行脚本复制到部署包根目录
 
      签名链接 / 出库二维码:
      - 构建前 prepare 会将 frontend\env.deployment 复制为 .env.production.local

@@ -137,21 +137,21 @@ mkdir "%DEPLOY_DIR%\frontend\dist" >nul 2>&1
 robocopy "%FRONTEND_DIR%\dist" "%DEPLOY_DIR%\frontend\dist" /e /nfl /ndl /njh /njs /nc /ns /np >nul
 
 echo     正在复制部署脚本 ...
-copy "%ROOT_DIR%\deploy\deploy.bat" "%DEPLOY_DIR%\" >nul
+copy "%ROOT_DIR%\deploy\package-scripts\deploy.bat" "%DEPLOY_DIR%\" >nul
 if %errorlevel% neq 0 (
-    echo     [失败] 缺少 deploy\deploy.bat，部署包无法启动
+    echo     [失败] 缺少 deploy\package-scripts\deploy.bat，部署包无法启动
     pause
     exit /b 1
 )
-copy "%ROOT_DIR%\deploy\stop.bat" "%DEPLOY_DIR%\" >nul
+copy "%ROOT_DIR%\deploy\package-scripts\stop.bat" "%DEPLOY_DIR%\" >nul
 if %errorlevel% neq 0 (
-    echo     [失败] 缺少 deploy\stop.bat，部署包无法停止服务
+    echo     [失败] 缺少 deploy\package-scripts\stop.bat，部署包无法停止服务
     pause
     exit /b 1
 )
-copy "%ROOT_DIR%\deploy\restart.bat" "%DEPLOY_DIR%\" >nul
+copy "%ROOT_DIR%\deploy\package-scripts\restart.bat" "%DEPLOY_DIR%\" >nul
 if %errorlevel% neq 0 (
-    echo     [失败] 缺少 deploy\restart.bat，部署包无法重启服务
+    echo     [失败] 缺少 deploy\package-scripts\restart.bat，部署包无法重启服务
     pause
     exit /b 1
 )

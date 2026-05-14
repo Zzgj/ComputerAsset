@@ -115,9 +115,9 @@ echo -e "    ${GREEN}[通过]${NC} Prisma 文件复制完成"
 echo "    正在复制前端静态文件 ..."
 cp -r "$FRONTEND_DIR/dist/"* "$DEPLOY_DIR/frontend/dist/"
 
-cp "$ROOT_DIR/deploy/deploy.bat" "$DEPLOY_DIR/"
-cp "$ROOT_DIR/deploy/stop.bat" "$DEPLOY_DIR/"
-cp "$ROOT_DIR/deploy/restart.bat" "$DEPLOY_DIR/"
+cp "$ROOT_DIR/deploy/package-scripts/deploy.bat" "$DEPLOY_DIR/"
+cp "$ROOT_DIR/deploy/package-scripts/stop.bat" "$DEPLOY_DIR/"
+cp "$ROOT_DIR/deploy/package-scripts/restart.bat" "$DEPLOY_DIR/"
 cp "$ROOT_DIR/deploy/README.txt" "$DEPLOY_DIR/"
 
 for required in deploy.bat stop.bat restart.bat README.txt; do
