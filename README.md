@@ -271,7 +271,7 @@ pnpm run dev                  # 启动开发服务器
 VITE_API_PROXY_TARGET=http://127.0.0.1:3000
 ```
 
-打包 **Windows 离线部署** 或需要正确的「签名二维码 / 复制签名链接」公网地址时，编辑仓库内 **`frontend/env.deployment`** 中的 **`VITE_PUBLIC_BASE_URL`**（如 `http://服务器IP:3000`）。运行 `deploy/prepare.bat` 或 `deploy/prepare.sh` 时会将其复制为 `frontend/.env.production.local` 再构建前端。详见 [生产环境部署](#生产环境部署)。
+打包 **Windows 离线部署** 时，签名二维码 / 复制签名链接默认会跟随浏览器当前访问地址生成。例如用 `http://10.2.254.29:3000` 打开系统，二维码也会自动使用该地址。若需要固定为域名或反向代理地址，可编辑 **`frontend/env.deployment`** 中的 **`VITE_PUBLIC_BASE_URL`**（如 `https://assets.example.com`）。运行 `deploy/prepare.bat` 或 `deploy/prepare.sh` 时会将其复制为 `frontend/.env.production.local` 再构建前端。详见 [生产环境部署](#生产环境部署)。
 
 ---
 
@@ -312,11 +312,13 @@ pnpm run start                    # 启动生产服务器（默认读取 fronten
 | 组装 | 复制 `backend/dist`、`frontend/dist`、Prisma 迁移与脚本到 `deploy-package/` |
 | 前端变量 | 若存在 **`frontend/env.deployment`**，构建前会复制为 **`frontend/.env.production.local`**，用于注入 `VITE_PUBLIC_BASE_URL` |
 
-#### 签名链接与二维码：`VITE_PUBLIC_BASE_URL`
+#### 签名链接与二维码：自动跟随访问地址
 
-出库、借出后的二维码与「复制签名链接」必须使用 **其他设备能访问的站点根 URL**（一般为 `http://服务器IP:端口` 或 `https://域名`），不能是 `localhost`。
+出库、借出后的二维码与「复制签名链接」默认使用当前浏览器访问系统的地址生成。例如服务器 IP 为 `10.2.254.29`，在局域网电脑上访问 `http://10.2.254.29:3000`，生成的二维码也会是 `http://10.2.254.29:3000/sign?...`。
 
-1. 编辑 **`frontend/env.deployment`** 中的 **`VITE_PUBLIC_BASE_URL`**（不要末尾 `/`；端口需与 `backend/.env` 的 `PORT` 一致）。
+如需固定为域名或反向代理地址：
+
+1. 编辑 **`frontend/env.deployment`** 中的 **`VITE_PUBLIC_BASE_URL`**（不要末尾 `/`；端口需与实际访问端口一致）。
 2. 修改后重新运行 **`deploy/prepare.bat`** 或 **`deploy/prepare.sh`**，再拷贝新的 `deploy-package` 到服务器并执行 **`deploy.bat`**。
 
 服务器上日常运维：`stop.bat` 停止服务，`restart.bat` 先停止再启动。更细的说明见 **`deploy/README.txt`** 与 [Windows 本地与服务器一键运行](#windows-本地与服务器一键运行)。
