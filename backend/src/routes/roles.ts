@@ -5,7 +5,13 @@ import { Router } from 'express'
 import { prisma } from '../prisma'
 import { requireAuth, requireAnyPermission, requirePermission } from '../middleware/auth'
 import type { AccessAuth } from '../auth/accessContext'
-import { ALL_PERMISSION_KEYS, isPermissionKey, PERMISSION_LABELS, type PermissionKey } from '../auth/permissions'
+import {
+  ALL_PERMISSION_KEYS,
+  isPermissionKey,
+  PERMISSION_DESCRIPTIONS,
+  PERMISSION_LABELS,
+  type PermissionKey,
+} from '../auth/permissions'
 
 function badRequest(message: string, details?: unknown): never {
   throw { statusCode: 400, message, details }
@@ -47,7 +53,11 @@ export const rolesRouter = Router()
 
 rolesRouter.get('/meta', requireAuth, requireAnyPermission('roles.manage', 'users.manage'), (_req, res) => {
   res.json({
-    permissions: ALL_PERMISSION_KEYS.map((k) => ({ key: k, label: PERMISSION_LABELS[k] })),
+    permissions: ALL_PERMISSION_KEYS.map((k) => ({
+      key: k,
+      label: PERMISSION_LABELS[k],
+      description: PERMISSION_DESCRIPTIONS[k] ?? '',
+    })),
   })
 })
 

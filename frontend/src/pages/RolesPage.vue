@@ -60,8 +60,14 @@
         <el-form-item label="权限">
           <div class="perm-box">
             <el-checkbox-group v-model="form.permissionKeys">
-              <div v-for="p in permMeta" :key="p.key" style="margin-bottom: 6px">
-                <el-checkbox :label="p.key">{{ p.label }}</el-checkbox>
+              <div v-for="p in permMeta" :key="p.key" class="perm-row">
+                <el-checkbox :label="p.key">
+                  <span class="perm-label">{{ p.label }}</span>
+                </el-checkbox>
+                <el-tooltip v-if="p.description" :content="p.description" placement="top-start" :show-after="200">
+                  <el-tag size="small" type="warning" effect="plain" class="perm-note">说明</el-tag>
+                </el-tooltip>
+                <div v-if="p.description" class="perm-desc">{{ p.description }}</div>
               </div>
             </el-checkbox-group>
           </div>
@@ -97,7 +103,7 @@ const loading = ref(false)
 const saving = ref(false)
 const items = ref<Row[]>([])
 const campuses = ref<Array<{ id: number; name: string }>>([])
-const permMeta = ref<Array<{ key: string; label: string }>>([])
+const permMeta = ref<Array<{ key: string; label: string; description?: string }>>([])
 
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
@@ -111,7 +117,7 @@ const form = ref({
 
 async function loadMeta() {
   const [pm, cp] = await Promise.all([
-    apiRequest<{ permissions: Array<{ key: string; label: string }> }>('/api/roles/meta'),
+    apiRequest<{ permissions: Array<{ key: string; label: string; description?: string }> }>('/api/roles/meta'),
     apiRequest<{ items: Array<{ id: number; name: string }> }>('/api/campuses'),
   ])
   permMeta.value = pm.permissions ?? []
@@ -230,5 +236,25 @@ onMounted(async () => {
   border: 1px solid var(--ca-border-light);
   border-radius: var(--ca-radius-sm);
   padding: 12px;
+}
+
+.perm-row {
+  margin-bottom: 8px;
+}
+
+.perm-label {
+  font-weight: 500;
+}
+
+.perm-note {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.perm-desc {
+  margin: 2px 0 0 24px;
+  color: var(--ca-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 </style>

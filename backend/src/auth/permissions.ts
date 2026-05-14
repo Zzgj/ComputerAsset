@@ -39,6 +39,10 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   'logs.read': '操作日志',
 }
 
+export const PERMISSION_DESCRIPTIONS: Partial<Record<PermissionKey, string>> = {
+  'operations.execute': '包含出库、借用、归还、调拨、维修、报废，以及跨园区调拨消息的接收、查看和标记已读。',
+}
+
 export function isPermissionKey(s: string): s is PermissionKey {
   return (PERMISSIONS as readonly string[]).includes(s)
 }
