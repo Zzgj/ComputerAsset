@@ -556,12 +556,11 @@ function uuid() {
 }
 
 async function loadDepartments() {
-  const [d, c] = await Promise.all([
-    apiRequest<{ items: any[] }>('/api/departments'),
-    apiRequest<{ items: any[] }>('/api/campuses'),
-  ])
+  const d = await apiRequest<{ items: any[]; campuses: Array<{ id: number; name: string; sortOrder: number }> }>(
+    '/api/departments/transfer-targets',
+  )
   departments.value = d.items ?? []
-  campuses.value = c.items ?? []
+  campuses.value = d.campuses ?? []
 }
 
 async function reload() {

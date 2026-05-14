@@ -59,6 +59,8 @@ model User {
 
   operatorLogs     OperationLog[]  @relation("OperatorLogs")
   assetRecords     AssetRecord[]   @relation("RecordOperator")
+  sentNotifications AssetTransferNotification[] @relation("TransferNotificationSender")
+  receivedNotifications AssetTransferNotification[] @relation("TransferNotificationRecipient")
 
   @@index([username])
   @@index([accessRoleId])
@@ -109,6 +111,8 @@ model Campus {
   isActive     Boolean       @default(true)
   departments  Department[]
   roleCampuses AccessRoleCampus[]
+  sentTransferNotifications AssetTransferNotification[] @relation("TransferNotificationFromCampus")
+  receivedTransferNotifications AssetTransferNotification[] @relation("TransferNotificationToCampus")
 }
 
 model Department {
@@ -174,6 +178,7 @@ model Asset {
 
   records           AssetRecord[]
   repairRecords    RepairRecord[]
+  transferNotifications AssetTransferNotification[]
 }
 
 model AssetRecord {
@@ -195,6 +200,36 @@ model AssetRecord {
 
   requestId            String             @unique
   createdAt            DateTime           @default(now())
+  transferNotifications AssetTransferNotification[]
+}
+
+model AssetTransferNotification {
+  id              Int          @id @default(autoincrement())
+  assetId         Int
+  asset           Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  recordId        Int
+  record          AssetRecord  @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  fromCampusId    Int
+  fromCampus      Campus       @relation("TransferNotificationFromCampus", fields: [fromCampusId], references: [id])
+  toCampusId      Int
+  toCampus        Campus       @relation("TransferNotificationToCampus", fields: [toCampusId], references: [id])
+
+  senderId        Int
+  sender          User         @relation("TransferNotificationSender", fields: [senderId], references: [id])
+  recipientId     Int
+  recipient        User        @relation("TransferNotificationRecipient", fields: [recipientId], references: [id])
+
+  message         String
+  isRead          Boolean      @default(false)
+  readAt          DateTime?
+  createdAt       DateTime     @default(now())
+
+  @@unique([recordId, recipientId])
+  @@index([recipientId, isRead, createdAt])
+  @@index([senderId, createdAt])
+  @@index([assetId])
+  @@index([fromCampusId, toCampusId])
 }
 
 model RepairRecord {
@@ -231,4 +266,3 @@ model OperationLog {
   ipAddress    String
   createdAt    DateTime @default(now())
 }
-

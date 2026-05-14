@@ -87,6 +87,64 @@ async function assertDeptCampus(tx: TxOps, access: AccessAuth, departmentId: num
   assertCampusAccess(access, d.campusId)
 }
 
+async function getActiveDeptCampusId(tx: TxOps, departmentId: number) {
+  const d = await tx.department.findUnique({
+    where: { id: departmentId },
+    select: { campusId: true, isActive: true, campus: { select: { isActive: true } } },
+  })
+  if (!d || !d.isActive || !d.campus.isActive) badRequest('目标部门不存在或已停用')
+  return d.campusId
+}
+
+async function createCrossCampusTransferNotifications(
+  tx: TxOps,
+  params: {
+    assetId: number
+    assetCode: string
+    recordId: number
+    fromCampusId: number
+    toCampusId: number
+    senderId: number
+    message: string
+  },
+) {
+  if (params.fromCampusId === params.toCampusId) return 0
+
+  const recipients = await tx.user.findMany({
+    where: {
+      isActive: true,
+      NOT: { id: params.senderId },
+      accessRole: {
+        OR: [
+          { bypassAll: true },
+          {
+            permissions: { some: { key: 'operations.execute' } },
+            OR: [
+              { campusesAll: true },
+              { campuses: { some: { campusId: params.toCampusId } } },
+            ],
+          },
+        ],
+      },
+    },
+    select: { id: true },
+  })
+
+  if (!recipients.length) return 0
+  await tx.assetTransferNotification.createMany({
+    data: recipients.map((u) => ({
+      assetId: params.assetId,
+      recordId: params.recordId,
+      fromCampusId: params.fromCampusId,
+      toCampusId: params.toCampusId,
+      senderId: params.senderId,
+      recipientId: u.id,
+      message: params.message,
+    })),
+  })
+  return recipients.length
+}
+
 export const operationsRouter = Router()
 
 operationsRouter.post('/check-out', requireAuth, requirePermission('operations.execute'), async (req, res) => {
@@ -539,8 +597,9 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
     })
     if (!asset) badNotFound('Asset not found')
     if (asset.status !== AssetStatus.in_use) badRequest('Asset must be in_use for transfer')
-    assertCampusAccess(access, asset.department.campusId)
-    await assertDeptCampus(tx, access, departmentId)
+    const fromCampusId = asset.department.campusId
+    assertCampusAccess(access, fromCampusId)
+    const toCampusId = await getActiveDeptCampusId(tx, departmentId)
 
     await updateAssetWithVersion(
       tx,
@@ -569,6 +628,16 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
       },
     })
 
+    const notificationCount = await createCrossCampusTransferNotifications(tx, {
+      assetId,
+      assetCode: asset.assetCode,
+      recordId: assetRecord.id,
+      fromCampusId,
+      toCampusId,
+      senderId: authUser.id,
+      message: `资产 ${asset.assetCode} 已跨园区调拨，请接收园区管理员关注并处理`,
+    })
+
     await tx.operationLog.create({
       data: {
         operatorId: authUser.id,
@@ -581,6 +650,7 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
           fromDept: asset.departmentId,
           toDept: departmentId,
           pendingSignature: true,
+          notificationCount,
         },
         ipAddress: req.ip ?? 'unknown',
       },
@@ -614,8 +684,9 @@ operationsRouter.post('/stock-transfer', requireAuth, requirePermission('operati
     })
     if (!asset) badNotFound('Asset not found')
     if (asset.status !== AssetStatus.in_stock) badRequest('Asset must be in_stock for stock-transfer')
-    assertCampusAccess(access, asset.department.campusId)
-    await assertDeptCampus(tx, access, departmentId)
+    const fromCampusId = asset.department.campusId
+    assertCampusAccess(access, fromCampusId)
+    const toCampusId = await getActiveDeptCampusId(tx, departmentId)
     if (asset.departmentId === departmentId) badRequest('目标部门与当前部门一致，无需调拨')
 
     await updateAssetWithVersion(
@@ -640,6 +711,16 @@ operationsRouter.post('/stock-transfer', requireAuth, requirePermission('operati
       },
     })
 
+    const notificationCount = await createCrossCampusTransferNotifications(tx, {
+      assetId,
+      assetCode: asset.assetCode,
+      recordId: assetRecord.id,
+      fromCampusId,
+      toCampusId,
+      senderId: authUser.id,
+      message: `在库资产 ${asset.assetCode} 已跨园区调拨，请接收园区管理员关注并处理`,
+    })
+
     await tx.operationLog.create({
       data: {
         operatorId: authUser.id,
@@ -652,6 +733,7 @@ operationsRouter.post('/stock-transfer', requireAuth, requirePermission('operati
           fromDept: asset.departmentId,
           toDept: departmentId,
           remark: typeof body.remark === 'string' ? body.remark : undefined,
+          notificationCount,
         },
         ipAddress: req.ip ?? 'unknown',
       },

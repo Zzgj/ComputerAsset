@@ -102,6 +102,30 @@ departmentsRouter.get('/', requireAuth, async (req, res) => {
   res.json({ items: enriched })
 })
 
+departmentsRouter.get('/transfer-targets', requireAuth, requirePermission('operations.execute'), async (_req, res) => {
+  const [campuses, departments] = await Promise.all([
+    prisma.campus.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: 'asc' },
+    }),
+    prisma.department.findMany({
+      where: { isActive: true, campus: { isActive: true } },
+      orderBy: [{ campusId: 'asc' }, { sortOrder: 'asc' }, { id: 'asc' }],
+      include: { campus: true },
+    }),
+  ])
+  const pathMap = buildDepartmentPathMap(departments)
+  const items = departments.map((d) => {
+    const displayPath = computeDepartmentDisplayPath(d, pathMap)
+    return {
+      ...d,
+      displayPath,
+      deptPathOnly: departmentPathWithoutCampus(displayPath),
+    }
+  })
+  res.json({ campuses, items })
+})
+
 departmentsRouter.post('/', requireAuth, requirePermission('departments.manage'), async (req, res) => {
   const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }

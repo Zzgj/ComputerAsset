@@ -19,6 +19,7 @@ import ConfigPage from '../pages/ConfigPage.vue'
 import LogsPage from '../pages/LogsPage.vue'
 import ImportPage from '../pages/ImportPage.vue'
 import BackupPage from '../pages/BackupPage.vue'
+import TransferNotificationsPage from '../pages/TransferNotificationsPage.vue'
 
 type Meta = {
   public?: boolean
@@ -82,6 +83,12 @@ const router = createRouter({
       name: 'return',
       component: ReturnPage,
       meta: { requiresAuth: true, permissions: ['operations.execute'], title: '归还登记' } satisfies Meta,
+    },
+    {
+      path: '/transfer-notifications',
+      name: 'transferNotifications',
+      component: TransferNotificationsPage,
+      meta: { requiresAuth: true, permissions: ['operations.execute'], title: '调拨消息' } satisfies Meta,
     },
     {
       path: '/records',

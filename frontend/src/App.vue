@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { apiRequest } from './services/api'
@@ -18,6 +18,8 @@ const navKeyword = ref('')
 const sidebarCollapsed = ref(false)
 
 const idleWarningVisible = ref(false)
+const transferUnreadCount = ref(0)
+const transferNoticeShown = ref(false)
 
 const { isWarning: idleIsWarning, remaining: idleRemaining, continueSession, stop: stopIdleTimer, start: startIdleTimer } = useIdleTimer(
   () => { idleWarningVisible.value = true },
@@ -61,6 +63,7 @@ const sectionBusiness: NavItem[] = [
   { path: '/stock-in', label: '入库登记', perm: 'assets.write', icon: 'stock-in' },
   { path: '/stock-out', label: '出库/借用', perm: 'operations.execute', icon: 'stock-out' },
   { path: '/return', label: '归还登记', perm: 'operations.execute', icon: 'return' },
+  { path: '/transfer-notifications', label: '调拨消息', perm: 'operations.execute', icon: 'message' },
   { path: '/import', label: '导入导出', perm: 'excel.import', icon: 'import' },
 ]
 
@@ -107,8 +110,48 @@ function go(path: string) {
   if (route.path !== path) router.push(path)
 }
 
+async function loadTransferUnreadCount(showNotice = false) {
+  if (!authStore.can('operations.execute')) {
+    transferUnreadCount.value = 0
+    return
+  }
+  try {
+    const data = await apiRequest<{ unreadCount: number }>('/api/transfer-notifications/unread-count')
+    transferUnreadCount.value = data.unreadCount ?? 0
+    if (showNotice && transferUnreadCount.value > 0 && !transferNoticeShown.value) {
+      transferNoticeShown.value = true
+      ElMessage.warning(`您有 ${transferUnreadCount.value} 条跨园区调拨消息待处理`)
+    }
+  } catch {
+    transferUnreadCount.value = 0
+  }
+}
+
+function onTransferNotificationChanged() {
+  loadTransferUnreadCount(false)
+}
+
+watch(
+  () => [authStore.me?.id, route.path] as const,
+  ([id]) => {
+    if (!id || isLogin.value) return
+    loadTransferUnreadCount(!transferNoticeShown.value)
+  },
+  { immediate: true },
+)
+
+onMounted(() => {
+  window.addEventListener('transfer-notifications-changed', onTransferNotificationChanged)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('transfer-notifications-changed', onTransferNotificationChanged)
+})
+
 async function logout() {
   await authStore.logout()
+  transferUnreadCount.value = 0
+  transferNoticeShown.value = false
   router.push('/login')
 }
 
@@ -220,6 +263,16 @@ async function submitChangePassword() {
           >
             <span class="nav-dot"></span>
             <span class="nav-label">{{ item.label }}</span>
+            <el-tag
+              v-if="item.path === '/transfer-notifications' && transferUnreadCount"
+              type="danger"
+              effect="dark"
+              size="small"
+              round
+              class="nav-badge"
+            >
+              {{ transferUnreadCount }}
+            </el-tag>
           </div>
         </template>
 
@@ -493,6 +546,12 @@ async function submitChangePassword() {
   color: rgba(224, 231, 255, 0.8);
   font-weight: 500;
   transition: color var(--ca-transition);
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-badge {
+  flex-shrink: 0;
 }
 
 .nav-item.active .nav-label {
