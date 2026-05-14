@@ -138,9 +138,29 @@ robocopy "%FRONTEND_DIR%\dist" "%DEPLOY_DIR%\frontend\dist" /e /nfl /ndl /njh /n
 
 echo     正在复制部署脚本 ...
 copy "%ROOT_DIR%\deploy\deploy.bat" "%DEPLOY_DIR%\" >nul
+if %errorlevel% neq 0 (
+    echo     [失败] 缺少 deploy\deploy.bat，部署包无法启动
+    pause
+    exit /b 1
+)
 copy "%ROOT_DIR%\deploy\stop.bat" "%DEPLOY_DIR%\" >nul
+if %errorlevel% neq 0 (
+    echo     [失败] 缺少 deploy\stop.bat，部署包无法停止服务
+    pause
+    exit /b 1
+)
 copy "%ROOT_DIR%\deploy\restart.bat" "%DEPLOY_DIR%\" >nul
+if %errorlevel% neq 0 (
+    echo     [失败] 缺少 deploy\restart.bat，部署包无法重启服务
+    pause
+    exit /b 1
+)
 copy "%ROOT_DIR%\deploy\README.txt" "%DEPLOY_DIR%\" >nul
+if %errorlevel% neq 0 (
+    echo     [失败] 缺少 deploy\README.txt
+    pause
+    exit /b 1
+)
 
 echo     [通过] 部署包组装完成
 

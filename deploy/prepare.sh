@@ -120,6 +120,13 @@ cp "$ROOT_DIR/deploy/stop.bat" "$DEPLOY_DIR/"
 cp "$ROOT_DIR/deploy/restart.bat" "$DEPLOY_DIR/"
 cp "$ROOT_DIR/deploy/README.txt" "$DEPLOY_DIR/"
 
+for required in deploy.bat stop.bat restart.bat README.txt; do
+  if [ ! -f "$DEPLOY_DIR/$required" ]; then
+    echo -e "    ${RED}[失败]${NC} 部署包缺少 $required"
+    exit 1
+  fi
+done
+
 echo -e "    ${GREEN}[通过]${NC} 部署包组装完成"
 
 # 6. 输出
