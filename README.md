@@ -6,7 +6,7 @@
 
 覆盖电脑资产从入库到报废的完整生命周期，提供可视化仪表盘、细粒度权限控制与完整的审计追踪。
 
-[![Version](https://img.shields.io/badge/version-1.4.4-blue.svg)](https://github.com/Zzgj/ComputerAsset)
+[![Version](https://img.shields.io/badge/version-1.4.5-blue.svg)](https://github.com/Zzgj/ComputerAsset)
 [![License](https://img.shields.io/badge/license-ISC-green.svg)](https://opensource.org/licenses/ISC)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen.svg)](https://nodejs.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D.svg?logo=vue.js)](https://vuejs.org/)
@@ -422,6 +422,15 @@ pnpm run start                    # 启动生产服务器（默认读取 fronten
 ---
 
 ## 更新日志
+
+### v1.4.5
+
+**跨园区调拨消息提醒**
+- 新增调拨消息中心，支持查看「我收到的」和「我发出的」跨园区调拨通知
+- 使用中资产调拨、在库资产调拨跨园区时自动通知目标园区资产管理员
+- 接收方可标记已读，发送方可追踪接收人和已读时间，减少交接争议
+- 登录后自动提醒未读跨园区调拨消息，侧边栏显示未读数量
+- 调拨目标部门选择支持跨园区，同时保留来源资产园区权限校验
 
 ### v1.4.4
 
