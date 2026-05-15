@@ -11,11 +11,11 @@ import { AssetStatus, AssetRecordAction, RepairResult, Prisma } from '@prisma/cl
 const KNOWN_DEVICE_TYPES = ['laptop', 'desktop', 'aio', 'server', 'other']
 import {
   attachDepartmentPathFields,
-  buildDepartmentPathMap,
   computeDepartmentDisplayPath,
   departmentPathWithoutCampus,
   type DepartmentWithCampus,
 } from '../utils/departmentDisplay'
+import { getDepartmentPathSnapshot } from '../utils/departmentPath'
 
 /** 名下持有资产计数用：与 dashboard「多人多机」一致 */
 const HOLDER_STATUSES: AssetStatus[] = [
@@ -119,8 +119,7 @@ assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req,
     },
   })
 
-  const pathRows = await prisma.department.findMany({ include: { campus: true } })
-  const listPathMap = buildDepartmentPathMap(pathRows)
+  const { pathMap: listPathMap } = await getDepartmentPathSnapshot()
   const itemsWithPath = items.map((a) => {
     if (!a.department) return a
     const displayPath = computeDepartmentDisplayPath(a.department as DepartmentWithCampus, listPathMap)
@@ -195,8 +194,7 @@ assetsRouter.get('/:id', requireAuth, requirePermission('assets.read'), async (r
   if (!asset) return res.status(404).json({ error: { message: 'Asset not found' } })
   if (asset.department) assertCampusAccess(access, asset.department.campusId)
 
-  const pathRows = await prisma.department.findMany({ include: { campus: true } })
-  const listPathMap = buildDepartmentPathMap(pathRows)
+  const { pathMap: listPathMap } = await getDepartmentPathSnapshot()
 
   res.json({
     asset: {
@@ -224,8 +222,7 @@ assetsRouter.get('/:id/records', requireAuth, requirePermission('assets.read'), 
     include: { department: { include: { campus: true } }, operator: true },
   })
 
-  const pathRows = await prisma.department.findMany({ include: { campus: true } })
-  const listPathMap = buildDepartmentPathMap(pathRows)
+  const { pathMap: listPathMap } = await getDepartmentPathSnapshot()
   const enriched = records.map((rec) => ({
     ...rec,
     department: attachDepartmentPathFields(rec.department as DepartmentWithCampus | null, listPathMap) ?? null,

@@ -2,7 +2,7 @@ import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 
 import { prisma } from '../prisma'
-import { requireAuth, requirePermission } from '../middleware/auth'
+import { requireAuth, requirePermission, invalidateSessionCache } from '../middleware/auth'
 
 function badRequest(message: string, details?: unknown): never {
   throw { statusCode: 400, message, details }
@@ -134,6 +134,11 @@ usersRouter.put('/:id', requireAuth, requirePermission('users.manage'), async (r
       accessRole: { select: { id: true, name: true, slug: true, bypassAll: true } },
     },
   })
+
+  // 禁用 / 改角色后必须立即生效，不能等 session 缓存自然过期
+  if (typeof body.isActive === 'boolean' || newRoleId) {
+    invalidateSessionCache(id)
+  }
 
   await prisma.operationLog.create({
     data: {

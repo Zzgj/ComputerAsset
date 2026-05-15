@@ -7,9 +7,9 @@ import { prisma } from '../prisma'
 import { requireAuth, requirePermission } from '../middleware/auth'
 import {
   attachDepartmentPathFields,
-  buildDepartmentPathMap,
   type DepartmentWithCampus,
 } from '../utils/departmentDisplay'
+import { getDepartmentPathSnapshot } from '../utils/departmentPath'
 
 function badRequest(message: string, details?: unknown): never {
   throw { statusCode: 400, message, details }
@@ -74,8 +74,7 @@ recordsRouter.get('/', requireAuth, requirePermission('records.read'), async (re
     },
   })
 
-  const pathRows = await prisma.department.findMany({ include: { campus: true } })
-  const listPathMap = buildDepartmentPathMap(pathRows)
+  const { pathMap: listPathMap } = await getDepartmentPathSnapshot()
   const enriched = items.map((rec) => ({
     ...rec,
     department: attachDepartmentPathFields(rec.department as DepartmentWithCampus | null, listPathMap) ?? null,

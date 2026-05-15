@@ -7,6 +7,7 @@ import { jwtClaimsToAccessAuth } from '../auth/jwtAccess'
 import type { PermissionKey } from '../auth/permissions'
 import { getEnv } from '../utils/env'
 import { prisma } from '../prisma'
+import { TtlLruCache } from '../utils/ttlLruCache'
 
 function getTokenFromRequest(req: Request): string | null {
   const header = req.headers.authorization
@@ -14,6 +15,23 @@ function getTokenFromRequest(req: Request): string | null {
   const [scheme, token] = header.split(' ')
   if (scheme?.toLowerCase() !== 'bearer' || !token) return null
   return token
+}
+
+/**
+ * 为单设备登录校验缓存「sessionToken 仍然有效」的判定。10 秒 TTL：
+ * 内网下足够把每个受保护请求的 DB roundtrip 砍到几乎零，同时把"踢人"延迟控制在
+ * 用户能接受的范围。logout 时主动 invalidate 立即生效，避免依赖 TTL 过期。
+ */
+const sessionCache = new TtlLruCache<string, true>(2000, 10_000)
+const sessionCacheKey = (userId: number, sessionToken: string) => `${userId}:${sessionToken}`
+
+export function invalidateSessionCache(userId: number, sessionToken?: string): void {
+  if (sessionToken) {
+    sessionCache.delete(sessionCacheKey(userId, sessionToken))
+    return
+  }
+  // 不知道具体 sessionToken 时（如 admin 重置密码），保守清空
+  sessionCache.clear()
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -43,15 +61,20 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
 
     if (decoded.st) {
-      const user = await prisma.user.findUnique({
-        where: { id: access.id },
-        select: { sessionToken: true, isActive: true },
-      })
-      if (!user || !user.isActive) {
-        return res.status(401).json({ error: { message: 'Account disabled', code: 'ACCOUNT_DISABLED' } })
-      }
-      if (user.sessionToken && user.sessionToken !== decoded.st) {
-        return res.status(401).json({ error: { message: 'Session expired, logged in from another location', code: 'SESSION_REPLACED' } })
+      const cacheKey = sessionCacheKey(access.id, decoded.st)
+      if (!sessionCache.get(cacheKey)) {
+        const user = await prisma.user.findUnique({
+          where: { id: access.id },
+          select: { sessionToken: true, isActive: true },
+        })
+        if (!user || !user.isActive) {
+          return res.status(401).json({ error: { message: 'Account disabled', code: 'ACCOUNT_DISABLED' } })
+        }
+        // token 自带 st 但 DB sessionToken 已被清空（logout / 强制下线）或已被新登录覆盖
+        if (user.sessionToken !== decoded.st) {
+          return res.status(401).json({ error: { message: 'Session expired, logged in from another location', code: 'SESSION_REPLACED' } })
+        }
+        sessionCache.set(cacheKey, true)
       }
     }
 

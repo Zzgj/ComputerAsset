@@ -7,7 +7,7 @@ import { accessAuthToJwtClaims } from '../auth/jwtAccess'
 import { loadAccessAuthByUserId } from '../auth/loadAccessAuth'
 import { prisma } from '../prisma'
 import { getEnv } from '../utils/env'
-import { requireAuth } from '../middleware/auth'
+import { requireAuth, invalidateSessionCache } from '../middleware/auth'
 
 export const authRouter = Router()
 
@@ -166,10 +166,18 @@ authRouter.get('/me', requireAuth, async (req, res) => {
 authRouter.post('/logout', requireAuth, async (req, res) => {
   const access = (req as any).access as { id: number; username?: string }
 
+  const before = await prisma.user.findUnique({
+    where: { id: access.id },
+    select: { sessionToken: true },
+  })
+
   await prisma.user.update({
     where: { id: access.id },
     data: { sessionToken: null },
   })
+  if (before?.sessionToken) {
+    invalidateSessionCache(access.id, before.sessionToken)
+  }
 
   await prisma.operationLog.create({
     data: {

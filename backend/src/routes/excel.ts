@@ -14,6 +14,7 @@ import {
   departmentPathWithoutCampus,
   type DepartmentWithCampus,
 } from '../utils/departmentDisplay'
+import { getDepartmentPathSnapshot, invalidateDepartmentPathCache } from '../utils/departmentPath'
 
 type ImportTx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
 
@@ -1323,6 +1324,9 @@ excelRouter.post(
       }
     })
 
+    // 导入可能新增了园区/部门，使部门路径缓存失效
+    invalidateDepartmentPathCache()
+
     res.json(result)
   },
 )
@@ -1441,8 +1445,7 @@ excelRouter.get('/export', requireAuth, requirePermission('excel.export'), async
       return s
     }
 
-    const pathRows = await prisma.department.findMany({ include: { campus: true } })
-    const exportPathMap = buildDepartmentPathMap(pathRows)
+    const { pathMap: exportPathMap } = await getDepartmentPathSnapshot()
 
     if (!pageProvided && !pageSizeProvided) {
       assets = await prisma.asset.findMany({
@@ -1521,8 +1524,7 @@ excelRouter.get('/export', requireAuth, requirePermission('excel.export'), async
       return s
     }
 
-    const pathRows = await prisma.department.findMany({ include: { campus: true } })
-    const exportPathMap = buildDepartmentPathMap(pathRows)
+    const { pathMap: exportPathMap } = await getDepartmentPathSnapshot()
 
     const assets = await prisma.asset.findMany({
       orderBy: { id: 'desc' },
@@ -1559,8 +1561,7 @@ excelRouter.get('/export', requireAuth, requirePermission('excel.export'), async
       }),
     )
 
-    const recPathRows = await prisma.department.findMany({ include: { campus: true } })
-    const recPathMap = buildDepartmentPathMap(recPathRows)
+    const { pathMap: recPathMap } = await getDepartmentPathSnapshot()
 
     const records = await prisma.assetRecord.findMany({
       orderBy: { actionDate: 'asc' },
@@ -1646,8 +1647,7 @@ excelRouter.get('/export', requireAuth, requirePermission('excel.export'), async
     let records: any[]
     let fileName = 'records.xlsx'
 
-    const recPathRows = await prisma.department.findMany({ include: { campus: true } })
-    const recPathMap = buildDepartmentPathMap(recPathRows)
+    const { pathMap: recPathMap } = await getDepartmentPathSnapshot()
 
     if (!pageProvided && !pageSizeProvided) {
       records = await prisma.assetRecord.findMany({
