@@ -1,6 +1,6 @@
 <template>
-  <div class="ca-page ca-animate">
-    <el-card shadow="never">
+  <div class="ca-page">
+    <el-card shadow="never" class="filter-card">
       <div class="ca-page-header">
         <div>
           <div class="ca-page-title">资产列表</div>
@@ -55,7 +55,7 @@
       </div>
     </el-card>
 
-    <el-card shadow="never">
+    <el-card shadow="never" class="table-card">
       <el-table :data="assets" v-loading="loading" style="width: 100%" border class="assets-table">
         <el-table-column prop="assetCode" label="电脑编号" min-width="140" />
         <el-table-column v-if="colVisible.deviceType" label="设备类型" min-width="100">
@@ -367,12 +367,22 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.filter-card {
+  border-bottom: 1px solid var(--ca-border-light);
+}
+
 .filter-bar {
   display: flex;
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
   margin-top: 16px;
+  padding-bottom: 4px;
+}
+
+.table-card {
+  opacity: 0;
+  animation: ca-stagger-in 0.4s var(--ca-ease-out-expo) 0.1s forwards;
 }
 
 .assets-table :deep(.el-table__body td) {
@@ -382,6 +392,19 @@ onMounted(async () => {
 
 .assets-table :deep(.el-table__body tr td:first-child) {
   border-left-color: transparent;
+}
+
+.assets-table :deep(.el-table__body tr) {
+  transition: background-color var(--ca-transition);
+  position: relative;
+}
+
+.assets-table :deep(.el-table__body tr:hover td) {
+  background-color: #f1f5f9 !important;
+}
+
+.assets-table :deep(.el-table__body tr:hover td:first-child) {
+  box-shadow: inset 2px 0 0 0 var(--ca-primary);
 }
 
 .assets-col-settings__row {

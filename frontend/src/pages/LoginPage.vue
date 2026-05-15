@@ -1,17 +1,18 @@
 <template>
   <div class="login-page">
     <div class="login-left">
+      <canvas ref="canvasRef" class="particle-canvas"></canvas>
       <div class="brand-content">
-        <div class="brand-icon">
+        <div class="brand-icon stagger-item" style="--i:0">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
             <line x1="8" y1="21" x2="16" y2="21" />
             <line x1="12" y1="17" x2="12" y2="21" />
           </svg>
         </div>
-        <h1 class="brand-title">ComputerAsset</h1>
-        <p class="brand-subtitle">企业电脑资产管理系统</p>
-        <div class="brand-features">
+        <h1 class="brand-title stagger-item" style="--i:1">ComputerAsset</h1>
+        <p class="brand-subtitle stagger-item" style="--i:2">企业电脑资产管理系统</p>
+        <div class="brand-features stagger-item" style="--i:3">
           <div class="feature-item">
             <div class="feature-dot"></div>
             <span>全生命周期管理</span>
@@ -40,8 +41,8 @@
         </div>
 
         <form class="login-form" @submit.prevent="onLogin">
-          <div class="field">
-            <label class="field-label">用户名</label>
+          <div class="field form-stagger" style="--i:0">
+            <label class="field-label" :class="{ active: userFocus }">用户名</label>
             <div class="input-wrap" :class="{ focused: userFocus }">
               <svg class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -57,8 +58,8 @@
             </div>
           </div>
 
-          <div class="field">
-            <label class="field-label">密码</label>
+          <div class="field form-stagger" style="--i:1">
+            <label class="field-label" :class="{ active: passFocus }">密码</label>
             <div class="input-wrap" :class="{ focused: passFocus }">
               <svg class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
@@ -75,17 +76,17 @@
             </div>
           </div>
 
-          <div v-if="kickedMsg" class="kicked-msg">
+          <div v-if="kickedMsg" class="kicked-msg form-stagger" style="--i:2">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             {{ kickedMsg }}
           </div>
 
-          <div v-if="error" class="error-msg">
+          <div v-if="error" class="error-msg form-stagger" style="--i:2">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
             {{ error }}
           </div>
 
-          <button type="submit" class="login-btn" :disabled="loading">
+          <button type="submit" class="login-btn form-stagger" style="--i:2" :disabled="loading">
             <span v-if="loading" class="spinner"></span>
             {{ loading ? '登录中...' : '登 录' }}
           </button>
@@ -96,7 +97,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import appPkg from '../../package.json'
@@ -114,13 +115,89 @@ const userFocus = ref(false)
 const passFocus = ref(false)
 
 const appVersion = (appPkg as { version?: string }).version ?? ''
+const canvasRef = ref<HTMLCanvasElement | null>(null)
+let animId = 0
+let resizeHandler: (() => void) | null = null
 
 onMounted(() => {
   const msg = route.query.msg
   if (typeof msg === 'string' && msg) {
     kickedMsg.value = msg
   }
+  initParticles()
 })
+
+onUnmounted(() => {
+  cancelAnimationFrame(animId)
+  if (resizeHandler) {
+    window.removeEventListener('resize', resizeHandler)
+    resizeHandler = null
+  }
+})
+
+function initParticles() {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  let w = 0, h = 0
+  function resize() {
+    const parent = canvas!.parentElement!
+    w = canvas!.width = parent.clientWidth
+    h = canvas!.height = parent.clientHeight
+  }
+  resize()
+  resizeHandler = resize
+  window.addEventListener('resize', resize)
+
+  const particles: Array<{ x: number; y: number; vx: number; vy: number; r: number }> = []
+  for (let i = 0; i < 35; i++) {
+    particles.push({
+      x: Math.random() * w,
+      y: Math.random() * h,
+      vx: (Math.random() - 0.5) * 0.4,
+      vy: (Math.random() - 0.5) * 0.4,
+      r: Math.random() * 2 + 1,
+    })
+  }
+
+  function draw() {
+    ctx!.clearRect(0, 0, w, h)
+    for (const p of particles) {
+      p.x += p.vx
+      p.y += p.vy
+      if (p.x < 0 || p.x > w) p.vx *= -1
+      if (p.y < 0 || p.y > h) p.vy *= -1
+
+      ctx!.beginPath()
+      ctx!.arc(p.x, p.y, p.r, 0, Math.PI * 2)
+      ctx!.fillStyle = 'rgba(199, 210, 254, 0.3)'
+      ctx!.fill()
+    }
+
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const pi = particles[i]!
+        const pj = particles[j]!
+        const dx = pi.x - pj.x
+        const dy = pi.y - pj.y
+        const distSq = dx * dx + dy * dy
+        if (distSq < 14400) {
+          const dist = Math.sqrt(distSq)
+          ctx!.beginPath()
+          ctx!.moveTo(pi.x, pi.y)
+          ctx!.lineTo(pj.x, pj.y)
+          ctx!.strokeStyle = `rgba(199, 210, 254, ${0.15 * (1 - dist / 120)})`
+          ctx!.lineWidth = 0.5
+          ctx!.stroke()
+        }
+      }
+    }
+    animId = requestAnimationFrame(draw)
+  }
+  draw()
+}
 
 async function onLogin() {
   loading.value = true
@@ -154,6 +231,14 @@ async function onLogin() {
   overflow: hidden;
 }
 
+.particle-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
 .login-left::before {
   content: '';
   position: absolute;
@@ -163,6 +248,7 @@ async function onLogin() {
   height: 300px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.04);
+  animation: float-slow 8s ease-in-out infinite;
 }
 
 .login-left::after {
@@ -174,12 +260,29 @@ async function onLogin() {
   height: 200px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.03);
+  animation: float-slow 6s ease-in-out infinite reverse;
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
 }
 
 .brand-content {
   text-align: center;
   position: relative;
   z-index: 1;
+}
+
+.stagger-item {
+  opacity: 0;
+  animation: brand-enter 0.6s var(--ca-ease-out-expo) forwards;
+  animation-delay: calc(var(--i) * 120ms + 200ms);
+}
+
+@keyframes brand-enter {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .brand-icon {
@@ -268,7 +371,23 @@ async function onLogin() {
 .login-form-wrap {
   width: 100%;
   max-width: 400px;
-  animation: ca-fade-in 0.5s ease-out;
+  animation: form-slide-in 0.5s var(--ca-ease-out-expo) 0.3s both;
+}
+
+@keyframes form-slide-in {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.form-stagger {
+  opacity: 0;
+  animation: field-enter 0.4s var(--ca-ease-out-expo) forwards;
+  animation-delay: calc(var(--i) * 80ms + 600ms);
+}
+
+@keyframes field-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .form-header {
@@ -305,6 +424,11 @@ async function onLogin() {
   font-size: 13px;
   font-weight: 600;
   color: var(--ca-text-primary);
+  transition: color var(--ca-transition);
+}
+
+.field-label.active {
+  color: var(--ca-primary);
 }
 
 .input-wrap {
@@ -322,6 +446,12 @@ async function onLogin() {
 .input-wrap.focused {
   border-color: var(--ca-primary);
   box-shadow: 0 0 0 3px var(--ca-primary-bg);
+  animation: focus-glow 0.6s ease-out;
+}
+
+@keyframes focus-glow {
+  0% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.3); }
+  100% { box-shadow: 0 0 0 3px var(--ca-primary-bg); }
 }
 
 .input-icon {
@@ -377,7 +507,8 @@ async function onLogin() {
   height: 48px;
   border-radius: var(--ca-radius);
   border: none;
-  background: var(--ca-primary);
+  background: linear-gradient(90deg, var(--ca-primary) 0%, #6366f1 50%, var(--ca-primary) 100%);
+  background-size: 200% 100%;
   color: #fff;
   font-size: 15px;
   font-weight: 600;
@@ -390,10 +521,12 @@ async function onLogin() {
   gap: 8px;
   letter-spacing: 0.05em;
   margin-top: 4px;
+  position: relative;
+  overflow: hidden;
 }
 
 .login-btn:hover:not(:disabled) {
-  background: #4338ca;
+  background-position: 100% 0;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
 }
@@ -410,10 +543,11 @@ async function onLogin() {
 .spinner {
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.2);
   border-top-color: #fff;
+  border-right-color: rgba(255, 255, 255, 0.6);
   border-radius: 50%;
-  animation: spin 0.6s linear infinite;
+  animation: spin 0.7s linear infinite;
 }
 
 @keyframes spin {
