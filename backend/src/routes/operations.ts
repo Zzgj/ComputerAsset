@@ -3,13 +3,25 @@ import { Router } from 'express'
 import type { AccessAuth } from '../auth/accessContext'
 import { assertCampusAccess } from '../auth/accessContext'
 import { prisma } from '../prisma'
+import { HttpError } from '../utils/httpError'
 import { requireAuth, requirePermission } from '../middleware/auth'
+import { validate } from '../middleware/validate'
 import {
   runFlowOperation,
   staleAssetConflict,
   updateAssetWithVersion,
   type FlowTx as TxOps,
 } from './operations/_shared'
+import {
+  CheckOutSchema,
+  AssignSchema,
+  CancelAssignSchema,
+  PickUpSchema,
+  LendSchema,
+  ReturnSchema,
+  RetireSchema,
+  ConfirmSignatureSchema,
+} from './operations.schemas'
 
 import { AssetStatus, AssetRecordAction, RepairResult } from '@prisma/client'
 
@@ -152,12 +164,10 @@ async function createCrossCampusTransferNotifications(
 
 export const operationsRouter = Router()
 
-operationsRouter.post('/check-out', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+operationsRouter.post('/check-out', requireAuth, requirePermission('operations.execute'), validate({ body: CheckOutSchema }), async (req, res) => {
   const body = req.body as any
-  if (typeof body.userName !== 'string' || body.userName.trim() === '') badRequest('userName is required')
   const userName = body.userName.trim()
-  const departmentId = toInt(body.departmentId)
-  if (!departmentId) badRequest('departmentId is required')
+  const departmentId = body.departmentId
   const ignoreConflict = toBoolean(body.ignoreConflict)
 
   await runFlowOperation(req, res, {
@@ -182,11 +192,9 @@ operationsRouter.post('/check-out', requireAuth, requirePermission('operations.e
   })
 })
 
-operationsRouter.post('/assign', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+operationsRouter.post('/assign', requireAuth, requirePermission('operations.execute'), validate({ body: AssignSchema }), async (req, res) => {
   const body = req.body as any
-  if (typeof body.userName !== 'string' || body.userName.trim() === '') badRequest('userName is required')
-  const departmentId = toInt(body.departmentId)
-  if (!departmentId) badRequest('departmentId is required')
+  const departmentId = body.departmentId
 
   await runFlowOperation(req, res, {
     requestId: body.requestId,
@@ -209,7 +217,7 @@ operationsRouter.post('/assign', requireAuth, requirePermission('operations.exec
   })
 })
 
-operationsRouter.post('/cancel-assign', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+operationsRouter.post('/cancel-assign', requireAuth, requirePermission('operations.execute'), validate({ body: CancelAssignSchema }), async (req, res) => {
   const body = req.body as any
 
   await runFlowOperation(req, res, {
@@ -233,7 +241,7 @@ operationsRouter.post('/cancel-assign', requireAuth, requirePermission('operatio
   })
 })
 
-operationsRouter.post('/pick-up', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+operationsRouter.post('/pick-up', requireAuth, requirePermission('operations.execute'), validate({ body: PickUpSchema }), async (req, res) => {
   const body = req.body as any
 
   await runFlowOperation(req, res, {
@@ -256,16 +264,13 @@ operationsRouter.post('/pick-up', requireAuth, requirePermission('operations.exe
   })
 })
 
-operationsRouter.post('/lend', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+operationsRouter.post('/lend', requireAuth, requirePermission('operations.execute'), validate({ body: LendSchema }), async (req, res) => {
   const body = req.body as any
-  if (typeof body.userName !== 'string' || body.userName.trim() === '') badRequest('userName is required')
   const userName = body.userName.trim()
-  const departmentId = toInt(body.departmentId)
-  if (!departmentId) badRequest('departmentId is required')
+  const departmentId = body.departmentId
   const ignoreConflict = toBoolean(body.ignoreConflict)
 
-  if (!body.expectedReturnDate) badRequest('expectedReturnDate is required')
-  const expectedReturnDate = new Date(body.expectedReturnDate as any)
+  const expectedReturnDate = new Date(body.expectedReturnDate as string)
   if (Number.isNaN(expectedReturnDate.getTime())) badRequest('expectedReturnDate is invalid')
 
   await runFlowOperation(req, res, {
@@ -292,7 +297,7 @@ operationsRouter.post('/lend', requireAuth, requirePermission('operations.execut
   })
 })
 
-operationsRouter.post('/return', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+operationsRouter.post('/return', requireAuth, requirePermission('operations.execute'), validate({ body: ReturnSchema }), async (req, res) => {
   const body = req.body as any
 
   await runFlowOperation(req, res, {
@@ -319,8 +324,8 @@ operationsRouter.post('/return', requireAuth, requirePermission('operations.exec
 })
 
 operationsRouter.post('/transfer', requireAuth, requirePermission('operations.execute'), async (req, res) => {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
+  const access = req.access!
+  const authUser = req.auth!
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
   const assetId = toInt(body.assetId)
@@ -407,8 +412,8 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
 })
 
 operationsRouter.post('/stock-transfer', requireAuth, requirePermission('operations.execute'), async (req, res) => {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
+  const access = req.access!
+  const authUser = req.auth!
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
   const assetId = toInt(body.assetId)
@@ -490,8 +495,8 @@ operationsRouter.post('/stock-transfer', requireAuth, requirePermission('operati
 })
 
 operationsRouter.post('/repair', requireAuth, requirePermission('operations.execute'), async (req, res) => {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
+  const access = req.access!
+  const authUser = req.auth!
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
   const assetId = toInt(body.assetId)
@@ -560,8 +565,8 @@ operationsRouter.post('/repair', requireAuth, requirePermission('operations.exec
 })
 
 operationsRouter.post('/repair-done', requireAuth, requirePermission('operations.execute'), async (req, res) => {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
+  const access = req.access!
+  const authUser = req.auth!
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
   const assetId = toInt(body.assetId)
@@ -650,7 +655,7 @@ operationsRouter.post('/repair-done', requireAuth, requirePermission('operations
   res.json(result)
 })
 
-operationsRouter.post('/retire', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+operationsRouter.post('/retire', requireAuth, requirePermission('operations.execute'), validate({ body: RetireSchema }), async (req, res) => {
   const body = req.body as any
 
   await runFlowOperation(req, res, {
@@ -673,34 +678,29 @@ operationsRouter.post('/retire', requireAuth, requirePermission('operations.exec
   })
 })
 
-operationsRouter.post('/confirm-signature', async (req, res) => {
-  const body = req.body as { recordId?: unknown; signatureImage?: unknown }
-  const recordId = toInt(body.recordId)
-  if (!recordId) return res.status(400).json({ error: { message: 'recordId is required' } })
-  if (typeof body.signatureImage !== 'string' || !body.signatureImage.startsWith('data:image/')) {
-    return res.status(400).json({ error: { message: 'Invalid signature image' } })
-  }
+operationsRouter.post('/confirm-signature', validate({ body: ConfirmSignatureSchema }), async (req, res) => {
+  const { recordId, signatureImage } = req.body as { recordId: number; signatureImage: string }
 
   const record = await prisma.assetRecord.findUnique({ where: { id: recordId } })
-  if (!record) return res.status(404).json({ error: { message: 'Record not found' } })
+  if (!record) throw HttpError.notFound('Record not found')
   if (
     record.action !== AssetRecordAction.check_out &&
     record.action !== AssetRecordAction.lend &&
     record.action !== AssetRecordAction.transfer
   ) {
-    return res.status(400).json({ error: { message: 'This record type cannot be signed' } })
+    throw HttpError.badRequest('This record type cannot be signed')
   }
   if (record.proofImage) {
-    return res.status(400).json({ error: { message: 'Already signed' } })
+    throw HttpError.badRequest('Already signed')
   }
 
   await prisma.$transaction(async (tx) => {
     const signed = await tx.assetRecord.updateMany({
       where: { id: recordId, proofImage: null },
-      data: { proofImage: body.signatureImage as string },
+      data: { proofImage: signatureImage },
     })
     if (signed.count !== 1) {
-      throw { statusCode: 409, code: 'SIGNATURE_ALREADY_COMPLETED', message: '该签字已完成，请勿重复提交' }
+      throw new HttpError(409, '该签字已完成，请勿重复提交', { code: 'SIGNATURE_ALREADY_COMPLETED' })
     }
 
     const asset = await tx.asset.findUnique({ where: { id: record.assetId } })

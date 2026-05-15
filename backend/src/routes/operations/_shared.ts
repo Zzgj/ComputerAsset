@@ -106,9 +106,9 @@ export async function runFlowOperation(
   res: Response,
   opts: RunFlowOperationOptions,
 ): Promise<void> {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
-  const body = req.body as any
+  const access = req.access!
+  const authUser = req.auth!
+  const body = req.body
 
   if (typeof opts.requestId !== 'string' || opts.requestId.trim() === '') badRequest('requestId is required')
   const assetId = toPositiveInt(opts.assetId)

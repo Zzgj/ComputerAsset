@@ -78,8 +78,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       }
     }
 
-    ;(req as any).access = access
-    ;(req as any).auth = { id: access.id }
+    req.access = access
+    req.auth = { id: access.id }
     next()
   } catch (_e) {
     return res.status(401).json({ error: { message: 'Invalid or expired token' } })
@@ -89,12 +89,9 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 /** 需同时具备所列权限（AND） */
 export function requirePermission(...keys: PermissionKey[]) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const access = (req as any).access as AccessAuth | undefined
-    if (!access) return res.status(401).json({ error: { message: 'Unauthenticated' } })
-    const ok = keys.every((k) => authHasPermission(access, k))
-    if (!ok) {
-      return res.status(403).json({ error: { message: 'Forbidden' } })
-    }
+    if (!req.access) return res.status(401).json({ error: { message: 'Unauthenticated' } })
+    const ok = keys.every((k) => authHasPermission(req.access!, k))
+    if (!ok) return res.status(403).json({ error: { message: 'Forbidden' } })
     next()
   }
 }
@@ -102,22 +99,16 @@ export function requirePermission(...keys: PermissionKey[]) {
 /** 满足任一权限即可（OR） */
 export function requireAnyPermission(...keys: PermissionKey[]) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const access = (req as any).access as AccessAuth | undefined
-    if (!access) return res.status(401).json({ error: { message: 'Unauthenticated' } })
-    const ok = keys.some((k) => authHasPermission(access, k))
-    if (!ok) {
-      return res.status(403).json({ error: { message: 'Forbidden' } })
-    }
+    if (!req.access) return res.status(401).json({ error: { message: 'Unauthenticated' } })
+    const ok = keys.some((k) => authHasPermission(req.access!, k))
+    if (!ok) return res.status(403).json({ error: { message: 'Forbidden' } })
     next()
   }
 }
 
 /** 仅 bypass（超级管理员） */
 export function requireBypass(req: Request, res: Response, next: NextFunction) {
-  const access = (req as any).access as AccessAuth | undefined
-  if (!access) return res.status(401).json({ error: { message: 'Unauthenticated' } })
-  if (!access.bypassAll) {
-    return res.status(403).json({ error: { message: 'Forbidden' } })
-  }
+  if (!req.access) return res.status(401).json({ error: { message: 'Unauthenticated' } })
+  if (!req.access.bypassAll) return res.status(403).json({ error: { message: 'Forbidden' } })
   next()
 }

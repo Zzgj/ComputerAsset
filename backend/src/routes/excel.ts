@@ -32,7 +32,7 @@ async function ensureCampusByName(tx: ImportTx, nameRaw: string) {
   return c
 }
 
-function splitDeptPathSegments(raw: string): string[] {
+export function splitDeptPathSegments(raw: string): string[] {
   const r = raw.trim()
   if (!r) return []
   if (/[\/／\\]/.test(r)) return r.split(/[/／\\]+/).map((s) => s.trim()).filter(Boolean)
@@ -239,7 +239,7 @@ function parseCurrentUserFromRow(row: Record<string, any>): string {
   return strRow(row, ['现定人', 'currentUserName', '现登记人', '使用人', '领用人'])
 }
 
-function parseExcelDate(raw: unknown): Date | null {
+export function parseExcelDate(raw: unknown): Date | null {
   if (raw === undefined || raw === null || raw === '') return null
   if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw
   if (typeof raw === 'number' && raw > 30000 && raw < 65000) {
@@ -303,7 +303,7 @@ function parseBrandModelFromRow(row: Record<string, any>): { brand: string; mode
   return { brand, model }
 }
 
-function compactNorm(s: string): string {
+export function compactNorm(s: string): string {
   return normKeyPart(s).replace(/\s+/g, '')
 }
 
@@ -319,7 +319,7 @@ function brandModelKey(brand: string, model: string): string {
  * 宽松型号归一化：尽量忽略内存/存储等细微规格差异，
  * 让同一机型（如 7010）不会因 8G/16G、256G/512G 被拆成多个模板。
  */
-function looseModelKey(model: string): string {
+export function looseModelKey(model: string): string {
   let s = model.toLowerCase()
   s = s
     .replace(/（/g, '(')
@@ -466,7 +466,7 @@ function parseBoolField(v: unknown): boolean {
   return false
 }
 
-function mapStatus(statusRaw: unknown): AssetStatus | null {
+export function mapStatus(statusRaw: unknown): AssetStatus | null {
   if (typeof statusRaw !== 'string') return null
   const s = statusRaw.trim()
   if (!s) return null
@@ -510,7 +510,7 @@ function mapDeviceType(deviceTypeRaw: unknown): string | null {
   return map[s] ?? map[s.replace(/\s+/g, '')] ?? s
 }
 
-function normalizeHeader(h: string): string {
+export function normalizeHeader(h: string): string {
   return h
     .trim()
     .replace(/\s+/g, '')
