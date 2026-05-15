@@ -28,8 +28,10 @@ app.use(
       : undefined,
   ),
 )
-app.use(express.json({ limit: '2mb' }))
-app.use(express.urlencoded({ extended: true, limit: '2mb' }))
+// 签字端点单独放宽到 2MB（base64 手写图）；其他 JSON/表单收紧到 256KB，缩小恶意大包面。
+app.use('/api/operations/confirm-signature', express.json({ limit: '2mb' }))
+app.use(express.json({ limit: '256kb' }))
+app.use(express.urlencoded({ extended: true, limit: '256kb' }))
 
 // 挂在 app 上且先于 /api Router，避免嵌套路由在部分 Express 版本下 GET 返回 404
 app.get('/api/excel/template', requireAuth, requirePermission('excel.import'), sendAssetImportTemplate)

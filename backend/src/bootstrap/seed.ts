@@ -1,9 +1,12 @@
 import bcrypt from 'bcryptjs'
 
 import { prisma } from '../prisma'
-import { AssetStatus } from '@prisma/client'
 
-/** 「综合部门（人事部）」「信息部（运维）」→ 上级「综合部门」+ 子「人事部」，各园区幂等 */
+const PAREN_DEPT_FIX_KEY = 'data_fix.split_paren_named_departments'
+
+/** 「综合部门（人事部）」「信息部（运维）」→ 上级「综合部门」+ 子「人事部」，各园区幂等。
+ * 这段嵌套循环 + 字符串解析的修复无法用 SQL 表达，保留在 seed 中；通过 SystemConfig 打标，避免每次启动重扫全表。
+ */
 async function splitParenNamedDepartments() {
   const parenRe = /^(.+?)[（(](.+?)[）)]$/
   for (let iter = 0; iter < 20; iter++) {
@@ -114,34 +117,17 @@ export async function ensureSeed() {
     }
   }
 
-  // 将「某某（子部门）」写成一行的历史数据拆成两级目录（与擎鼎「点父展开子」的结构一致）
-  await splitParenNamedDepartments()
-
-  // 泰鼎：若「综合部门」（或「综合部」）与「信息中心」同为顶级部门，则将「信息中心」归入其下（启动时幂等整理）
-  const taidong = await prisma.campus.findUnique({ where: { name: '泰鼎' } })
-  if (taidong) {
-    const zonghe =
-      (await prisma.department.findFirst({
-        where: { campusId: taidong.id, parentId: null, name: '综合部门' },
-      })) ??
-      (await prisma.department.findFirst({
-        where: { campusId: taidong.id, parentId: null, name: '综合部' },
-      }))
-    const xxzx = await prisma.department.findFirst({
-      where: { campusId: taidong.id, parentId: null, name: '信息中心' },
+  // 「父（子）」式部门拆分：仅在未做过时跑一次，跑完打标。
+  // 其余 in_user 修复、泰鼎部门归位已迁移到 SQL migration。
+  const parenFixDone = await prisma.systemConfig.findUnique({ where: { configKey: PAREN_DEPT_FIX_KEY } })
+  if (!parenFixDone) {
+    await splitParenNamedDepartments()
+    await prisma.systemConfig.create({
+      data: {
+        configKey: PAREN_DEPT_FIX_KEY,
+        configValue: new Date().toISOString(),
+        description: '一次性数据修复：拆分「父（子）」格式部门为父子层级',
+      },
     })
-    if (zonghe && xxzx) {
-      await prisma.department.update({
-        where: { id: xxzx.id },
-        data: { parentId: zonghe.id },
-      })
-    }
   }
-
-  // 兼容历史数据：早期版本可能把“使用中”写成了 `in_user`（拼写错误）
-  // 这里在启动时做一次幂等修复，避免资产列表展示异常、且让后续状态流转逻辑可正常工作。
-  // 注意：`status` 字段是 Prisma enum，直接用 `updateMany({ where: { status: 'in_user' } })`
-  // 会触发 Prisma 的运行时 enum 校验失败。这里改用原生 SQL 直接修复历史脏数据。
-  await prisma.$executeRaw`UPDATE Asset SET status = ${AssetStatus.in_use} WHERE status = 'in_user'`
 }
-

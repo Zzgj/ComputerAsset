@@ -179,6 +179,11 @@ model Asset {
   records           AssetRecord[]
   repairRecords    RepairRecord[]
   transferNotifications AssetTransferNotification[]
+
+  @@index([status])
+  @@index([deviceType])
+  @@index([currentUserName])
+  @@index([departmentId, status])
 }
 
 model AssetRecord {
@@ -201,6 +206,9 @@ model AssetRecord {
   requestId            String             @unique
   createdAt            DateTime           @default(now())
   transferNotifications AssetTransferNotification[]
+
+  @@index([assetId, createdAt])
+  @@index([userName])
 }
 
 model AssetTransferNotification {
