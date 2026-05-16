@@ -12,6 +12,7 @@ export function actionLabel(action: unknown): string {
     repair: '送修',
     repair_done: '维修完成',
     retire: '报废',
+    manual_note: '补录记录',
   }
   return map[a] ?? a
 }

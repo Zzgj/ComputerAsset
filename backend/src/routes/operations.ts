@@ -21,6 +21,7 @@ import {
   ReturnSchema,
   RetireSchema,
   ConfirmSignatureSchema,
+  ManualRecordSchema,
 } from './operations.schemas'
 
 import { AssetStatus, AssetRecordAction, RepairResult } from '@prisma/client'
@@ -758,4 +759,67 @@ operationsRouter.get('/signature-record/:id', async (req, res) => {
       asset: record.asset,
     },
   })
+})
+
+operationsRouter.post('/manual-record', requireAuth, requirePermission('assets.write'), validate({ body: ManualRecordSchema }), async (req, res) => {
+  const access = req.access!
+  const authUser = req.auth!
+  const { requestId, assetId, userName, departmentId, actionDate: actionDateStr, remark } = req.body as {
+    requestId: string
+    assetId: number
+    userName: string
+    departmentId: number
+    actionDate: string
+    remark?: string
+  }
+
+  const exist = await prisma.assetRecord.findUnique({ where: { requestId } })
+  if (exist) {
+    res.json({ alreadyProcessed: true, assetRecord: exist })
+    return
+  }
+
+  const actionDate = new Date(actionDateStr)
+  if (Number.isNaN(actionDate.getTime())) badRequest('actionDate is invalid')
+  if (actionDate.getTime() > Date.now()) badRequest('actionDate 不能是未来日期')
+
+  const asset = await prisma.asset.findUnique({
+    where: { id: assetId },
+    include: { department: { select: { campusId: true } } },
+  })
+  if (!asset) badNotFound('Asset not found')
+  assertCampusAccess(access, asset.department.campusId)
+
+  const dept = await prisma.department.findUnique({ where: { id: departmentId } })
+  if (!dept) badRequest('部门不存在')
+
+  const result = await prisma.$transaction(async (tx) => {
+    const assetRecord = await tx.assetRecord.create({
+      data: {
+        assetId,
+        action: AssetRecordAction.manual_note,
+        userName,
+        departmentId,
+        actionDate,
+        remark: remark || undefined,
+        operatorId: authUser.id,
+        requestId,
+      },
+    })
+
+    await tx.operationLog.create({
+      data: {
+        operatorId: authUser.id,
+        action: '手动补录流转历史',
+        targetType: 'Asset',
+        targetId: assetId,
+        detail: { userName, departmentId, actionDate: actionDateStr, remark: remark || null },
+        ipAddress: req.ip ?? 'unknown',
+      },
+    })
+
+    return { assetId, assetRecord }
+  })
+
+  res.json(result)
 })

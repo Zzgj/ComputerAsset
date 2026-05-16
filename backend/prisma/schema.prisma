@@ -37,6 +37,7 @@ enum AssetRecordAction {
   repair
   repair_done
   retire
+  manual_note
 }
 
 enum RepairResult {

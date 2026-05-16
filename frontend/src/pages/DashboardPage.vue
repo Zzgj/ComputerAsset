@@ -124,10 +124,51 @@
           <div v-if="notifications?.overdue?.length">
             <div class="sub-title">借用超期明细</div>
             <el-table :data="notifications.overdue" size="small" style="width: 100%">
-              <el-table-column prop="assetCode" label="电脑编号" />
+              <el-table-column label="电脑编号">
+                <template #default="{ row }">
+                  <el-link type="primary" @click="goAsset(row.assetId)">{{ row.assetCode }}</el-link>
+                </template>
+              </el-table-column>
               <el-table-column prop="currentUserName" label="使用人" />
               <el-table-column prop="departmentName" label="部门" />
-              <el-table-column prop="daysOverdue" label="逾期天数" />
+              <el-table-column label="预期归还">
+                <template #default="{ row }">{{ formatDate(row.expectedReturnDate) }}</template>
+              </el-table-column>
+              <el-table-column prop="daysOverdue" label="逾期天数" width="90" />
+            </el-table>
+          </div>
+
+          <div v-if="notifications?.dueSoon?.length">
+            <div class="sub-title">借用即将到期明细</div>
+            <el-table :data="notifications.dueSoon" size="small" style="width: 100%">
+              <el-table-column label="电脑编号">
+                <template #default="{ row }">
+                  <el-link type="primary" @click="goAsset(row.assetId)">{{ row.assetCode }}</el-link>
+                </template>
+              </el-table-column>
+              <el-table-column prop="currentUserName" label="使用人" />
+              <el-table-column prop="departmentName" label="部门" />
+              <el-table-column label="预期归还">
+                <template #default="{ row }">{{ formatDate(row.expectedReturnDate) }}</template>
+              </el-table-column>
+              <el-table-column prop="daysRemaining" label="剩余天数" width="90" />
+            </el-table>
+          </div>
+
+          <div v-if="notifications?.waitingPickupTimeout?.length">
+            <div class="sub-title">待领用超时明细</div>
+            <el-table :data="notifications.waitingPickupTimeout" size="small" style="width: 100%">
+              <el-table-column label="电脑编号">
+                <template #default="{ row }">
+                  <el-link type="primary" @click="goAsset(row.assetId)">{{ row.assetCode }}</el-link>
+                </template>
+              </el-table-column>
+              <el-table-column prop="currentUserName" label="使用人" />
+              <el-table-column prop="departmentName" label="部门" />
+              <el-table-column label="分配日期">
+                <template #default="{ row }">{{ formatDate(row.assignedAt) }}</template>
+              </el-table-column>
+              <el-table-column prop="daysWaiting" label="等待天数" width="90" />
             </el-table>
           </div>
         </div>
@@ -162,6 +203,13 @@ import 'echarts'
 import { apiRequest } from '../services/api'
 import { actionLabel } from '../actionLabel'
 import { useCountUp } from '../composables/useCountUp'
+
+function formatDate(raw: unknown): string {
+  if (!raw) return '—'
+  const d = new Date(raw as string)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('zh-CN')
+}
 
 const router = useRouter()
 

@@ -38,3 +38,12 @@ export const ConfirmSignatureSchema = z.object({
   recordId: intish,
   signatureImage: z.string().regex(/^data:image\//, 'Invalid signature image'),
 })
+
+export const ManualRecordSchema = z.object({
+  requestId: z.string().min(1),
+  assetId: intish,
+  userName: z.string().trim().min(1),
+  departmentId: intish,
+  actionDate: z.string().min(1),
+  remark: z.string().optional(),
+})

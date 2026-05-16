@@ -124,7 +124,12 @@
     </el-card>
 
     <el-card shadow="never" style="margin-top: 16px">
-      <div style="font-weight: 700; margin-bottom: 6px">流转历史</div>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px">
+        <div style="font-weight: 700">流转历史</div>
+        <el-button v-if="canEditAsset" type="primary" text size="small" @click="manualRecordVisible = true">
+          + 补录历史
+        </el-button>
+      </div>
       <div style="color: #909399; font-size: 12px; margin-bottom: 10px">
         每条为当时业务记录的归属部门（含园区）；调拨等可能造成跨园区，以记录为准。
       </div>
@@ -133,10 +138,13 @@
           v-for="r in timelineItems"
           :key="r.key"
           :timestamp="new Date(r.time).toLocaleString()"
-          :type="r.kind === 'record' && r.action === 'return' ? 'success' : 'primary'"
+          :type="r.kind === 'record' && r.action === 'manual_note' ? 'warning' : r.kind === 'record' && r.action === 'return' ? 'success' : 'primary'"
           placement="top"
         >
-          <div class="timeline-title">{{ r.title }}</div>
+          <div class="timeline-title">
+            {{ r.title }}
+            <el-tag v-if="r.kind === 'record' && r.action === 'manual_note'" type="warning" size="small" style="margin-left: 6px">手动补录</el-tag>
+          </div>
           <div class="timeline-body" v-if="r.kind === 'record'">
             <div class="timeline-meta">
               <el-tag effect="plain" size="small">
@@ -177,6 +185,27 @@
       </el-timeline>
       <div v-else style="color:#666">暂无记录</div>
     </el-card>
+
+    <el-dialog v-model="manualRecordVisible" title="补录流转历史" width="480px" :close-on-click-modal="false">
+      <el-form label-width="90px">
+        <el-form-item label="使用人" required>
+          <el-input v-model="manualRecordForm.userName" placeholder="当时的使用人姓名" />
+        </el-form-item>
+        <el-form-item label="所属部门" required>
+          <DepartmentCascader v-model="manualRecordForm.departmentId" :departments="departments" :campuses="campuses" />
+        </el-form-item>
+        <el-form-item label="使用日期" required>
+          <el-date-picker v-model="manualRecordForm.actionDate" type="date" placeholder="选择日期" style="width: 100%" :disabled-date="(d: Date) => d.getTime() > Date.now()" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="manualRecordForm.remark" type="textarea" :rows="2" placeholder="补录原因说明（可选）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="manualRecordVisible = false">取消</el-button>
+        <el-button type="primary" :loading="manualRecordSubmitting" @click="submitManualRecord">确认补录</el-button>
+      </template>
+    </el-dialog>
 
     <el-card shadow="never" style="margin-top: 16px" v-if="repairs.length">
       <div style="font-weight: 700; margin-bottom: 10px">维修记录</div>
@@ -871,6 +900,40 @@ async function submitRetire() {
     ElMessage.error(e?.message ?? '报废失败')
   } finally {
     submittingRetire.value = false
+  }
+}
+
+const manualRecordVisible = ref(false)
+const manualRecordSubmitting = ref(false)
+const manualRecordForm = ref({ userName: '', departmentId: null as number | null, actionDate: null as Date | null, remark: '' })
+
+async function submitManualRecord() {
+  const { userName, departmentId, actionDate, remark } = manualRecordForm.value
+  if (!userName.trim()) return ElMessage.warning('请输入使用人')
+  if (!departmentId) return ElMessage.warning('请选择部门')
+  if (!actionDate) return ElMessage.warning('请选择使用日期')
+
+  manualRecordSubmitting.value = true
+  try {
+    await apiRequest('/api/operations/manual-record', {
+      method: 'POST',
+      body: {
+        requestId: `manual-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        assetId,
+        userName: userName.trim(),
+        departmentId,
+        actionDate: actionDate.toISOString(),
+        remark: remark.trim() || undefined,
+      },
+    })
+    ElMessage.success('补录成功')
+    manualRecordVisible.value = false
+    manualRecordForm.value = { userName: '', departmentId: null, actionDate: null, remark: '' }
+    await reload()
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '补录失败')
+  } finally {
+    manualRecordSubmitting.value = false
   }
 }
 
