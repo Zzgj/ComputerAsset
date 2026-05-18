@@ -6,7 +6,7 @@
 
 覆盖电脑资产从入库到报废的完整生命周期，提供可视化仪表盘、细粒度权限控制与完整的审计追踪。
 
-[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/Zzgj/ComputerAsset)
+[![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)](https://github.com/Zzgj/ComputerAsset)
 [![License](https://img.shields.io/badge/license-ISC-green.svg)](https://opensource.org/licenses/ISC)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen.svg)](https://nodejs.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D.svg?logo=vue.js)](https://vuejs.org/)
@@ -432,6 +432,11 @@ pnpm run start                    # 启动生产服务器（默认读取 fronten
 ---
 
 ## 更新日志
+
+### v1.5.1
+
+**修复**
+- 修复流转历史时间线中补录记录的位置错乱：入库记录改为按 `asset.purchaseDate` 排序，让"采购日期早于补录日期"的入库记录正确显示在补录之下
 
 ### v1.5.0
 
