@@ -6,7 +6,7 @@
 
 覆盖电脑资产从入库到报废的完整生命周期，提供可视化仪表盘、细粒度权限控制与完整的审计追踪。
 
-[![Version](https://img.shields.io/badge/version-1.5.2-blue.svg)](https://github.com/Zzgj/ComputerAsset)
+[![Version](https://img.shields.io/badge/version-1.5.3-blue.svg)](https://github.com/Zzgj/ComputerAsset)
 [![License](https://img.shields.io/badge/license-ISC-green.svg)](https://opensource.org/licenses/ISC)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen.svg)](https://nodejs.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D.svg?logo=vue.js)](https://vuejs.org/)
@@ -432,6 +432,13 @@ pnpm run start                    # 启动生产服务器（默认读取 fronten
 ---
 
 ## 更新日志
+
+### v1.5.3
+
+**修复**
+- `deploy.bat` 的 `MIGRATE_EXIT` 判断在 `enabledelayedexpansion` 模式下被 `set` 重置为 0，导致 migration 失败时仍报 `[OK] Migration done`、成功时反报 `[FAIL]`；改用 `errorlevel` 直接判断
+- `deploy.bat` 排查清单补充"Windows TEMP 目录缺失"场景（如 `C:\Users\...\Temp\2` 不存在导致 Prisma CLI 启动崩溃）
+- 调拨消息页 tab 切换时 `el-empty` 与 `el-table` 互斥切换造成的导航栏闪烁；改用 `el-table` 的 `#empty` 插槽统一蒙层
 
 ### v1.5.2
 

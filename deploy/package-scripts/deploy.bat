@@ -109,17 +109,14 @@ echo.
 echo [5] Prisma migrate deploy ...
 cd /d "%BACKEND_DIR%"
 
-set "MIGRATE_EXIT=0"
 set "PRISMA_CLI=%BACKEND_DIR%\node_modules\.bin\prisma.cmd"
 if exist "!PRISMA_CLI!" (
     call "!PRISMA_CLI!" migrate deploy 2>&1
-    set "MIGRATE_EXIT=!errorlevel!"
 ) else (
     node "%BACKEND_DIR%\node_modules\prisma\build\index.js" migrate deploy 2>&1
-    set "MIGRATE_EXIT=!errorlevel!"
 )
 
-if !MIGRATE_EXIT! neq 0 (
+if errorlevel 1 (
     echo.
     echo     [FAIL] Database migration failed!
     echo.
@@ -127,6 +124,7 @@ if !MIGRATE_EXIT! neq 0 (
     echo       - prisma\migrations folder is incomplete (rebuild deploy-package)
     echo       - data\dev.db is locked by another process (close all old sessions)
     echo       - existing dev.db is from an incompatible older version
+    echo       - Windows TEMP directory missing (e.g. C:\Users\...\Temp\2 not exist)
     echo.
     echo     If the error is "no such table" or schema mismatch, you may need:
     echo       node node_modules\prisma\build\index.js migrate resolve --rolled-back ^<migration_name^>
