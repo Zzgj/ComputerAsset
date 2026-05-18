@@ -534,10 +534,13 @@ const sortedRecords = computed(() =>
   [...records.value].sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime()),
 )
 const timelineItems = computed(() => {
+  const purchaseDate = asset.value?.purchaseDate
   const flow = sortedRecords.value.map((r: any) => ({
     key: `record-${r.id}`,
     kind: 'record' as const,
-    time: r.actionDate,
+    // 入库记录的 actionDate 是提交时刻，但用户认知的"入库时间"是采购日期。
+    // 用 purchaseDate 排序，让导入历史 + 补录记录能按真实发生顺序展示。
+    time: r.action === 'stock_in' && purchaseDate ? purchaseDate : r.actionDate,
     title: actionLabel(r.action),
     action: String(r.action ?? ''),
     userName: r.userName,
