@@ -6,7 +6,7 @@
 
 覆盖电脑资产从入库到报废的完整生命周期，提供可视化仪表盘、细粒度权限控制与完整的审计追踪。
 
-[![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)](https://github.com/Zzgj/ComputerAsset)
+[![Version](https://img.shields.io/badge/version-1.5.2-blue.svg)](https://github.com/Zzgj/ComputerAsset)
 [![License](https://img.shields.io/badge/license-ISC-green.svg)](https://opensource.org/licenses/ISC)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen.svg)](https://nodejs.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D.svg?logo=vue.js)](https://vuejs.org/)
@@ -432,6 +432,12 @@ pnpm run start                    # 启动生产服务器（默认读取 fronten
 ---
 
 ## 更新日志
+
+### v1.5.2
+
+**修复**
+- 部署脚本 `deploy/package-scripts/deploy.bat`：Prisma migrate 失败不再被静默吞为 WARN，提示具体排查方向并询问是否继续启动；避免了"deploy 看似成功、运行时缺表 500"的误导
+- 文档：在升级离线部署包时，若旧 `data/dev.db` 存在但 migration 不完整，需手动跑 `node node_modules/prisma/build/index.js migrate deploy` 补齐
 
 ### v1.5.1
 
