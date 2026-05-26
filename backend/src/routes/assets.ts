@@ -116,6 +116,7 @@ assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req,
     include: {
       department: { include: { campus: true } },
       template: true,
+      currentEmployee: { select: { id: true, employeeNo: true, name: true } },
     },
   })
 
@@ -189,7 +190,11 @@ assetsRouter.get('/:id', requireAuth, requirePermission('assets.read'), async (r
 
   const asset = await prisma.asset.findUnique({
     where: { id },
-    include: { department: { include: { campus: true } }, template: true },
+    include: {
+      department: { include: { campus: true } },
+      template: true,
+      currentEmployee: { select: { id: true, employeeNo: true, name: true, campusId: true } },
+    },
   })
   if (!asset) return res.status(404).json({ error: { message: 'Asset not found' } })
   if (asset.department) assertCampusAccess(access, asset.department.campusId)

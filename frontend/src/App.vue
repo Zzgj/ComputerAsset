@@ -87,6 +87,7 @@ const sectionBusiness: NavItem[] = [
 ]
 
 const sectionManage: NavItem[] = [
+  { path: '/employees', label: '员工管理', perm: 'employees.read', icon: 'users' },
   { path: '/templates', label: '设备型号管理', perm: 'templates.manage', icon: 'template' },
   { path: '/departments', label: '部门管理', perm: 'departments.manage', icon: 'department' },
 ]

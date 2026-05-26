@@ -46,6 +46,26 @@ enum RepairResult {
   unfixable
 }
 
+enum EmployeeStatus {
+  active
+  resigned
+}
+
+enum EmployeeResourceType {
+  phone_sim
+  email
+  domain_account
+  badge
+  access_card
+  seat
+  other
+}
+
+enum EmployeeResourceStatus {
+  active
+  closed
+}
+
 model User {
   id               Int              @id @default(autoincrement())
   username         String           @unique
@@ -112,6 +132,7 @@ model Campus {
   sortOrder    Int
   isActive     Boolean       @default(true)
   departments  Department[]
+  employees    Employee[]
   roleCampuses AccessRoleCampus[]
   sentTransferNotifications AssetTransferNotification[] @relation("TransferNotificationFromCampus")
   receivedTransferNotifications AssetTransferNotification[] @relation("TransferNotificationToCampus")
@@ -131,6 +152,7 @@ model Department {
 
   assets      Asset[]
   records     AssetRecord[]
+  employees   Employee[]
 
   @@index([campusId, parentId])
   @@index([sortOrder])
@@ -170,6 +192,8 @@ model Asset {
 
   status            AssetStatus
   currentUserName  String
+  currentEmployeeId Int?
+  currentEmployee   Employee?      @relation(fields: [currentEmployeeId], references: [id])
   departmentId      Int
   department        Department      @relation(fields: [departmentId], references: [id])
 
@@ -185,6 +209,7 @@ model Asset {
   @@index([status])
   @@index([deviceType])
   @@index([currentUserName])
+  @@index([currentEmployeeId])
   @@index([departmentId, status])
 }
 
@@ -195,6 +220,8 @@ model AssetRecord {
 
   action                AssetRecordAction
   userName              String
+  employeeId            Int?
+  employee              Employee?           @relation(fields: [employeeId], references: [id])
   departmentId          Int
   department            Department         @relation(fields: [departmentId], references: [id])
   actionDate            DateTime
@@ -211,6 +238,7 @@ model AssetRecord {
 
   @@index([assetId, createdAt])
   @@index([userName])
+  @@index([employeeId])
 }
 
 model AssetTransferNotification {
@@ -275,4 +303,49 @@ model OperationLog {
   detail       Json
   ipAddress    String
   createdAt    DateTime @default(now())
+}
+
+model Employee {
+  id            Int             @id @default(autoincrement())
+  employeeNo    String          @unique
+  name          String
+  campusId      Int
+  campus        Campus          @relation(fields: [campusId], references: [id])
+  departmentId  Int?
+  department    Department?     @relation(fields: [departmentId], references: [id])
+
+  status        EmployeeStatus  @default(active)
+  joinedAt      DateTime?
+  resignedAt    DateTime?
+  remark        String?
+
+  resources     EmployeeResource[]
+  assets        Asset[]
+  records       AssetRecord[]
+
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([campusId, status])
+  @@index([departmentId])
+  @@index([name])
+}
+
+model EmployeeResource {
+  id            Int                    @id @default(autoincrement())
+  employeeId    Int
+  employee      Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  type          EmployeeResourceType
+  identifier    String
+  status        EmployeeResourceStatus @default(active)
+  assignedAt    DateTime               @default(now())
+  closedAt      DateTime?
+  remark        String?
+
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@index([employeeId, status])
+  @@index([type, identifier])
 }

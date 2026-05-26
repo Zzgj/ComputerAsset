@@ -23,6 +23,8 @@ const LogsPage = () => import('../pages/LogsPage.vue')
 const ImportPage = () => import('../pages/ImportPage.vue')
 const BackupPage = () => import('../pages/BackupPage.vue')
 const TransferNotificationsPage = () => import('../pages/TransferNotificationsPage.vue')
+const EmployeesPage = () => import('../pages/EmployeesPage.vue')
+const EmployeeDetailPage = () => import('../pages/EmployeeDetailPage.vue')
 
 type Meta = {
   public?: boolean
@@ -98,6 +100,18 @@ const router = createRouter({
       name: 'records',
       component: RecordsPage,
       meta: { requiresAuth: true, permissions: ['records.read'], title: '出入库记录' } satisfies Meta,
+    },
+    {
+      path: '/employees',
+      name: 'employees',
+      component: EmployeesPage,
+      meta: { requiresAuth: true, permissions: ['employees.read'], title: '员工管理' } satisfies Meta,
+    },
+    {
+      path: '/employees/:id',
+      name: 'employeeDetail',
+      component: EmployeeDetailPage,
+      meta: { requiresAuth: true, permissions: ['employees.read'], title: '员工详情' } satisfies Meta,
     },
     {
       path: '/templates',

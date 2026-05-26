@@ -19,7 +19,17 @@
             <el-tag v-if="asset.department?.deptPathOnly || asset.department?.name" effect="plain" style="margin-right: 8px">
               {{ asset.department.deptPathOnly || asset.department.name }}
             </el-tag>
-            <el-tag>{{ formatText(asset.currentUserName) }}</el-tag>
+            <el-tag>
+              <router-link
+                v-if="asset.currentEmployee?.id"
+                :to="`/employees/${asset.currentEmployee.id}`"
+                class="employee-link"
+              >
+                {{ asset.currentEmployee.name }}
+                <span class="employee-no">（{{ asset.currentEmployee.employeeNo }}）</span>
+              </router-link>
+              <span v-else>{{ formatText(asset.currentUserName) }}</span>
+            </el-tag>
           </div>
           <div v-if="asset.status === 'pending_confirmation' && pendingSignUrl" class="pending-sign-hint">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -260,7 +270,14 @@
       />
       <el-form :model="transferForm" label-width="100px">
         <el-form-item label="领用人">
-          <el-input v-model="transferForm.userName" placeholder="输入新使用人姓名" />
+          <EmployeePicker
+            v-model:employee-id="transferForm.employeeId"
+            v-model:user-name="transferForm.userName"
+            :campus-id="transferCampusId"
+            :departments="departments"
+            :campuses="campuses"
+            placeholder="搜索新使用人姓名或工号"
+          />
         </el-form-item>
         <el-form-item label="目标部门">
           <DepartmentCascader v-model="transferForm.departmentId" :departments="departments" :campuses="campuses" />
@@ -424,6 +441,7 @@ import { actionLabel } from '../actionLabel'
 import { useAuthStore } from '../stores/auth'
 import { ElMessage } from 'element-plus'
 import DepartmentCascader from '../components/DepartmentCascader.vue'
+import EmployeePicker from '../components/EmployeePicker.vue'
 import { getPublicBaseURL } from '../lib/publicBaseUrl'
 import { copyTextToClipboardWithToast } from '../lib/clipboard'
 import { formatDepartmentDisplayLabel } from '../lib/departmentDisplay'
@@ -669,9 +687,17 @@ const editCoreDialogVisible = ref(false)
 const submittingEditCore = ref(false)
 
 const transferForm = reactive<any>({
+  employeeId: null as number | null,
   userName: '',
   departmentId: null as number | null,
   remark: '',
+})
+
+const transferCampusId = computed<number | null>(() => {
+  const did = transferForm.departmentId
+  if (!did) return asset.value?.department?.campus?.id ?? asset.value?.department?.campusId ?? null
+  const dept = departments.value.find((d: any) => d.id === did)
+  return dept?.campusId ?? null
 })
 
 const stockTransferForm = reactive<any>({
@@ -707,6 +733,7 @@ const editCoreForm = reactive<any>({
 })
 
 function openTransfer() {
+  transferForm.employeeId = asset.value?.currentEmployeeId ?? null
   transferForm.userName = asset.value?.currentUserName ?? ''
   transferForm.departmentId = asset.value?.department?.id ?? null
   transferForm.remark = ''
@@ -829,6 +856,7 @@ async function submitTransfer() {
         requestId: uuid(),
         assetId,
         userName: transferForm.userName.trim(),
+        employeeId: transferForm.employeeId ?? undefined,
         departmentId: transferForm.departmentId,
         remark: transferForm.remark || undefined,
       },
@@ -1155,5 +1183,18 @@ onMounted(async () => {
 .qr-link {
   width: 100%;
   margin-top: 16px;
+}
+
+.employee-link {
+  color: inherit;
+  text-decoration: none;
+}
+.employee-link:hover {
+  text-decoration: underline;
+}
+.employee-no {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  margin-left: 2px;
 }
 </style>

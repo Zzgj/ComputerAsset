@@ -106,6 +106,17 @@ async function assertDeptCampus(tx: TxOps, access: AccessAuth, departmentId: num
   assertCampusAccess(access, d.campusId)
 }
 
+async function assertEmployeeAccess(tx: TxOps, access: AccessAuth, employeeId: number, departmentId?: number) {
+  const e = await tx.employee.findUnique({ where: { id: employeeId }, select: { campusId: true, status: true } })
+  if (!e) badRequest('员工不存在')
+  if (e.status !== 'active') badRequest('该员工已离职，请选择其他员工或重新激活')
+  assertCampusAccess(access, e.campusId)
+  if (departmentId !== undefined) {
+    const d = await tx.department.findUnique({ where: { id: departmentId }, select: { campusId: true } })
+    if (d && d.campusId !== e.campusId) badRequest('员工所属园区与目标部门园区不一致')
+  }
+}
+
 async function getActiveDeptCampusId(tx: TxOps, departmentId: number) {
   const d = await tx.department.findUnique({
     where: { id: departmentId },
@@ -170,6 +181,7 @@ operationsRouter.post('/check-out', requireAuth, requirePermission('operations.e
   const body = req.body as any
   const userName = body.userName.trim()
   const departmentId = body.departmentId
+  const employeeId = typeof body.employeeId === 'number' ? body.employeeId : null
   const ignoreConflict = toBoolean(body.ignoreConflict)
 
   await runFlowOperation(req, res, {
@@ -181,8 +193,9 @@ operationsRouter.post('/check-out', requireAuth, requirePermission('operations.e
     async mutate(asset, tx, { access }) {
       if (asset.status !== AssetStatus.in_stock) badRequest('Asset must be in_stock for check-out')
       await assertDeptCampus(tx, access, departmentId)
+      if (employeeId !== null) await assertEmployeeAccess(tx, access, employeeId, departmentId)
       return {
-        updateData: { status: AssetStatus.pending_confirmation, currentUserName: userName, departmentId },
+        updateData: { status: AssetStatus.pending_confirmation, currentUserName: userName, currentEmployeeId: employeeId, departmentId },
         expectedStatus: AssetStatus.in_stock,
         recordData: {
           userName,
@@ -197,6 +210,7 @@ operationsRouter.post('/check-out', requireAuth, requirePermission('operations.e
 operationsRouter.post('/assign', requireAuth, requirePermission('operations.execute'), validate({ body: AssignSchema }), async (req, res) => {
   const body = req.body as any
   const departmentId = body.departmentId
+  const employeeId = typeof body.employeeId === 'number' ? body.employeeId : null
 
   await runFlowOperation(req, res, {
     requestId: body.requestId,
@@ -206,8 +220,9 @@ operationsRouter.post('/assign', requireAuth, requirePermission('operations.exec
     async mutate(asset, tx, { access }) {
       if (asset.status !== AssetStatus.in_stock) badRequest('Asset must be in_stock for assign')
       await assertDeptCampus(tx, access, departmentId)
+      if (employeeId !== null) await assertEmployeeAccess(tx, access, employeeId, departmentId)
       return {
-        updateData: { status: AssetStatus.waiting_pickup, currentUserName: body.userName, departmentId },
+        updateData: { status: AssetStatus.waiting_pickup, currentUserName: body.userName, currentEmployeeId: employeeId, departmentId },
         expectedStatus: AssetStatus.in_stock,
         recordData: {
           userName: body.userName,
@@ -231,7 +246,7 @@ operationsRouter.post('/cancel-assign', requireAuth, requirePermission('operatio
       if (asset.status !== AssetStatus.waiting_pickup) badRequest('Asset must be waiting_pickup for cancel-assign')
       const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
       return {
-        updateData: { status: AssetStatus.in_stock, currentUserName: '', departmentId: unassignedDepartmentId },
+        updateData: { status: AssetStatus.in_stock, currentUserName: '', currentEmployeeId: null, departmentId: unassignedDepartmentId },
         expectedStatus: AssetStatus.waiting_pickup,
         recordData: {
           userName: asset.currentUserName,
@@ -270,6 +285,7 @@ operationsRouter.post('/lend', requireAuth, requirePermission('operations.execut
   const body = req.body as any
   const userName = body.userName.trim()
   const departmentId = body.departmentId
+  const employeeId = typeof body.employeeId === 'number' ? body.employeeId : null
   const ignoreConflict = toBoolean(body.ignoreConflict)
 
   const expectedReturnDate = new Date(body.expectedReturnDate as string)
@@ -284,8 +300,9 @@ operationsRouter.post('/lend', requireAuth, requirePermission('operations.execut
     async mutate(asset, tx, { access }) {
       if (asset.status !== AssetStatus.in_stock) badRequest('Asset must be in_stock for lend')
       await assertDeptCampus(tx, access, departmentId)
+      if (employeeId !== null) await assertEmployeeAccess(tx, access, employeeId, departmentId)
       return {
-        updateData: { status: AssetStatus.pending_confirmation, currentUserName: userName, departmentId },
+        updateData: { status: AssetStatus.pending_confirmation, currentUserName: userName, currentEmployeeId: employeeId, departmentId },
         expectedStatus: AssetStatus.in_stock,
         recordData: {
           userName,
@@ -313,7 +330,7 @@ operationsRouter.post('/return', requireAuth, requirePermission('operations.exec
       }
       const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
       return {
-        updateData: { status: AssetStatus.in_stock, currentUserName: '', departmentId: unassignedDepartmentId },
+        updateData: { status: AssetStatus.in_stock, currentUserName: '', currentEmployeeId: null, departmentId: unassignedDepartmentId },
         expectedStatus: [AssetStatus.in_use, AssetStatus.borrowed],
         recordData: {
           userName: asset.currentUserName,
@@ -335,6 +352,7 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
   if (typeof body.userName !== 'string' || body.userName.trim() === '') badRequest('userName is required')
   const departmentId = toInt(body.departmentId)
   if (!departmentId) badRequest('departmentId is required')
+  const employeeId = typeof body.employeeId === 'number' ? body.employeeId : null
 
   const exist = await prisma.assetRecord.findUnique({ where: { requestId: body.requestId } })
   if (exist) return res.json({ alreadyProcessed: true, assetRecord: exist })
@@ -351,6 +369,7 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
     const fromCampusId = asset.department.campusId
     assertCampusAccess(access, fromCampusId)
     const toCampusId = await getActiveDeptCampusId(tx, departmentId)
+    if (employeeId !== null) await assertEmployeeAccess(tx, access, employeeId, departmentId)
 
     await updateAssetWithVersion(
       tx,
@@ -369,6 +388,7 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
         assetId,
         action: AssetRecordAction.transfer,
         userName: body.userName,
+        employeeId: employeeId ?? undefined,
         departmentId,
         actionDate: now,
         expectedReturnDate: undefined,
@@ -379,6 +399,7 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
       },
     })
 
+    // 将选定的 employeeId 存入 OperationLog.detail，confirm-signature 时取用
     const notificationCount = await createCrossCampusTransferNotifications(tx, {
       assetId,
       assetCode: asset.assetCode,
@@ -443,7 +464,7 @@ operationsRouter.post('/stock-transfer', requireAuth, requirePermission('operati
     await updateAssetWithVersion(
       tx,
       asset,
-      { status: AssetStatus.in_stock, currentUserName: '', departmentId },
+      { status: AssetStatus.in_stock, currentUserName: '', currentEmployeeId: null, departmentId },
       AssetStatus.in_stock,
     )
 
@@ -620,6 +641,7 @@ operationsRouter.post('/repair-done', requireAuth, requirePermission('operations
       {
         status: toStatus,
         currentUserName: '',
+        currentEmployeeId: null,
         departmentId: unassignedDepartmentId,
       },
       AssetStatus.in_repair,
@@ -669,7 +691,7 @@ operationsRouter.post('/retire', requireAuth, requirePermission('operations.exec
       if (asset.status === AssetStatus.retired) badRequest('Asset already retired')
       const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
       return {
-        updateData: { status: AssetStatus.retired, currentUserName: '', departmentId: unassignedDepartmentId },
+        updateData: { status: AssetStatus.retired, currentUserName: '', currentEmployeeId: null, departmentId: unassignedDepartmentId },
         recordData: {
           userName: asset.currentUserName,
           departmentId: asset.departmentId,
@@ -708,12 +730,29 @@ operationsRouter.post('/confirm-signature', validate({ body: ConfirmSignatureSch
     const asset = await tx.asset.findUnique({ where: { id: record.assetId } })
     if (asset && asset.status === AssetStatus.pending_confirmation) {
       if (record.action === AssetRecordAction.transfer) {
+        // 优先使用 record 中存储的 employeeId（调拨时选定），避免按 userName 重名误匹配
+        let resolvedEmployeeId: number | null = record.employeeId ?? null
+        if (resolvedEmployeeId === null) {
+          const dept = await tx.department.findUnique({
+            where: { id: record.departmentId },
+            select: { campusId: true },
+          })
+          const matchedEmployee = dept
+            ? await tx.employee.findFirst({
+                where: { name: record.userName, campusId: dept.campusId, status: 'active' },
+                orderBy: { id: 'asc' },
+                select: { id: true },
+              })
+            : null
+          resolvedEmployeeId = matchedEmployee?.id ?? null
+        }
         await updateAssetWithVersion(
           tx,
           asset,
           {
             status: AssetStatus.in_use,
             currentUserName: record.userName,
+            currentEmployeeId: resolvedEmployeeId,
             departmentId: record.departmentId,
           },
           AssetStatus.pending_confirmation,

@@ -82,6 +82,20 @@
             <template v-if="!String(row.currentUserName ?? '').trim()">
               {{ formatText(row.currentUserName) }}
             </template>
+            <router-link
+              v-else-if="row.currentEmployee?.id"
+              :to="`/employees/${row.currentEmployee.id}`"
+              class="employee-link"
+            >
+              <el-tooltip
+                v-if="isMultiHolder(row.currentUserName)"
+                content="该使用人名下有多台处于领用/借用等状态的电脑"
+                placement="top"
+              >
+                <el-tag type="danger" effect="dark">{{ row.currentUserName }}</el-tag>
+              </el-tooltip>
+              <span v-else>{{ row.currentUserName }}</span>
+            </router-link>
             <el-tooltip v-else-if="isMultiHolder(row.currentUserName)" content="该使用人名下有多台处于领用/借用等状态的电脑" placement="top">
               <el-tag type="danger" effect="dark">{{ row.currentUserName }}</el-tag>
             </el-tooltip>
@@ -415,5 +429,13 @@ onMounted(async () => {
   margin-top: 8px;
   font-size: 12px;
   color: var(--ca-text-muted, #909399);
+}
+
+.employee-link {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+.employee-link:hover {
+  text-decoration: underline;
 }
 </style>

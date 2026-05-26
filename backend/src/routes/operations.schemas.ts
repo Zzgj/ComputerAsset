@@ -11,12 +11,14 @@ const baseFlow = z.object({
 export const CheckOutSchema = baseFlow.extend({
   userName: z.string().trim().min(1),
   departmentId: intish,
+  employeeId: intish.optional(),
   ignoreConflict: z.union([z.boolean(), z.literal('true'), z.literal('1')]).optional(),
 })
 
 export const AssignSchema = baseFlow.extend({
   userName: z.string().trim().min(1),
   departmentId: intish,
+  employeeId: intish.optional(),
 })
 
 export const CancelAssignSchema = baseFlow
@@ -26,6 +28,7 @@ export const PickUpSchema = baseFlow
 export const LendSchema = baseFlow.extend({
   userName: z.string().trim().min(1),
   departmentId: intish,
+  employeeId: intish.optional(),
   expectedReturnDate: z.string().min(1),
   ignoreConflict: z.union([z.boolean(), z.literal('true'), z.literal('1')]).optional(),
 })
@@ -44,6 +47,7 @@ export const ManualRecordSchema = z.object({
   assetId: intish,
   userName: z.string().trim().min(1),
   departmentId: intish,
+  employeeId: intish.optional(),
   actionDate: z.string().min(1),
   remark: z.string().optional(),
 })

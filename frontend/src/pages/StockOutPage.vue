@@ -28,7 +28,15 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="领用人" required>
-                <el-input v-model="checkOut.userName" placeholder="姓名" class="field-full" clearable />
+                <div class="field-full">
+                  <EmployeePicker
+                    v-model:employee-id="checkOut.employeeId"
+                    v-model:user-name="checkOut.userName"
+                    :campus-id="checkOutCampusId"
+                    :departments="departments"
+                    :campuses="campuses"
+                  />
+                </div>
               </el-form-item>
               <el-form-item label="部门" required>
                 <div class="field-full">
@@ -63,7 +71,15 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="领用人" required>
-                <el-input v-model="assign.userName" placeholder="姓名" class="field-full" clearable />
+                <div class="field-full">
+                  <EmployeePicker
+                    v-model:employee-id="assign.employeeId"
+                    v-model:user-name="assign.userName"
+                    :campus-id="assignCampusId"
+                    :departments="departments"
+                    :campuses="campuses"
+                  />
+                </div>
               </el-form-item>
               <el-form-item label="部门" required>
                 <div class="field-full">
@@ -98,7 +114,15 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="借用人" required>
-                <el-input v-model="lend.userName" placeholder="姓名" class="field-full" clearable />
+                <div class="field-full">
+                  <EmployeePicker
+                    v-model:employee-id="lend.employeeId"
+                    v-model:user-name="lend.userName"
+                    :campus-id="lendCampusId"
+                    :departments="departments"
+                    :campuses="campuses"
+                  />
+                </div>
               </el-form-item>
               <el-form-item label="部门" required>
                 <div class="field-full">
@@ -180,11 +204,12 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import QRCode from 'qrcode'
 import { apiRequest } from '../services/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DepartmentCascader from '../components/DepartmentCascader.vue'
+import EmployeePicker from '../components/EmployeePicker.vue'
 import { getPublicBaseURL } from '../lib/publicBaseUrl'
 import { copyTextToClipboardWithToast } from '../lib/clipboard'
 import { formatDepartmentDisplayLabel } from '../lib/departmentDisplay'
@@ -203,10 +228,27 @@ const waitingPickupAssets = ref<any[]>([])
 const onePersonOneDeviceEnabled = ref(false)
 const defaultBorrowDays = ref(7)
 
-const checkOut = reactive<any>({ assetId: null, userName: '', departmentId: null, remark: '' })
-const assign = reactive<any>({ assetId: null, userName: '', departmentId: null, remark: '' })
-const lend = reactive<any>({ assetId: null, userName: '', departmentId: null, expectedReturnDate: null, remark: '' })
+const checkOut = reactive<any>({ assetId: null, employeeId: null, userName: '', departmentId: null, remark: '' })
+const assign = reactive<any>({ assetId: null, employeeId: null, userName: '', departmentId: null, remark: '' })
+const lend = reactive<any>({ assetId: null, employeeId: null, userName: '', departmentId: null, expectedReturnDate: null, remark: '' })
 const pickup = reactive<any>({ assetId: null, remark: '' })
+
+function deriveCampusIdFromAssetOrDept(assetId: number | null, departmentId: number | null): number | null {
+  if (assetId) {
+    const asset = inStockAssets.value.find((a) => a.id === assetId)
+    const cid = asset?.department?.campusId ?? asset?.department?.campus?.id
+    if (typeof cid === 'number') return cid
+  }
+  if (departmentId) {
+    const dept = departments.value.find((d) => d.id === departmentId)
+    if (dept?.campusId) return dept.campusId
+  }
+  return null
+}
+
+const checkOutCampusId = computed(() => deriveCampusIdFromAssetOrDept(checkOut.assetId, checkOut.departmentId))
+const assignCampusId = computed(() => deriveCampusIdFromAssetOrDept(assign.assetId, assign.departmentId))
+const lendCampusId = computed(() => deriveCampusIdFromAssetOrDept(lend.assetId, lend.departmentId))
 
 function formatYmd(d: Date) {
   const y = d.getFullYear()
@@ -351,6 +393,7 @@ async function doCheckOut() {
         assetId: checkOut.assetId,
         userName: checkOut.userName.trim(),
         departmentId: checkOut.departmentId,
+        employeeId: checkOut.employeeId ?? undefined,
         ignoreConflict: ignoreConflict || undefined,
         remark: checkOut.remark || undefined,
       },
@@ -361,6 +404,7 @@ async function doCheckOut() {
     await showSignQr(recordId, asset?.assetCode ?? '', checkOut.userName.trim(), deptLabel, checkOut.remark || '')
     await loadAssets()
     checkOut.assetId = null
+    checkOut.employeeId = null
     checkOut.userName = ''
     checkOut.departmentId = null
     checkOut.remark = ''
@@ -389,6 +433,7 @@ async function doCheckOut() {
             assetId: checkOut.assetId,
             userName: checkOut.userName.trim(),
             departmentId: checkOut.departmentId,
+            employeeId: checkOut.employeeId ?? undefined,
             ignoreConflict: true,
             remark: checkOut.remark || undefined,
           },
@@ -404,6 +449,7 @@ async function doCheckOut() {
         )
         await loadAssets()
         checkOut.assetId = null
+        checkOut.employeeId = null
         checkOut.userName = ''
         checkOut.departmentId = null
         checkOut.remark = ''
@@ -428,12 +474,14 @@ async function doAssign() {
         assetId: assign.assetId,
         userName: String(assign.userName ?? '').trim(),
         departmentId: assign.departmentId,
+        employeeId: assign.employeeId ?? undefined,
         remark: assign.remark || undefined,
       },
     })
     ElMessage.success('分配成功')
     await loadAssets()
     assign.assetId = null
+    assign.employeeId = null
     assign.userName = ''
     assign.departmentId = null
     assign.remark = ''
@@ -478,6 +526,7 @@ async function doLend() {
         assetId: lend.assetId,
         userName: lend.userName.trim(),
         departmentId: lend.departmentId,
+        employeeId: lend.employeeId ?? undefined,
         ignoreConflict: ignoreConflict || undefined,
         expectedReturnDate: lend.expectedReturnDate
           ? new Date(`${lend.expectedReturnDate}T00:00:00`).toISOString()
@@ -496,6 +545,7 @@ async function doLend() {
     )
     await loadAssets()
     lend.assetId = null
+    lend.employeeId = null
     lend.userName = ''
     lend.departmentId = null
     lend.expectedReturnDate = null
@@ -525,6 +575,7 @@ async function doLend() {
             assetId: lend.assetId,
             userName: lend.userName.trim(),
             departmentId: lend.departmentId,
+            employeeId: lend.employeeId ?? undefined,
             ignoreConflict: true,
             expectedReturnDate: lend.expectedReturnDate
               ? new Date(`${lend.expectedReturnDate}T00:00:00`).toISOString()
@@ -543,6 +594,7 @@ async function doLend() {
         )
         await loadAssets()
         lend.assetId = null
+        lend.employeeId = null
         lend.userName = ''
         lend.departmentId = null
         lend.expectedReturnDate = null
