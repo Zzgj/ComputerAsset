@@ -47,3 +47,9 @@ export const ManualRecordSchema = z.object({
   actionDate: z.string().min(1),
   remark: z.string().optional(),
 })
+
+export const ResetSignatureSchema = z.object({
+  requestId: z.string().min(1),
+  recordId: intish,
+  remark: z.string().optional(),
+})

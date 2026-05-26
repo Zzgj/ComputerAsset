@@ -126,7 +126,7 @@
     <el-card shadow="never" style="margin-top: 16px">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px">
         <div style="font-weight: 700">流转历史</div>
-        <el-button v-if="canEditAsset" type="primary" text size="small" @click="manualRecordVisible = true">
+        <el-button v-if="canManualRecord" type="primary" text size="small" @click="manualRecordVisible = true">
           + 补录历史
         </el-button>
       </div>
@@ -167,6 +167,15 @@
             <div v-if="r.proofImage" class="timeline-signature">
               <span class="timeline-label">领用签名</span>
               <img :src="r.proofImage" alt="手写签名" class="signature-img" />
+              <el-button
+                v-if="canOperations && (r.action === 'check_out' || r.action === 'lend' || r.action === 'transfer')"
+                type="warning"
+                size="small"
+                text
+                @click="openResetSignature(r)"
+              >
+                重新签收
+              </el-button>
             </div>
             <div v-if="(r.action === 'check_out' || r.action === 'lend') && !r.proofImage" class="timeline-unsigned">
               <el-tag type="warning" effect="light" size="small">未签名确认</el-tag>
@@ -207,6 +216,26 @@
       </template>
     </el-dialog>
 
+    <!-- 重置签字确认 -->
+    <el-dialog v-model="resetSignatureVisible" title="重新签收" width="460px" :close-on-click-modal="false">
+      <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        title="此操作将作废原签名，资产状态回到「待签字确认」，接收人需重新签字。"
+        style="margin-bottom: 12px"
+      />
+      <el-form label-width="80px">
+        <el-form-item label="备注">
+          <el-input v-model="resetSignatureRemark" type="textarea" :rows="2" placeholder="重置原因（可选）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="resetSignatureVisible = false">取消</el-button>
+        <el-button type="warning" :loading="resetSignatureSubmitting" @click="submitResetSignature">确认重置</el-button>
+      </template>
+    </el-dialog>
+
     <el-card shadow="never" style="margin-top: 16px" v-if="repairs.length">
       <div style="font-weight: 700; margin-bottom: 10px">维修记录</div>
       <el-table :data="repairs" size="small" style="width: 100%">
@@ -222,6 +251,13 @@
 
     <!-- 调拨 -->
     <el-dialog v-model="transferDialogVisible" title="调拨" width="620px" :close-on-click-modal="false">
+      <el-alert
+        type="error"
+        :closable="false"
+        show-icon
+        title="请勿私下交接资产，必须由 IT 部门介入完成调拨流程"
+        style="margin-bottom: 12px"
+      />
       <el-form :model="transferForm" label-width="100px">
         <el-form-item label="领用人">
           <el-input v-model="transferForm.userName" placeholder="输入新使用人姓名" />
@@ -410,6 +446,7 @@ const departments = ref<Array<{ id: number; name: string; displayPath?: string; 
 const authStore = useAuthStore()
 const canOperations = computed(() => authStore.can('operations.execute'))
 const canEditAsset = computed(() => authStore.can('assets.write'))
+const canManualRecord = computed(() => canEditAsset.value && canOperations.value)
 const changeLogs = ref<any[]>([])
 
 const transferQrDialogVisible = ref(false)
@@ -537,6 +574,7 @@ const timelineItems = computed(() => {
   const purchaseDate = asset.value?.purchaseDate
   const flow = sortedRecords.value.map((r: any) => ({
     key: `record-${r.id}`,
+    id: r.id,
     kind: 'record' as const,
     // 入库记录的 actionDate 是提交时刻，但用户认知的"入库时间"是采购日期。
     // 用 purchaseDate 排序，让导入历史 + 补录记录能按真实发生顺序展示。
@@ -909,6 +947,45 @@ async function submitRetire() {
 const manualRecordVisible = ref(false)
 const manualRecordSubmitting = ref(false)
 const manualRecordForm = ref({ userName: '', departmentId: null as number | null, actionDate: null as Date | null, remark: '' })
+
+const resetSignatureVisible = ref(false)
+const resetSignatureSubmitting = ref(false)
+const resetSignatureRemark = ref('')
+const resetSignatureRecord = ref<{ id: number; userName?: string; assetCode?: string } | null>(null)
+
+function openResetSignature(record: any) {
+  resetSignatureRecord.value = {
+    id: Number(record.id ?? record.recordId),
+    userName: record.userName,
+    assetCode: asset.value?.assetCode,
+  }
+  resetSignatureRemark.value = ''
+  resetSignatureVisible.value = true
+}
+
+async function submitResetSignature() {
+  const target = resetSignatureRecord.value
+  if (!target?.id) return
+  resetSignatureSubmitting.value = true
+  try {
+    await apiRequest('/api/operations/reset-signature', {
+      method: 'POST',
+      body: {
+        requestId: `reset-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        recordId: target.id,
+        remark: resetSignatureRemark.value.trim() || undefined,
+      },
+    })
+    ElMessage.success('已作废原签字，等待重新签收')
+    resetSignatureVisible.value = false
+    resetSignatureRecord.value = null
+    await reload()
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '重置签字失败')
+  } finally {
+    resetSignatureSubmitting.value = false
+  }
+}
 
 async function submitManualRecord() {
   const { userName, departmentId, actionDate, remark } = manualRecordForm.value

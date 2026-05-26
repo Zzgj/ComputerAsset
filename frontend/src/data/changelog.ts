@@ -1,0 +1,51 @@
+export interface ChangelogEntry {
+  version: string
+  date: string
+  changes: string[]
+}
+
+export const changelog: ChangelogEntry[] = [
+  {
+    version: '1.6.0',
+    date: '2026-05-26',
+    changes: [
+      '新增：调拨私下交接提醒横幅与签字页「我已知晓」勾选',
+      '新增：签字重置功能（仅 IT 可操作，支持重新签收）',
+      '新增：版本升级公告（铃铛图标 + 红点提醒）',
+      '修复：自定义角色「补录历史」按钮权限判断',
+      '修复：改密接口允许全空格密码',
+      '修复：manual-record 端点缺少目标部门园区校验',
+    ],
+  },
+  {
+    version: '1.5.3',
+    date: '2026-05-19',
+    changes: [
+      '修复：deploy.bat 误报与调拨页 tab 切换闪烁',
+    ],
+  },
+  {
+    version: '1.5.2',
+    date: '2026-05-18',
+    changes: [
+      '修复：migration 失败不再被 deploy.bat 静默吞掉',
+    ],
+  },
+  {
+    version: '1.5.1',
+    date: '2026-05-17',
+    changes: [
+      '修复：流转历史按事件实际日期排序，修复补录记录位置错乱',
+    ],
+  },
+  {
+    version: '1.5.0',
+    date: '2026-05-16',
+    changes: [
+      '六阶段重构完成：权限模型、乐观锁、园区范围、调拨通知',
+      '新增：手动补录流转历史',
+      '新增：在库调拨',
+      '新增：设备型号管理',
+    ],
+  },
+]

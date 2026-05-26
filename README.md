@@ -6,7 +6,7 @@
 
 覆盖电脑资产从入库到报废的完整生命周期，提供可视化仪表盘、细粒度权限控制与完整的审计追踪。
 
-[![Version](https://img.shields.io/badge/version-1.5.3-blue.svg)](https://github.com/Zzgj/ComputerAsset)
+[![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/Zzgj/ComputerAsset)
 [![License](https://img.shields.io/badge/license-ISC-green.svg)](https://opensource.org/licenses/ISC)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen.svg)](https://nodejs.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D.svg?logo=vue.js)](https://vuejs.org/)
@@ -432,6 +432,18 @@ pnpm run start                    # 启动生产服务器（默认读取 fronten
 ---
 
 ## 更新日志
+
+### v1.6.0
+
+**新功能**
+- 调拨私下交接提醒：调拨对话框与签字确认页增加红字横幅，签字页增加「我已知晓」勾选框
+- 签字重置功能：IT 人员可在资产详情页对已签字记录执行「重新签收」，原签名作废、资产回到待签字状态
+- 版本升级公告：侧边栏铃铛图标 + 红点提醒，弹窗展示最新 5 个版本更新内容，已读状态存 localStorage
+
+**修复**
+- 自定义角色看到「补录历史」按钮但无法使用（按钮改为同时要求 `assets.write` + `operations.execute`）
+- 改密接口允许全空格密码（增加 trim 后长度校验）
+- `manual-record` 端点缺少目标部门的园区权限校验
 
 ### v1.5.3
 

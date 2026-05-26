@@ -21,6 +21,10 @@
         <div class="info-row" v-if="info.remark"><span class="info-label">备注</span><span class="info-value">{{ info.remark }}</span></div>
       </div>
 
+      <div v-if="signKind === 'transfer'" class="transfer-warning">
+        <div class="transfer-warning-text">请勿私下交接资产，必须由 IT 部门介入完成调拨流程</div>
+      </div>
+
       <div class="sign-section">
         <div class="sign-label">请在下方区域手写签名</div>
         <canvas
@@ -34,9 +38,12 @@
           @touchmove.prevent="drawTouch"
           @touchend="endDraw"
         />
+        <div v-if="signKind === 'transfer'" class="acknowledge-check">
+          <el-checkbox v-model="acknowledged">我已知晓：资产交接必须由 IT 部门介入，不得私下进行</el-checkbox>
+        </div>
         <div class="sign-actions">
           <el-button @click="clearCanvas">清除重签</el-button>
-          <el-button type="primary" :loading="submitting" @click="submitSignature" :disabled="!hasDrawn">确认签名并提交</el-button>
+          <el-button type="primary" :loading="submitting" @click="submitSignature" :disabled="!canSubmitSignature">确认签名并提交</el-button>
         </div>
       </div>
     </div>
@@ -75,6 +82,7 @@ const info = ref({
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const drawing = ref(false)
 const hasDrawn = ref(false)
+const acknowledged = ref(false)
 const loading = ref(false)
 const submitting = ref(false)
 const submitted = ref(false)
@@ -88,6 +96,11 @@ const signTitle = computed(() =>
 const signSubtitle = computed(() =>
   signKind.value === 'transfer' ? '请核对调拨信息并手写签名确认' : '请核对以下信息并手写签名确认',
 )
+const canSubmitSignature = computed(() => {
+  if (!hasDrawn.value) return false
+  if (signKind.value === 'transfer' && !acknowledged.value) return false
+  return true
+})
 
 onMounted(async () => {
   const q = route.query
@@ -215,7 +228,12 @@ function clearCanvas() {
 }
 
 async function submitSignature() {
-  if (!hasDrawn.value) return ElMessage.warning('请先手写签名')
+  if (!canSubmitSignature.value) {
+    if (signKind.value === 'transfer' && !acknowledged.value) {
+      return ElMessage.warning('请先勾选"我已知晓"确认框')
+    }
+    return ElMessage.warning('请先手写签名')
+  }
   const canvas = canvasRef.value
   if (!canvas) return
 
@@ -331,6 +349,29 @@ async function submitSignature() {
   border-radius: var(--ca-radius-sm);
   cursor: crosshair;
   touch-action: none;
+}
+
+.transfer-warning {
+  background: #fef0f0;
+  border: 1px solid #fbc4c4;
+  border-radius: var(--ca-radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.transfer-warning-text {
+  color: #f56c6c;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.acknowledge-check {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  background: #fff7e6;
+  border: 1px solid #f5dab1;
+  border-radius: var(--ca-radius-sm);
 }
 
 .sign-actions {

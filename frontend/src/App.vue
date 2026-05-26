@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import { apiRequest } from './services/api'
 import { useAuthStore } from './stores/auth'
 import { useIdleTimer } from './composables/useIdleTimer'
+import { changelog } from './data/changelog'
 import appPkg from '../package.json'
 
 const route = useRoute()
@@ -237,6 +238,34 @@ async function submitChangePassword() {
     changingPwd.value = false
   }
 }
+
+const CHANGELOG_STORAGE_KEY = 'changelogReadVersions'
+const changelogVisible = ref(false)
+const displayedChangelog = computed(() => changelog.slice(0, 5))
+const hasUnreadChangelog = computed(() => {
+  const latest = changelog[0]?.version
+  if (!latest) return false
+  try {
+    const read: string[] = JSON.parse(localStorage.getItem(CHANGELOG_STORAGE_KEY) || '[]')
+    return !read.includes(latest)
+  } catch { return true }
+})
+
+function openChangelog() {
+  changelogVisible.value = true
+  const latest = changelog[0]?.version
+  if (latest) {
+    try {
+      const read: string[] = JSON.parse(localStorage.getItem(CHANGELOG_STORAGE_KEY) || '[]')
+      if (!read.includes(latest)) {
+        read.push(latest)
+        localStorage.setItem(CHANGELOG_STORAGE_KEY, JSON.stringify(read.slice(-20)))
+      }
+    } catch {
+      localStorage.setItem(CHANGELOG_STORAGE_KEY, JSON.stringify([latest]))
+    }
+  }
+}
 </script>
 
 <template>
@@ -368,6 +397,11 @@ async function submitChangePassword() {
       </nav>
 
       <div class="sidebar-footer">
+        <button class="sidebar-action-btn" @click="openChangelog">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          版本公告
+          <span v-if="hasUnreadChangelog" class="changelog-dot" />
+        </button>
         <button class="sidebar-action-btn" @click="openChangePassword">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           修改密码
@@ -403,6 +437,24 @@ async function submitChangePassword() {
     <template #footer>
       <el-button @click="changePwdVisible = false">取消</el-button>
       <el-button type="primary" :loading="changingPwd" @click="submitChangePassword">确认修改</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 版本公告 -->
+  <el-dialog v-model="changelogVisible" title="版本更新公告" width="560px">
+    <div class="changelog-list">
+      <div v-for="entry in displayedChangelog" :key="entry.version" class="changelog-entry">
+        <div class="changelog-version-header">
+          <el-tag type="primary" effect="dark" size="small">v{{ entry.version }}</el-tag>
+          <span class="changelog-date">{{ entry.date }}</span>
+        </div>
+        <ul class="changelog-changes">
+          <li v-for="(c, i) in entry.changes" :key="i">{{ c }}</li>
+        </ul>
+      </div>
+    </div>
+    <template #footer>
+      <el-button type="primary" @click="changelogVisible = false">知道了</el-button>
     </template>
   </el-dialog>
 
@@ -716,6 +768,49 @@ async function submitChangePassword() {
 .sidebar-action-btn.logout:hover {
   color: #fca5a5;
   background: rgba(239, 68, 68, 0.1);
+}
+
+.changelog-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.changelog-list {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.changelog-entry {
+  padding: 12px 0;
+  border-bottom: 1px dashed var(--ca-border-light);
+}
+
+.changelog-entry:last-child {
+  border-bottom: none;
+}
+
+.changelog-version-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.changelog-date {
+  font-size: 13px;
+  color: var(--ca-text-secondary);
+}
+
+.changelog-changes {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--ca-text-primary);
+  font-size: 14px;
+  line-height: 1.7;
 }
 
 .main-content {

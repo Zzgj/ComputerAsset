@@ -8,7 +8,12 @@ export const LoginSchema = z.object({
 export const ChangePasswordSchema = z
   .object({
     oldPassword: z.string().min(1),
-    newPassword: z.string().min(6, '新密码长度不能少于 6 位'),
+    newPassword: z
+      .string()
+      .min(6, '新密码长度不能少于 6 位')
+      .refine((v) => v.trim().length >= 6, {
+        message: '新密码不能为空白字符',
+      }),
   })
   .refine((d) => d.oldPassword !== d.newPassword, {
     message: '新密码不能与旧密码相同',

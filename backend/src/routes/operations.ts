@@ -22,6 +22,7 @@ import {
   RetireSchema,
   ConfirmSignatureSchema,
   ManualRecordSchema,
+  ResetSignatureSchema,
 } from './operations.schemas'
 
 import { AssetStatus, AssetRecordAction, RepairResult } from '@prisma/client'
@@ -790,8 +791,13 @@ operationsRouter.post('/manual-record', requireAuth, requirePermission('assets.w
   if (!asset) badNotFound('Asset not found')
   assertCampusAccess(access, asset.department.campusId)
 
-  const dept = await prisma.department.findUnique({ where: { id: departmentId } })
+  const dept = await prisma.department.findUnique({
+    where: { id: departmentId },
+    select: { campusId: true },
+  })
   if (!dept) badRequest('部门不存在')
+  // 防止跨园区伪造历史：目标部门也要在调用者的园区授权范围内。
+  assertCampusAccess(access, dept.campusId)
 
   const result = await prisma.$transaction(async (tx) => {
     const assetRecord = await tx.assetRecord.create({
@@ -819,6 +825,80 @@ operationsRouter.post('/manual-record', requireAuth, requirePermission('assets.w
     })
 
     return { assetId, assetRecord }
+  })
+
+  res.json(result)
+})
+
+operationsRouter.post('/reset-signature', requireAuth, requirePermission('operations.execute'), validate({ body: ResetSignatureSchema }), async (req, res) => {
+  const access = req.access!
+  const authUser = req.auth!
+  const { requestId, recordId, remark } = req.body as { requestId: string; recordId: number; remark?: string }
+
+  const exist = await prisma.assetRecord.findUnique({ where: { requestId } })
+  if (exist) {
+    res.json({ alreadyProcessed: true })
+    return
+  }
+
+  const record = await prisma.assetRecord.findUnique({
+    where: { id: recordId },
+    include: { asset: { include: { department: true } } },
+  })
+  if (!record) badNotFound('签字记录不存在')
+  if (
+    record.action !== AssetRecordAction.check_out &&
+    record.action !== AssetRecordAction.lend &&
+    record.action !== AssetRecordAction.transfer
+  ) {
+    badRequest('该记录类型不支持重置签字')
+  }
+  if (!record.proofImage) {
+    badRequest('该记录尚未签字，无需重置')
+  }
+
+  assertCampusAccess(access, record.asset.department.campusId)
+
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.assetRecord.update({
+      where: { id: recordId },
+      data: { proofImage: null },
+    })
+
+    const asset = await tx.asset.findUnique({ where: { id: record.assetId } })
+    if (asset) {
+      if (asset.status === AssetStatus.in_use) {
+        await updateAssetWithVersion(tx, asset, { status: AssetStatus.pending_confirmation }, AssetStatus.in_use)
+      } else if (asset.status === AssetStatus.borrowed) {
+        await updateAssetWithVersion(tx, asset, { status: AssetStatus.pending_confirmation }, AssetStatus.borrowed)
+      }
+    }
+
+    const resetRecord = await tx.assetRecord.create({
+      data: {
+        assetId: record.assetId,
+        action: AssetRecordAction.signature_reset,
+        userName: record.userName,
+        departmentId: record.departmentId,
+        actionDate: new Date(),
+        remark: remark || `重置签字（原记录 #${recordId}）`,
+        operatorId: authUser.id,
+        requestId,
+      },
+    })
+
+    await tx.operationLog.create({
+      data: {
+        operatorId: authUser.id,
+        action: '重置签字',
+        targetType: 'Asset',
+        targetId: record.assetId,
+        detail: { recordId, remark: remark || null },
+        ipAddress: req.ip ?? 'unknown',
+      },
+    })
+
+    return { resetRecord }
   })
 
   res.json(result)
