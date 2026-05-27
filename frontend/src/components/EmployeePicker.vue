@@ -66,8 +66,24 @@
         <el-form-item label="工号" required>
           <el-input v-model="quickForm.employeeNo" placeholder="员工编号（唯一）" maxlength="64" clearable />
         </el-form-item>
-        <el-form-item label="园区">
-          <el-input :model-value="quickCampusLabel" disabled />
+        <el-form-item label="园区" required>
+          <el-select
+            v-model="quickForm.campusId"
+            placeholder="选择园区"
+            style="width: 100%"
+            :disabled="props.campusId != null"
+            @change="onQuickCampusChange"
+          >
+            <el-option
+              v-for="c in quickCampusOptions"
+              :key="c.id"
+              :label="c.name"
+              :value="c.id"
+            />
+          </el-select>
+          <div v-if="props.campusId != null" class="quick-form-hint">
+            已锁定为当前操作所在园区，跨园区操作请先切换上下文。
+          </div>
         </el-form-item>
         <el-form-item label="部门">
           <DepartmentCascader
@@ -210,33 +226,31 @@ const quickFormRef = ref<any>(null)
 const quickForm = ref({
   name: '',
   employeeNo: '',
+  campusId: null as number | null,
   departmentId: null as number | null,
   remark: '',
 })
 
-const filteredCampuses = computed(() => {
-  if (!props.campusId) return props.campuses
-  return props.campuses.filter((c) => c.id === props.campusId)
+const quickCampusOptions = computed(() => {
+  if (props.campusId != null) {
+    return props.campuses.filter((c) => c.id === props.campusId)
+  }
+  return props.campuses
 })
+
+const filteredCampuses = computed(() => quickCampusOptions.value)
 
 const filteredDepartments = computed(() => {
-  if (!props.campusId) return props.departments
-  return props.departments.filter((d) => d.campusId === props.campusId)
-})
-
-const quickCampusLabel = computed(() => {
-  if (!props.campusId) return '未指定'
-  return props.campuses.find((c) => c.id === props.campusId)?.name ?? '未知园区'
+  const cid = quickForm.value.campusId ?? props.campusId
+  if (!cid) return props.departments
+  return props.departments.filter((d) => d.campusId === cid)
 })
 
 function openQuickCreate() {
-  if (!props.campusId) {
-    ElMessage.warning('请先确定园区上下文（请先选择部门）')
-    return
-  }
   quickForm.value = {
     name: '',
     employeeNo: '',
+    campusId: props.campusId ?? null,
     departmentId: null,
     remark: '',
   }
@@ -244,9 +258,14 @@ function openQuickCreate() {
   ;(selectRef.value as any)?.blur?.()
 }
 
+function onQuickCampusChange() {
+  quickForm.value.departmentId = null
+}
+
 async function submitQuickCreate() {
   const name = quickForm.value.name.trim()
   const employeeNo = quickForm.value.employeeNo.trim()
+  const campusId = quickForm.value.campusId
   if (!name) {
     ElMessage.warning('请填写姓名')
     return
@@ -255,8 +274,8 @@ async function submitQuickCreate() {
     ElMessage.warning('请填写工号')
     return
   }
-  if (!props.campusId) {
-    ElMessage.warning('缺少园区上下文')
+  if (!campusId) {
+    ElMessage.warning('请选择园区')
     return
   }
 
@@ -267,7 +286,7 @@ async function submitQuickCreate() {
       body: {
         name,
         employeeNo,
-        campusId: props.campusId,
+        campusId,
         departmentId: quickForm.value.departmentId ?? undefined,
         remark: quickForm.value.remark || undefined,
       },

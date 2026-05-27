@@ -6,6 +6,16 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.6.1',
+    date: '2026-05-27',
+    changes: [
+      '修复：快速新建员工对话框未锁定当前操作园区，跨园区选择会污染员工数据并被后续提交拒绝',
+      '修复：签字重置后原签名图片丢失，时间线现展示为「原领用签名（已作废）」',
+      '修复：路由守卫遇到网络抖动 / 5xx 时强制踢出登录，改为仅 401 登出',
+      '优化：版本公告抽屉完整展示全部历史版本（原仅展示前 5 条）',
+    ],
+  },
+  {
     version: '1.6.0',
     date: '2026-05-26',
     changes: [

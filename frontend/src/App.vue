@@ -242,7 +242,7 @@ async function submitChangePassword() {
 
 const CHANGELOG_STORAGE_KEY = 'changelogReadVersions'
 const changelogVisible = ref(false)
-const displayedChangelog = computed(() => changelog.slice(0, 5))
+const displayedChangelog = computed(() => changelog)
 const hasUnreadChangelog = computed(() => {
   const latest = changelog[0]?.version
   if (!latest) return false

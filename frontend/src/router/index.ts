@@ -186,9 +186,15 @@ router.beforeEach(async (to, _from, next) => {
   // fetchMe 内部已含 5 分钟缓存：me 已存在且未过期时直接返回，仅在过期或首次调用才发请求
   try {
     await authStore.fetchMe()
-  } catch {
-    await authStore.logout()
-    return next('/login')
+  } catch (e: any) {
+    if (e?.status === 401) {
+      await authStore.logout()
+      return next('/login')
+    }
+    // 非 401 错误（网络超时、5xx 等）不应踢出登录，使用缓存的 me 继续
+    if (!authStore.me) {
+      return next('/login')
+    }
   }
 
   const required = meta.permissions

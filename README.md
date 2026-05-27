@@ -6,7 +6,7 @@
 
 覆盖电脑资产从入库到报废的完整生命周期，提供可视化仪表盘、细粒度权限控制与完整的审计追踪。
 
-[![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/Zzgj/ComputerAsset)
+[![Version](https://img.shields.io/badge/version-1.6.1-blue.svg)](https://github.com/Zzgj/ComputerAsset)
 [![License](https://img.shields.io/badge/license-ISC-green.svg)](https://opensource.org/licenses/ISC)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen.svg)](https://nodejs.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D.svg?logo=vue.js)](https://vuejs.org/)
@@ -432,6 +432,14 @@ pnpm run start                    # 启动生产服务器（默认读取 fronten
 ---
 
 ## 更新日志
+
+### v1.6.1
+
+**修复**
+- 快速新建员工对话框未锁定当前操作所在园区，跨园区选择会导致后续提交被 `assertEmployeeAccess` 拒绝并污染员工数据
+- 签字重置后原签名图片丢失：新建的 `signature_reset` 记录现在保留原 `proofImage`，资产详情时间线显示为「原领用签名（已作废）」
+- 路由守卫遇到网络抖动 / 5xx 时强制踢出登录：现仅在 401 时登出，其他错误复用缓存 `me` 继续渲染
+- 版本公告抽屉仅展示前 5 条历史版本：改为完整展示全部历史
 
 ### v1.6.0
 

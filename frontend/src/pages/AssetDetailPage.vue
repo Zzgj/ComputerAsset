@@ -175,7 +175,7 @@
               <span class="timeline-value">{{ formatText(r.remark) }}</span>
             </div>
             <div v-if="r.proofImage" class="timeline-signature">
-              <span class="timeline-label">领用签名</span>
+              <span class="timeline-label">{{ r.action === 'signature_reset' ? '原领用签名（已作废）' : '领用签名' }}</span>
               <img :src="r.proofImage" alt="手写签名" class="signature-img" />
               <el-button
                 v-if="canOperations && (r.action === 'check_out' || r.action === 'lend' || r.action === 'transfer')"

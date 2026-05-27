@@ -899,6 +899,8 @@ operationsRouter.post('/reset-signature', requireAuth, requirePermission('operat
   assertCampusAccess(access, record.asset.department.campusId)
 
   const result = await prisma.$transaction(async (tx) => {
+    const originalProofImage = record.proofImage
+
     await tx.assetRecord.update({
       where: { id: recordId },
       data: { proofImage: null },
@@ -921,6 +923,7 @@ operationsRouter.post('/reset-signature', requireAuth, requirePermission('operat
         departmentId: record.departmentId,
         actionDate: new Date(),
         remark: remark || `重置签字（原记录 #${recordId}）`,
+        proofImage: originalProofImage,
         operatorId: authUser.id,
         requestId,
       },
