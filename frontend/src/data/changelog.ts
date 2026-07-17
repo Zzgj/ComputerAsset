@@ -6,6 +6,19 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.6.2',
+    date: '2026-07-17',
+    changes: [
+      '新增：员工离职页可一键归还名下资产，并保留完整流转与审计记录',
+      '新增：员工详情展示历史持有资产，资产归还后仍可追溯',
+      '修复：待领用确认后改为待签字，扫码签署领用单后才进入使用中',
+      '修复：删除含审计记录的用户时返回明确停用指引，不再暴露 Prisma 外键错误',
+      '新增：管理员可永久删除错误资产数据，或单独清空手动补录历史',
+      '优化：资产列表按最近处理时间排序，支持多状态和园区联动部门树筛选',
+      '优化：快速新建员工明确提示通过目标部门切换园区上下文',
+    ],
+  },
+  {
     version: '1.6.1',
     date: '2026-05-27',
     changes: [
@@ -36,23 +49,17 @@ export const changelog: ChangelogEntry[] = [
   {
     version: '1.5.3',
     date: '2026-05-19',
-    changes: [
-      '修复：deploy.bat 误报与调拨页 tab 切换闪烁',
-    ],
+    changes: ['修复：deploy.bat 误报与调拨页 tab 切换闪烁'],
   },
   {
     version: '1.5.2',
     date: '2026-05-18',
-    changes: [
-      '修复：migration 失败不再被 deploy.bat 静默吞掉',
-    ],
+    changes: ['修复：migration 失败不再被 deploy.bat 静默吞掉'],
   },
   {
     version: '1.5.1',
     date: '2026-05-17',
-    changes: [
-      '修复：流转历史按事件实际日期排序，修复补录记录位置错乱',
-    ],
+    changes: ['修复：流转历史按事件实际日期排序，修复补录记录位置错乱'],
   },
   {
     version: '1.5.0',

@@ -23,6 +23,7 @@ type FlowMutateResult = {
   expectedStatus?: AssetStatus | AssetStatus[]
   recordData: {
     userName: string
+    employeeId?: number | null
     departmentId: number
     expectedReturnDate?: Date | null
     proofImage?: string | null

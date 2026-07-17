@@ -196,6 +196,28 @@ usersRouter.delete('/:id', requireAuth, requirePermission('users.manage'), async
   if (target.id === authUser.id) badRequest('不能删除当前登录用户')
   if (target.accessRole?.bypassAll) badRequest('不能删除超级管理员账号')
 
+  const [operationLogCount, assetRecordCount, sentNotificationCount, receivedNotificationCount] = await Promise.all([
+    prisma.operationLog.count({ where: { operatorId: id } }),
+    prisma.assetRecord.count({ where: { operatorId: id } }),
+    prisma.assetTransferNotification.count({ where: { senderId: id } }),
+    prisma.assetTransferNotification.count({ where: { recipientId: id } }),
+  ])
+  const auditReferenceCount =
+    operationLogCount + assetRecordCount + sentNotificationCount + receivedNotificationCount
+  if (auditReferenceCount > 0) {
+    throw {
+      statusCode: 409,
+      code: 'USER_HAS_AUDIT_HISTORY',
+      message: '该用户已产生业务或审计记录，为保留操作人追溯不能物理删除。请在「编辑用户」中停用账号。',
+      details: {
+        operationLogCount,
+        assetRecordCount,
+        sentNotificationCount,
+        receivedNotificationCount,
+      },
+    }
+  }
+
   await prisma.user.delete({ where: { id } })
 
   await prisma.operationLog.create({

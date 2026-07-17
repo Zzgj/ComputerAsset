@@ -64,5 +64,11 @@ export const ResignSchema = z.object({
   remark: z.string().optional(),
 })
 
+export const ReturnEmployeeAssetsSchema = z.object({
+  requestId: z.string().trim().min(1),
+  assetIds: z.array(intish).min(1),
+  remark: z.string().optional(),
+})
+
 export type EmployeeResourceType = (typeof EMPLOYEE_RESOURCE_TYPES)[number]
 export const ALL_RESOURCE_TYPES = EMPLOYEE_RESOURCE_TYPES

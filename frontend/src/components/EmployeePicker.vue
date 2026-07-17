@@ -64,7 +64,12 @@
           <el-input v-model="quickForm.name" placeholder="员工姓名" maxlength="64" clearable />
         </el-form-item>
         <el-form-item label="工号" required>
-          <el-input v-model="quickForm.employeeNo" placeholder="员工编号（唯一）" maxlength="64" clearable />
+          <el-input
+            v-model="quickForm.employeeNo"
+            placeholder="员工编号（唯一）"
+            maxlength="64"
+            clearable
+          />
         </el-form-item>
         <el-form-item label="园区" required>
           <el-select
@@ -74,15 +79,10 @@
             :disabled="props.campusId != null"
             @change="onQuickCampusChange"
           >
-            <el-option
-              v-for="c in quickCampusOptions"
-              :key="c.id"
-              :label="c.name"
-              :value="c.id"
-            />
+            <el-option v-for="c in quickCampusOptions" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
           <div v-if="props.campusId != null" class="quick-form-hint">
-            已锁定为当前操作所在园区，跨园区操作请先切换上下文。
+            已按当前表单的目标部门锁定园区。如需切换园区，请先关闭本窗口并更换目标部门。
           </div>
         </el-form-item>
         <el-form-item label="部门">
@@ -94,12 +94,7 @@
           />
         </el-form-item>
         <el-form-item label="备注">
-          <el-input
-            v-model="quickForm.remark"
-            type="textarea"
-            :rows="2"
-            placeholder="可选"
-          />
+          <el-input v-model="quickForm.remark" type="textarea" :rows="2" placeholder="可选" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -134,7 +129,13 @@ const props = withDefaults(
     placeholder?: string
     disabled?: boolean
     allowCreate?: boolean
-    departments?: Array<{ id: number; name: string; campusId: number; parentId: number | null; sortOrder: number }>
+    departments?: Array<{
+      id: number
+      name: string
+      campusId: number
+      parentId: number | null
+      sortOrder: number
+    }>
     campuses?: Array<{ id: number; name: string; sortOrder: number }>
   }>(),
   {
@@ -149,7 +150,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   'update:employeeId': [v: number | null]
   'update:userName': [v: string]
-  'select': [emp: EmployeeOption | null]
+  select: [emp: EmployeeOption | null]
 }>()
 
 const selectRef = ref<any>(null)
@@ -174,7 +175,9 @@ async function fetchEmployees(keyword: string) {
     params.set('status', 'active')
     params.set('page', '1')
     params.set('pageSize', '20')
-    const data = await apiRequest<{ items: EmployeeOption[] }>(`/api/employees?${params.toString()}`)
+    const data = await apiRequest<{ items: EmployeeOption[] }>(
+      `/api/employees?${params.toString()}`,
+    )
     options.value = data.items ?? []
   } catch (e: any) {
     options.value = []

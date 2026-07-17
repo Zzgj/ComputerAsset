@@ -201,6 +201,7 @@ model Asset {
   warrantyExpiry    DateTime?
   remark            String?
   version           Int              @default(1)
+  updatedAt         DateTime         @default(now()) @updatedAt
 
   records           AssetRecord[]
   repairRecords    RepairRecord[]
@@ -211,6 +212,7 @@ model Asset {
   @@index([currentUserName])
   @@index([currentEmployeeId])
   @@index([departmentId, status])
+  @@index([updatedAt])
 }
 
 model AssetRecord {

@@ -66,7 +66,13 @@ async function assertNoOnePersonOneDeviceConflict(userName: string) {
     where: {
       currentUserName: userName,
       status: {
-        in: [AssetStatus.in_use, AssetStatus.waiting_pickup, AssetStatus.borrowed, AssetStatus.in_repair],
+        in: [
+          AssetStatus.in_use,
+          AssetStatus.waiting_pickup,
+          AssetStatus.pending_confirmation,
+          AssetStatus.borrowed,
+          AssetStatus.in_repair,
+        ],
       },
     },
     select: { id: true, assetCode: true, status: true },
@@ -199,6 +205,7 @@ operationsRouter.post('/check-out', requireAuth, requirePermission('operations.e
         expectedStatus: AssetStatus.in_stock,
         recordData: {
           userName,
+          employeeId,
           departmentId,
           remark: typeof body.remark === 'string' ? body.remark : undefined,
         },
@@ -226,6 +233,7 @@ operationsRouter.post('/assign', requireAuth, requirePermission('operations.exec
         expectedStatus: AssetStatus.in_stock,
         recordData: {
           userName: body.userName,
+          employeeId,
           departmentId,
           remark: typeof body.remark === 'string' ? body.remark : undefined,
         },
@@ -250,6 +258,7 @@ operationsRouter.post('/cancel-assign', requireAuth, requirePermission('operatio
         expectedStatus: AssetStatus.waiting_pickup,
         recordData: {
           userName: asset.currentUserName,
+          employeeId: asset.currentEmployeeId,
           departmentId: asset.departmentId,
           remark: typeof body.remark === 'string' ? body.remark : undefined,
         },
@@ -269,10 +278,11 @@ operationsRouter.post('/pick-up', requireAuth, requirePermission('operations.exe
     async mutate(asset) {
       if (asset.status !== AssetStatus.waiting_pickup) badRequest('Asset must be waiting_pickup for pick-up')
       return {
-        updateData: { status: AssetStatus.in_use },
+        updateData: { status: AssetStatus.pending_confirmation },
         expectedStatus: AssetStatus.waiting_pickup,
         recordData: {
           userName: asset.currentUserName,
+          employeeId: asset.currentEmployeeId,
           departmentId: asset.departmentId,
           remark: typeof body.remark === 'string' ? body.remark : undefined,
         },
@@ -306,6 +316,7 @@ operationsRouter.post('/lend', requireAuth, requirePermission('operations.execut
         expectedStatus: AssetStatus.in_stock,
         recordData: {
           userName,
+          employeeId,
           departmentId,
           expectedReturnDate,
           remark: typeof body.remark === 'string' ? body.remark : undefined,
@@ -334,6 +345,7 @@ operationsRouter.post('/return', requireAuth, requirePermission('operations.exec
         expectedStatus: [AssetStatus.in_use, AssetStatus.borrowed],
         recordData: {
           userName: asset.currentUserName,
+          employeeId: asset.currentEmployeeId,
           departmentId: asset.departmentId,
           remark: typeof body.remark === 'string' ? body.remark : undefined,
         },
@@ -560,6 +572,7 @@ operationsRouter.post('/repair', requireAuth, requirePermission('operations.exec
         assetId,
         action: AssetRecordAction.repair,
         userName: asset.currentUserName,
+        employeeId: asset.currentEmployeeId,
         departmentId: asset.departmentId,
         actionDate: now,
         expectedReturnDate: undefined,
@@ -652,6 +665,7 @@ operationsRouter.post('/repair-done', requireAuth, requirePermission('operations
         assetId,
         action: AssetRecordAction.repair_done,
         userName: asset.currentUserName,
+        employeeId: asset.currentEmployeeId,
         departmentId: asset.departmentId,
         actionDate: now,
         expectedReturnDate: undefined,
@@ -694,6 +708,7 @@ operationsRouter.post('/retire', requireAuth, requirePermission('operations.exec
         updateData: { status: AssetStatus.retired, currentUserName: '', currentEmployeeId: null, departmentId: unassignedDepartmentId },
         recordData: {
           userName: asset.currentUserName,
+          employeeId: asset.currentEmployeeId,
           departmentId: asset.departmentId,
           remark: typeof body.remark === 'string' ? body.remark : undefined,
         },
@@ -709,6 +724,7 @@ operationsRouter.post('/confirm-signature', validate({ body: ConfirmSignatureSch
   if (!record) throw HttpError.notFound('Record not found')
   if (
     record.action !== AssetRecordAction.check_out &&
+    record.action !== AssetRecordAction.pick_up &&
     record.action !== AssetRecordAction.lend &&
     record.action !== AssetRecordAction.transfer
   ) {
@@ -781,6 +797,7 @@ operationsRouter.get('/signature-record/:id', async (req, res) => {
   if (!record) return res.status(404).json({ error: { message: 'Record not found' } })
   if (
     record.action !== AssetRecordAction.check_out &&
+    record.action !== AssetRecordAction.pick_up &&
     record.action !== AssetRecordAction.lend &&
     record.action !== AssetRecordAction.transfer
   ) {
@@ -804,10 +821,11 @@ operationsRouter.get('/signature-record/:id', async (req, res) => {
 operationsRouter.post('/manual-record', requireAuth, requirePermission('assets.write'), validate({ body: ManualRecordSchema }), async (req, res) => {
   const access = req.access!
   const authUser = req.auth!
-  const { requestId, assetId, userName, departmentId, actionDate: actionDateStr, remark } = req.body as {
+  const { requestId, assetId, userName, employeeId, departmentId, actionDate: actionDateStr, remark } = req.body as {
     requestId: string
     assetId: number
     userName: string
+    employeeId?: number
     departmentId: number
     actionDate: string
     remark?: string
@@ -837,6 +855,7 @@ operationsRouter.post('/manual-record', requireAuth, requirePermission('assets.w
   if (!dept) badRequest('部门不存在')
   // 防止跨园区伪造历史：目标部门也要在调用者的园区授权范围内。
   assertCampusAccess(access, dept.campusId)
+  if (employeeId) await assertEmployeeAccess(prisma, access, employeeId, departmentId)
 
   const result = await prisma.$transaction(async (tx) => {
     const assetRecord = await tx.assetRecord.create({
@@ -844,6 +863,7 @@ operationsRouter.post('/manual-record', requireAuth, requirePermission('assets.w
         assetId,
         action: AssetRecordAction.manual_note,
         userName,
+        employeeId: employeeId ?? undefined,
         departmentId,
         actionDate,
         remark: remark || undefined,
@@ -862,6 +882,8 @@ operationsRouter.post('/manual-record', requireAuth, requirePermission('assets.w
         ipAddress: req.ip ?? 'unknown',
       },
     })
+
+    await tx.asset.update({ where: { id: assetId }, data: { updatedAt: new Date() } })
 
     return { assetId, assetRecord }
   })
@@ -887,6 +909,7 @@ operationsRouter.post('/reset-signature', requireAuth, requirePermission('operat
   if (!record) badNotFound('签字记录不存在')
   if (
     record.action !== AssetRecordAction.check_out &&
+    record.action !== AssetRecordAction.pick_up &&
     record.action !== AssetRecordAction.lend &&
     record.action !== AssetRecordAction.transfer
   ) {
@@ -920,6 +943,7 @@ operationsRouter.post('/reset-signature', requireAuth, requirePermission('operat
         assetId: record.assetId,
         action: AssetRecordAction.signature_reset,
         userName: record.userName,
+        employeeId: record.employeeId,
         departmentId: record.departmentId,
         actionDate: new Date(),
         remark: remark || `重置签字（原记录 #${recordId}）`,

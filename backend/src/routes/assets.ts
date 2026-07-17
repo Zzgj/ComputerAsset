@@ -21,6 +21,7 @@ import { getDepartmentPathSnapshot } from '../utils/departmentPath'
 const HOLDER_STATUSES: AssetStatus[] = [
   AssetStatus.in_use,
   AssetStatus.waiting_pickup,
+  AssetStatus.pending_confirmation,
   AssetStatus.borrowed,
   AssetStatus.in_repair,
 ]
@@ -39,6 +40,28 @@ function badRequest(message: string, details?: unknown): never {
 }
 
 export const assetsRouter = Router()
+
+async function collectDepartmentAndDescendantIds(rootId: number, campusId?: number | null): Promise<number[]> {
+  const departments = await prisma.department.findMany({
+    where: campusId ? { campusId } : undefined,
+    select: { id: true, parentId: true },
+  })
+  if (!departments.some((department) => department.id === rootId)) return []
+
+  const result: number[] = []
+  const queue = [rootId]
+  const seen = new Set<number>()
+  while (queue.length) {
+    const id = queue.shift()!
+    if (seen.has(id)) continue
+    seen.add(id)
+    result.push(id)
+    for (const department of departments) {
+      if (department.parentId === id) queue.push(department.id)
+    }
+  }
+  return result
+}
 
 assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req, res) => {
   const access = (req as any).access as AccessAuth
@@ -68,7 +91,8 @@ assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req,
     where.status = status
   }
   if (departmentId) {
-    where.departmentId = departmentId
+    const departmentIds = await collectDepartmentAndDescendantIds(departmentId, campusId)
+    where.departmentId = departmentIds.length ? { in: departmentIds } : -1
   }
   if (campusId) {
     where.department = { ...(typeof where.department === 'object' && where.department ? where.department : {}), campusId }
@@ -110,7 +134,7 @@ assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req,
   const total = await prisma.asset.count({ where })
   const items = await prisma.asset.findMany({
     where,
-    orderBy: { id: 'desc' },
+    orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
     skip: (page - 1) * pageSize,
     take: pageSize,
     include: {
@@ -551,6 +575,42 @@ assetsRouter.put('/:id', requireAuth, requirePermission('assets.write'), async (
   res.json({ asset })
 })
 
+assetsRouter.delete('/:id/manual-records', requireAuth, requirePermission('assets.delete'), async (req, res) => {
+  const access = req.access!
+  const authUser = req.auth!
+  const id = toInt(req.params.id)
+  if (!id) badRequest('Invalid asset id')
+
+  const asset = await prisma.asset.findUnique({
+    where: { id },
+    include: { department: { select: { campusId: true } } },
+  })
+  if (!asset) return res.status(404).json({ error: { message: 'Asset not found' } })
+  assertCampusAccess(access, asset.department.campusId)
+
+  const result = await prisma.$transaction(async (tx) => {
+    const deleted = await tx.assetRecord.deleteMany({
+      where: { assetId: id, action: AssetRecordAction.manual_note },
+    })
+    if (!deleted.count) badRequest('该资产没有可清除的补录历史')
+
+    await tx.asset.update({ where: { id }, data: { updatedAt: new Date() } })
+    await tx.operationLog.create({
+      data: {
+        operatorId: authUser.id,
+        action: '清空资产补录历史',
+        targetType: 'Asset',
+        targetId: id,
+        detail: { assetCode: asset.assetCode, deletedCount: deleted.count },
+        ipAddress: req.ip ?? 'unknown',
+      },
+    })
+    return deleted.count
+  })
+
+  res.json({ ok: true, deletedCount: result })
+})
+
 assetsRouter.delete('/:id', requireAuth, requirePermission('assets.delete'), async (req, res) => {
   const access = (req as any).access as AccessAuth
   const authUser = (req as any).auth as { id: number }
@@ -564,11 +624,8 @@ assetsRouter.delete('/:id', requireAuth, requirePermission('assets.delete'), asy
   if (!asset) return res.status(404).json({ error: { message: 'Asset not found' } })
   if (asset.department) assertCampusAccess(access, asset.department.campusId)
 
-  if (asset.status !== AssetStatus.in_stock && asset.status !== AssetStatus.retired) {
-    badRequest('Only assets in_stock or retired can be deleted')
-  }
-
   await prisma.$transaction(async (tx) => {
+    await tx.assetTransferNotification.deleteMany({ where: { assetId: id } })
     await tx.assetRecord.deleteMany({ where: { assetId: id } })
     await tx.repairRecord.deleteMany({ where: { assetId: id } })
     await tx.asset.delete({ where: { id } })

@@ -1,6 +1,12 @@
 import { Router } from 'express'
+import { AssetRecordAction, AssetStatus } from '@prisma/client'
 
-import { applyCampusScopeToAssetWhere, applyCampusScopeToEmployeeWhere, assertCampusAccess } from '../auth/accessContext'
+import {
+  applyCampusScopeToAssetWhere,
+  applyCampusScopeToEmployeeWhere,
+  applyCampusScopeToRecordWhere,
+  assertCampusAccess,
+} from '../auth/accessContext'
 import { prisma } from '../prisma'
 import { requireAuth, requirePermission } from '../middleware/auth'
 import { validate } from '../middleware/validate'
@@ -9,11 +15,13 @@ import {
   CreateResourceSchema,
   ListEmployeesQuerySchema,
   QuickCreateEmployeeSchema,
+  ReturnEmployeeAssetsSchema,
   ResignSchema,
   UpdateEmployeeCampusSchema,
   UpdateEmployeeSchema,
   UpdateResourceSchema,
 } from './employees.schemas'
+import { updateAssetWithVersion } from './operations/_shared'
 
 function badRequest(message: string, details?: unknown): never {
   throw { statusCode: 400, message, details }
@@ -104,15 +112,43 @@ employeesRouter.get(
     const assetWhere: Record<string, unknown> = { currentEmployeeId: id }
     applyCampusScopeToAssetWhere(assetWhere, access)
 
-    const assets = await prisma.asset.findMany({
-      where: assetWhere,
-      include: {
-        department: { select: { id: true, name: true, campusId: true } },
-      },
-      orderBy: { id: 'asc' },
+    const historyWhere: Record<string, unknown> = { employeeId: id }
+    applyCampusScopeToRecordWhere(historyWhere, access)
+
+    const [assets, historyRecords] = await Promise.all([
+      prisma.asset.findMany({
+        where: assetWhere,
+        include: {
+          department: { select: { id: true, name: true, campusId: true } },
+        },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      }),
+      prisma.assetRecord.findMany({
+        where: historyWhere,
+        orderBy: [{ actionDate: 'desc' }, { id: 'desc' }],
+        include: {
+          asset: {
+            include: { department: { select: { id: true, name: true, campusId: true } } },
+          },
+          department: { select: { id: true, name: true, campusId: true } },
+        },
+      }),
+    ])
+
+    const currentAssetIds = new Set(assets.map((a) => a.id))
+    const seenHistoryAssetIds = new Set<number>()
+    const historicalAssets = historyRecords.flatMap((record) => {
+      if (currentAssetIds.has(record.assetId) || seenHistoryAssetIds.has(record.assetId)) return []
+      seenHistoryAssetIds.add(record.assetId)
+      return [{
+        ...record.asset,
+        lastOwnedAt: record.actionDate,
+        lastAction: record.action,
+        lastDepartment: record.department,
+      }]
     })
 
-    res.json({ employee, assets })
+    res.json({ employee, assets, historicalAssets })
   },
 )
 
@@ -492,6 +528,114 @@ employeesRouter.delete(
     })
 
     res.json({ ok: true })
+  },
+)
+
+employeesRouter.post(
+  '/:id/return-assets',
+  requireAuth,
+  requirePermission('employees.resign', 'operations.execute'),
+  validate({ body: ReturnEmployeeAssetsSchema }),
+  async (req, res) => {
+    const access = req.access!
+    const authUser = req.auth!
+    const id = toInt(req.params.id)
+    if (!id) badRequest('Invalid employee id')
+
+    const employee = await prisma.employee.findUnique({ where: { id } })
+    if (!employee) notFound('员工不存在')
+    assertCampusAccess(access, employee.campusId)
+
+    const body = req.body as { requestId: string; assetIds: number[]; remark?: string }
+    const assetIds = [...new Set(body.assetIds)]
+    const requestPrefix = `${body.requestId}:`
+    const existing = await prisma.assetRecord.findFirst({
+      where: { requestId: { startsWith: requestPrefix } },
+      select: { id: true },
+    })
+    if (existing) {
+      res.json({ alreadyProcessed: true })
+      return
+    }
+
+    const ownedAssets = await prisma.asset.findMany({
+      where: { id: { in: assetIds }, currentEmployeeId: id },
+      include: { department: { select: { campusId: true } } },
+    })
+    if (ownedAssets.length !== assetIds.length) {
+      badRequest('部分资产已不在该员工名下，请刷新后重试')
+    }
+
+    const returnableStatuses: AssetStatus[] = [
+      AssetStatus.in_use,
+      AssetStatus.borrowed,
+      AssetStatus.waiting_pickup,
+      AssetStatus.pending_confirmation,
+    ]
+    const invalidAssets = ownedAssets.filter((asset) => !returnableStatuses.includes(asset.status))
+    if (invalidAssets.length) {
+      throw {
+        statusCode: 409,
+        code: 'EMPLOYEE_ASSET_NOT_RETURNABLE',
+        message: '维修中或已报废资产不能一键归还，请先完成对应流程',
+        details: { assets: invalidAssets.map((asset) => ({ id: asset.id, assetCode: asset.assetCode, status: asset.status })) },
+      }
+    }
+    for (const asset of ownedAssets) assertCampusAccess(access, asset.department.campusId)
+
+    const now = new Date()
+    const result = await prisma.$transaction(async (tx) => {
+      const returnedAssets: Array<{ id: number; assetCode: string; recordId: number }> = []
+      for (const asset of ownedAssets) {
+        const unassigned = await tx.department.findFirst({
+          where: { campusId: asset.department.campusId, parentId: null, name: '未分配', isActive: true },
+          select: { id: true },
+        })
+        if (!unassigned) badRequest('该园区缺少「未分配」部门，无法归还')
+
+        await updateAssetWithVersion(
+          tx,
+          asset,
+          {
+            status: AssetStatus.in_stock,
+            currentUserName: '',
+            currentEmployeeId: null,
+            departmentId: unassigned.id,
+          },
+          returnableStatuses,
+        )
+
+        const record = await tx.assetRecord.create({
+          data: {
+            assetId: asset.id,
+            action: AssetRecordAction.return,
+            userName: asset.currentUserName,
+            employeeId: id,
+            departmentId: asset.departmentId,
+            actionDate: now,
+            remark: body.remark?.trim() || '员工离职办理页一键归还',
+            operatorId: authUser.id,
+            requestId: `${requestPrefix}${asset.id}`,
+          },
+        })
+        returnedAssets.push({ id: asset.id, assetCode: asset.assetCode, recordId: record.id })
+      }
+
+      await tx.operationLog.create({
+        data: {
+          operatorId: authUser.id,
+          action: '员工离职一键归还资产',
+          targetType: 'Employee',
+          targetId: id,
+          detail: { employeeNo: employee.employeeNo, assetIds, remark: body.remark?.trim() || null },
+          ipAddress: req.ip ?? 'unknown',
+        },
+      })
+
+      return returnedAssets
+    })
+
+    res.json({ returnedAssets: result })
   },
 )
 
