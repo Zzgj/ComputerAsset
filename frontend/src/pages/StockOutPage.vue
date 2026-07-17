@@ -20,23 +20,51 @@
       <el-tabs v-model="activeTab" class="stock-tabs">
         <el-tab-pane label="出库（直接领用）" name="check_out">
           <div class="tab-panel">
-            <p class="tab-desc">从在库状态直接变为使用中，适用于当场领走设备。</p>
+            <p class="tab-desc">从在库状态发起领用并生成签字二维码；目标园区由所选部门决定。</p>
             <el-form label-width="100px" class="op-form">
               <el-form-item label="在库电脑" required>
-                <el-select v-model="checkOut.assetId" placeholder="搜索电脑编号或配置" filterable class="field-full">
-                  <el-option v-for="a in inStockAssets" :key="a.id" :label="`${a.assetCode} · ${a.brand}/${a.model}`" :value="a.id" />
+                <el-select
+                  v-model="checkOut.assetId"
+                  placeholder="搜索电脑编号或配置"
+                  filterable
+                  class="field-full"
+                >
+                  <el-option
+                    v-for="a in inStockAssets"
+                    :key="a.id"
+                    :label="`${a.assetCode} · ${a.brand}/${a.model}`"
+                    :value="a.id"
+                  />
                 </el-select>
               </el-form-item>
               <el-form-item label="领用人" required>
-                <el-input v-model="checkOut.userName" placeholder="姓名" class="field-full" clearable />
+                <div class="field-full">
+                  <EmployeePicker
+                    v-model:employee-id="checkOut.employeeId"
+                    v-model:user-name="checkOut.userName"
+                    :campus-id="checkOutCampusId"
+                    :departments="departments"
+                    :campuses="campuses"
+                  />
+                </div>
               </el-form-item>
               <el-form-item label="部门" required>
                 <div class="field-full">
-                  <DepartmentCascader v-model="checkOut.departmentId" :departments="departments" :campuses="campuses" />
+                  <DepartmentCascader
+                    v-model="checkOut.departmentId"
+                    :departments="departments"
+                    :campuses="campuses"
+                  />
                 </div>
               </el-form-item>
               <el-form-item label="备注">
-                <el-input type="textarea" v-model="checkOut.remark" placeholder="可选" :rows="3" class="field-wide" />
+                <el-input
+                  type="textarea"
+                  v-model="checkOut.remark"
+                  placeholder="可选"
+                  :rows="3"
+                  class="field-wide"
+                />
               </el-form-item>
               <el-form-item>
                 <el-button
@@ -55,23 +83,51 @@
 
         <el-tab-pane label="分配（待领用）" name="assign">
           <div class="tab-panel">
-            <p class="tab-desc">设备先进入待领用，指定领用人与部门；对方在「待领用操作」中确认领用后变为使用中。</p>
+            <p class="tab-desc">设备先进入待领用；确认领用后还需扫码签字，签字完成才变为使用中。</p>
             <el-form label-width="100px" class="op-form">
               <el-form-item label="在库电脑" required>
-                <el-select v-model="assign.assetId" placeholder="搜索电脑编号或配置" filterable class="field-full">
-                  <el-option v-for="a in inStockAssets" :key="a.id" :label="`${a.assetCode} · ${a.brand}/${a.model}`" :value="a.id" />
+                <el-select
+                  v-model="assign.assetId"
+                  placeholder="搜索电脑编号或配置"
+                  filterable
+                  class="field-full"
+                >
+                  <el-option
+                    v-for="a in inStockAssets"
+                    :key="a.id"
+                    :label="`${a.assetCode} · ${a.brand}/${a.model}`"
+                    :value="a.id"
+                  />
                 </el-select>
               </el-form-item>
               <el-form-item label="领用人" required>
-                <el-input v-model="assign.userName" placeholder="姓名" class="field-full" clearable />
+                <div class="field-full">
+                  <EmployeePicker
+                    v-model:employee-id="assign.employeeId"
+                    v-model:user-name="assign.userName"
+                    :campus-id="assignCampusId"
+                    :departments="departments"
+                    :campuses="campuses"
+                  />
+                </div>
               </el-form-item>
               <el-form-item label="部门" required>
                 <div class="field-full">
-                  <DepartmentCascader v-model="assign.departmentId" :departments="departments" :campuses="campuses" />
+                  <DepartmentCascader
+                    v-model="assign.departmentId"
+                    :departments="departments"
+                    :campuses="campuses"
+                  />
                 </div>
               </el-form-item>
               <el-form-item label="备注">
-                <el-input type="textarea" v-model="assign.remark" placeholder="可选" :rows="3" class="field-wide" />
+                <el-input
+                  type="textarea"
+                  v-model="assign.remark"
+                  placeholder="可选"
+                  :rows="3"
+                  class="field-wide"
+                />
               </el-form-item>
               <el-form-item>
                 <el-button
@@ -90,19 +146,43 @@
 
         <el-tab-pane label="借出" name="lend">
           <div class="tab-panel">
-            <p class="tab-desc">临时借出至借用中状态，需填写预计归还日期（默认按系统配置的借用天数推算，可在系统配置中修改）。</p>
+            <p class="tab-desc">
+              临时借出至借用中状态，需填写预计归还日期（默认按系统配置的借用天数推算，可在系统配置中修改）。
+            </p>
             <el-form label-width="100px" class="op-form">
               <el-form-item label="在库电脑" required>
-                <el-select v-model="lend.assetId" placeholder="搜索电脑编号或配置" filterable class="field-full">
-                  <el-option v-for="a in inStockAssets" :key="a.id" :label="`${a.assetCode} · ${a.brand}/${a.model}`" :value="a.id" />
+                <el-select
+                  v-model="lend.assetId"
+                  placeholder="搜索电脑编号或配置"
+                  filterable
+                  class="field-full"
+                >
+                  <el-option
+                    v-for="a in inStockAssets"
+                    :key="a.id"
+                    :label="`${a.assetCode} · ${a.brand}/${a.model}`"
+                    :value="a.id"
+                  />
                 </el-select>
               </el-form-item>
               <el-form-item label="借用人" required>
-                <el-input v-model="lend.userName" placeholder="姓名" class="field-full" clearable />
+                <div class="field-full">
+                  <EmployeePicker
+                    v-model:employee-id="lend.employeeId"
+                    v-model:user-name="lend.userName"
+                    :campus-id="lendCampusId"
+                    :departments="departments"
+                    :campuses="campuses"
+                  />
+                </div>
               </el-form-item>
               <el-form-item label="部门" required>
                 <div class="field-full">
-                  <DepartmentCascader v-model="lend.departmentId" :departments="departments" :campuses="campuses" />
+                  <DepartmentCascader
+                    v-model="lend.departmentId"
+                    :departments="departments"
+                    :campuses="campuses"
+                  />
                 </div>
               </el-form-item>
               <el-form-item label="预计归还" required>
@@ -115,7 +195,13 @@
                 />
               </el-form-item>
               <el-form-item label="备注">
-                <el-input type="textarea" v-model="lend.remark" placeholder="可选" :rows="3" class="field-wide" />
+                <el-input
+                  type="textarea"
+                  v-model="lend.remark"
+                  placeholder="可选"
+                  :rows="3"
+                  class="field-wide"
+                />
               </el-form-item>
               <el-form-item>
                 <el-button
@@ -123,7 +209,12 @@
                   size="large"
                   :loading="submitting"
                   @click="doLend"
-                  :disabled="!lend.assetId || !lend.userName || !lend.departmentId || !lend.expectedReturnDate"
+                  :disabled="
+                    !lend.assetId ||
+                    !lend.userName ||
+                    !lend.departmentId ||
+                    !lend.expectedReturnDate
+                  "
                 >
                   确认借出
                 </el-button>
@@ -134,22 +225,51 @@
 
         <el-tab-pane label="待领用操作" name="pickup">
           <div class="tab-panel">
-            <p class="tab-desc">对「待领用」资产确认领用（变为使用中）或取消分配（退回在库）。</p>
+            <p class="tab-desc">对「待领用」资产确认领用并生成签字二维码，或取消分配退回在库。</p>
             <el-form label-width="100px" class="op-form">
               <el-form-item label="待领用电脑" required>
-                <el-select v-model="pickup.assetId" placeholder="搜索编号或领用人" filterable class="field-full">
-                  <el-option v-for="a in waitingPickupAssets" :key="a.id" :label="`${a.assetCode} → ${a.currentUserName || '—'}`" :value="a.id" />
+                <el-select
+                  v-model="pickup.assetId"
+                  placeholder="搜索编号或领用人"
+                  filterable
+                  class="field-full"
+                >
+                  <el-option
+                    v-for="a in waitingPickupAssets"
+                    :key="a.id"
+                    :label="`${a.assetCode} → ${a.currentUserName || '—'}`"
+                    :value="a.id"
+                  />
                 </el-select>
               </el-form-item>
               <el-form-item label="备注">
-                <el-input type="textarea" v-model="pickup.remark" placeholder="可选" :rows="3" class="field-wide" />
+                <el-input
+                  type="textarea"
+                  v-model="pickup.remark"
+                  placeholder="可选"
+                  :rows="3"
+                  class="field-wide"
+                />
               </el-form-item>
               <el-form-item>
                 <div class="btn-group">
-                  <el-button type="primary" size="large" :loading="submitting" @click="doPickUp" :disabled="!pickup.assetId">
+                  <el-button
+                    type="primary"
+                    size="large"
+                    :loading="submitting"
+                    @click="doPickUp"
+                    :disabled="!pickup.assetId"
+                  >
                     确认领用
                   </el-button>
-                  <el-button type="danger" plain size="large" :loading="submitting" @click="doCancelAssign" :disabled="!pickup.assetId">
+                  <el-button
+                    type="danger"
+                    plain
+                    size="large"
+                    :loading="submitting"
+                    @click="doCancelAssign"
+                    :disabled="!pickup.assetId"
+                  >
                     取消分配
                   </el-button>
                 </div>
@@ -180,11 +300,12 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import QRCode from 'qrcode'
 import { apiRequest } from '../services/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DepartmentCascader from '../components/DepartmentCascader.vue'
+import EmployeePicker from '../components/EmployeePicker.vue'
 import { getPublicBaseURL } from '../lib/publicBaseUrl'
 import { copyTextToClipboardWithToast } from '../lib/clipboard'
 import { formatDepartmentDisplayLabel } from '../lib/departmentDisplay'
@@ -203,10 +324,69 @@ const waitingPickupAssets = ref<any[]>([])
 const onePersonOneDeviceEnabled = ref(false)
 const defaultBorrowDays = ref(7)
 
-const checkOut = reactive<any>({ assetId: null, userName: '', departmentId: null, remark: '' })
-const assign = reactive<any>({ assetId: null, userName: '', departmentId: null, remark: '' })
-const lend = reactive<any>({ assetId: null, userName: '', departmentId: null, expectedReturnDate: null, remark: '' })
+const checkOut = reactive<any>({
+  assetId: null,
+  employeeId: null,
+  userName: '',
+  departmentId: null,
+  remark: '',
+})
+const assign = reactive<any>({
+  assetId: null,
+  employeeId: null,
+  userName: '',
+  departmentId: null,
+  remark: '',
+})
+const lend = reactive<any>({
+  assetId: null,
+  employeeId: null,
+  userName: '',
+  departmentId: null,
+  expectedReturnDate: null,
+  remark: '',
+})
 const pickup = reactive<any>({ assetId: null, remark: '' })
+
+function deriveCampusIdFromAssetOrDept(
+  assetId: number | null,
+  departmentId: number | null,
+): number | null {
+  // 目标部门是业务上下文：允许通过切换部门办理跨园区领用。
+  if (departmentId) {
+    const dept = departments.value.find((d) => d.id === departmentId)
+    if (dept?.campusId) return dept.campusId
+  }
+  if (assetId) {
+    const asset = inStockAssets.value.find((a) => a.id === assetId)
+    const cid = asset?.department?.campusId ?? asset?.department?.campus?.id
+    if (typeof cid === 'number') return cid
+  }
+  return null
+}
+
+const checkOutCampusId = computed(() =>
+  deriveCampusIdFromAssetOrDept(checkOut.assetId, checkOut.departmentId),
+)
+const assignCampusId = computed(() =>
+  deriveCampusIdFromAssetOrDept(assign.assetId, assign.departmentId),
+)
+const lendCampusId = computed(() => deriveCampusIdFromAssetOrDept(lend.assetId, lend.departmentId))
+
+function resetSelectedEmployee(form: { employeeId: number | null; userName: string }) {
+  form.employeeId = null
+  form.userName = ''
+}
+
+watch(checkOutCampusId, (next, previous) => {
+  if (previous != null && next !== previous) resetSelectedEmployee(checkOut)
+})
+watch(assignCampusId, (next, previous) => {
+  if (previous != null && next !== previous) resetSelectedEmployee(assign)
+})
+watch(lendCampusId, (next, previous) => {
+  if (previous != null && next !== previous) resetSelectedEmployee(lend)
+})
 
 function formatYmd(d: Date) {
   const y = d.getFullYear()
@@ -223,7 +403,9 @@ function addDays(date: Date, days: number) {
 
 async function loadConfig() {
   try {
-    const data = await apiRequest<{ items: Array<{ configKey: string; configValue: string }> }>('/api/config')
+    const data = await apiRequest<{ items: Array<{ configKey: string; configValue: string }> }>(
+      '/api/config',
+    )
     const map = new Map(data.items.map((x) => [x.configKey, x.configValue]))
 
     const one = map.get('one_person_one_device')
@@ -343,7 +525,11 @@ async function doCheckOut() {
     }
 
     const reqId = uuid()
-    const deptLabel = formatDepartmentDisplayLabel(checkOut.departmentId, departments.value, campuses.value)
+    const deptLabel = formatDepartmentDisplayLabel(
+      checkOut.departmentId,
+      departments.value,
+      campuses.value,
+    )
     const result = await apiRequest<any>('/api/operations/check-out', {
       method: 'POST',
       body: {
@@ -351,6 +537,7 @@ async function doCheckOut() {
         assetId: checkOut.assetId,
         userName: checkOut.userName.trim(),
         departmentId: checkOut.departmentId,
+        employeeId: checkOut.employeeId ?? undefined,
         ignoreConflict: ignoreConflict || undefined,
         remark: checkOut.remark || undefined,
       },
@@ -358,9 +545,16 @@ async function doCheckOut() {
     ElMessage.success('出库成功，请让领用人扫码签名确认')
     const asset = inStockAssets.value.find((a) => a.id === checkOut.assetId)
     const recordId = resolveRecordIdFromOpResult(result)
-    await showSignQr(recordId, asset?.assetCode ?? '', checkOut.userName.trim(), deptLabel, checkOut.remark || '')
+    await showSignQr(
+      recordId,
+      asset?.assetCode ?? '',
+      checkOut.userName.trim(),
+      deptLabel,
+      checkOut.remark || '',
+    )
     await loadAssets()
     checkOut.assetId = null
+    checkOut.employeeId = null
     checkOut.userName = ''
     checkOut.departmentId = null
     checkOut.remark = ''
@@ -381,7 +575,11 @@ async function doCheckOut() {
           { type: 'warning', confirmButtonText: '继续', cancelButtonText: '取消' },
         )
         const retryReqId = uuid()
-        const deptLabelRetry = formatDepartmentDisplayLabel(checkOut.departmentId, departments.value, campuses.value)
+        const deptLabelRetry = formatDepartmentDisplayLabel(
+          checkOut.departmentId,
+          departments.value,
+          campuses.value,
+        )
         const retryResult = await apiRequest<any>('/api/operations/check-out', {
           method: 'POST',
           body: {
@@ -389,6 +587,7 @@ async function doCheckOut() {
             assetId: checkOut.assetId,
             userName: checkOut.userName.trim(),
             departmentId: checkOut.departmentId,
+            employeeId: checkOut.employeeId ?? undefined,
             ignoreConflict: true,
             remark: checkOut.remark || undefined,
           },
@@ -404,6 +603,7 @@ async function doCheckOut() {
         )
         await loadAssets()
         checkOut.assetId = null
+        checkOut.employeeId = null
         checkOut.userName = ''
         checkOut.departmentId = null
         checkOut.remark = ''
@@ -428,12 +628,14 @@ async function doAssign() {
         assetId: assign.assetId,
         userName: String(assign.userName ?? '').trim(),
         departmentId: assign.departmentId,
+        employeeId: assign.employeeId ?? undefined,
         remark: assign.remark || undefined,
       },
     })
     ElMessage.success('分配成功')
     await loadAssets()
     assign.assetId = null
+    assign.employeeId = null
     assign.userName = ''
     assign.departmentId = null
     assign.remark = ''
@@ -470,7 +672,11 @@ async function doLend() {
     }
 
     const lendReqId = uuid()
-    const lendDeptLabel = formatDepartmentDisplayLabel(lend.departmentId, departments.value, campuses.value)
+    const lendDeptLabel = formatDepartmentDisplayLabel(
+      lend.departmentId,
+      departments.value,
+      campuses.value,
+    )
     const lendResult = await apiRequest<any>('/api/operations/lend', {
       method: 'POST',
       body: {
@@ -478,6 +684,7 @@ async function doLend() {
         assetId: lend.assetId,
         userName: lend.userName.trim(),
         departmentId: lend.departmentId,
+        employeeId: lend.employeeId ?? undefined,
         ignoreConflict: ignoreConflict || undefined,
         expectedReturnDate: lend.expectedReturnDate
           ? new Date(`${lend.expectedReturnDate}T00:00:00`).toISOString()
@@ -496,6 +703,7 @@ async function doLend() {
     )
     await loadAssets()
     lend.assetId = null
+    lend.employeeId = null
     lend.userName = ''
     lend.departmentId = null
     lend.expectedReturnDate = null
@@ -517,7 +725,11 @@ async function doLend() {
           { type: 'warning', confirmButtonText: '继续', cancelButtonText: '取消' },
         )
         const lendRetryReqId = uuid()
-        const lendDeptLabelRetry = formatDepartmentDisplayLabel(lend.departmentId, departments.value, campuses.value)
+        const lendDeptLabelRetry = formatDepartmentDisplayLabel(
+          lend.departmentId,
+          departments.value,
+          campuses.value,
+        )
         const lendRetryResult = await apiRequest<any>('/api/operations/lend', {
           method: 'POST',
           body: {
@@ -525,6 +737,7 @@ async function doLend() {
             assetId: lend.assetId,
             userName: lend.userName.trim(),
             departmentId: lend.departmentId,
+            employeeId: lend.employeeId ?? undefined,
             ignoreConflict: true,
             expectedReturnDate: lend.expectedReturnDate
               ? new Date(`${lend.expectedReturnDate}T00:00:00`).toISOString()
@@ -543,6 +756,7 @@ async function doLend() {
         )
         await loadAssets()
         lend.assetId = null
+        lend.employeeId = null
         lend.userName = ''
         lend.departmentId = null
         lend.expectedReturnDate = null
@@ -561,11 +775,19 @@ async function doLend() {
 async function doPickUp() {
   submitting.value = true
   try {
-    await apiRequest('/api/operations/pick-up', {
+    const selectedAsset = waitingPickupAssets.value.find((asset) => asset.id === pickup.assetId)
+    const result = await apiRequest<any>('/api/operations/pick-up', {
       method: 'POST',
       body: { requestId: uuid(), assetId: pickup.assetId, remark: pickup.remark || undefined },
     })
-    ElMessage.success('确认领用成功')
+    ElMessage.success('已确认领用，请让领用人扫码签名')
+    await showSignQr(
+      resolveRecordIdFromOpResult(result),
+      selectedAsset?.assetCode ?? '',
+      selectedAsset?.currentUserName ?? '',
+      selectedAsset?.department?.displayPath ?? selectedAsset?.department?.name ?? '',
+      pickup.remark || '',
+    )
     await loadAssets()
     pickup.assetId = null
     pickup.remark = ''

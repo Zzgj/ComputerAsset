@@ -23,9 +23,7 @@
         <el-tab-pane name="sent" label="我发出的" />
       </el-tabs>
 
-      <el-empty v-if="!loading && items.length === 0" description="暂无调拨消息" :image-size="100" />
-
-      <el-table v-else :data="items" stripe border>
+      <el-table :data="items" stripe border style="min-height: 240px">
         <el-table-column label="状态" width="92">
           <template #default="{ row }">
             <el-tag :type="row.isRead ? 'success' : 'danger'" effect="light">
@@ -66,6 +64,10 @@
             <el-button type="primary" text @click="goAsset(row.asset?.id)">查看资产</el-button>
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty v-if="!loading" description="暂无调拨消息" :image-size="100" />
+          <span v-else>&nbsp;</span>
+        </template>
       </el-table>
 
       <div style="margin-top: 16px; display: flex; justify-content: flex-end">

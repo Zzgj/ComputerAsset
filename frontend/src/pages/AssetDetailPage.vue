@@ -2,45 +2,123 @@
   <div class="detail-page ca-animate">
     <div class="detail-top-bar">
       <el-button type="primary" @click="backToAssetList">返回资产列表</el-button>
-      <div class="detail-id-hint">
-        资产ID：{{ assetId }}
+      <div class="detail-top-actions">
+        <div class="detail-id-hint">资产ID：{{ assetId }}</div>
+        <el-button
+          v-if="canDeleteAsset && asset"
+          type="danger"
+          plain
+          size="small"
+          @click="deleteAsset"
+        >
+          删除资产
+        </el-button>
       </div>
     </div>
     <el-card shadow="never" v-if="asset">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap">
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 16px;
+          flex-wrap: wrap;
+        "
+      >
         <div>
           <div style="font-size: 22px; font-weight: 800">{{ asset.assetCode }}</div>
-          <div style="color: #666; margin-top: 6px">序列号：{{ formatSerial(asset.serialNumber) }}</div>
+          <div style="color: #666; margin-top: 6px">
+            序列号：{{ formatSerial(asset.serialNumber) }}
+          </div>
           <div style="margin-top: 10px">
             <el-tag type="info" style="margin-right: 8px">{{ statusLabel(asset.status) }}</el-tag>
-            <el-tag v-if="asset.department?.campus?.name" type="success" effect="plain" style="margin-right: 8px">
+            <el-tag
+              v-if="asset.department?.campus?.name"
+              type="success"
+              effect="plain"
+              style="margin-right: 8px"
+            >
               {{ asset.department.campus.name }}
             </el-tag>
-            <el-tag v-if="asset.department?.deptPathOnly || asset.department?.name" effect="plain" style="margin-right: 8px">
+            <el-tag
+              v-if="asset.department?.deptPathOnly || asset.department?.name"
+              effect="plain"
+              style="margin-right: 8px"
+            >
               {{ asset.department.deptPathOnly || asset.department.name }}
             </el-tag>
-            <el-tag>{{ formatText(asset.currentUserName) }}</el-tag>
+            <el-tag>
+              <router-link
+                v-if="asset.currentEmployee?.id"
+                :to="`/employees/${asset.currentEmployee.id}`"
+                class="employee-link"
+              >
+                {{ asset.currentEmployee.name }}
+                <span class="employee-no">（{{ asset.currentEmployee.employeeNo }}）</span>
+              </router-link>
+              <span v-else>{{ formatText(asset.currentUserName) }}</span>
+            </el-tag>
           </div>
-          <div v-if="asset.status === 'pending_confirmation' && pendingSignUrl" class="pending-sign-hint">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          <div
+            v-if="asset.status === 'pending_confirmation' && pendingSignUrl"
+            class="pending-sign-hint"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
             <span>待签字确认</span>
-            <el-button type="primary" size="small" text @click="copySignUrl">复制签名链接</el-button>
+            <el-button type="primary" size="small" text @click="copySignUrl"
+              >复制签名链接</el-button
+            >
           </div>
-          <div v-if="asset.status === 'borrowed' && latestExpectedReturn" class="borrow-return-hint">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <div
+            v-if="asset.status === 'borrowed' && latestExpectedReturn"
+            class="borrow-return-hint"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
             预计归还：{{ latestExpectedReturn }}
           </div>
-          <div v-if="asset.department?.displayPath" style="margin-top: 8px; font-size: 13px; color: #606266">
+          <div
+            v-if="asset.department?.displayPath"
+            style="margin-top: 8px; font-size: 13px; color: #606266"
+          >
             全路径：{{ asset.department.displayPath }}
           </div>
         </div>
         <div style="min-width: 280px">
-          <div style="display: flex; justify-content: flex-end; margin-bottom: 8px" v-if="canEditAsset">
+          <div
+            style="display: flex; justify-content: flex-end; margin-bottom: 8px"
+            v-if="canEditAsset"
+          >
             <el-button type="warning" plain @click="openEditCore">编辑关键信息</el-button>
           </div>
           <el-descriptions :column="1" size="small" border>
             <el-descriptions-item label="设备模板">
-              <el-tag v-if="asset.template?.name" type="primary" effect="plain">{{ asset.template.name }}</el-tag>
+              <el-tag v-if="asset.template?.name" type="primary" effect="plain">{{
+                asset.template.name
+              }}</el-tag>
               <el-tag v-else type="info" effect="plain">自定义</el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="品牌">{{ formatText(asset.brand) }}</el-descriptions-item>
@@ -48,11 +126,21 @@
             <el-descriptions-item label="操作系统">{{ formatText(asset.os) }}</el-descriptions-item>
             <el-descriptions-item label="CPU">{{ formatText(asset.cpu) }}</el-descriptions-item>
             <el-descriptions-item label="内存">{{ formatText(asset.memory) }}</el-descriptions-item>
-            <el-descriptions-item label="存储">{{ formatText(asset.storage) }}</el-descriptions-item>
-            <el-descriptions-item label="园区">{{ formatText(asset.department?.campus?.name) }}</el-descriptions-item>
-            <el-descriptions-item label="部门">{{ formatText(asset.department?.deptPathOnly ?? asset.department?.name) }}</el-descriptions-item>
-            <el-descriptions-item label="采购日期">{{ toDate(asset.purchaseDate) }}</el-descriptions-item>
-            <el-descriptions-item label="保修到期">{{ asset.warrantyExpiry ? toDate(asset.warrantyExpiry) : '暂无' }}</el-descriptions-item>
+            <el-descriptions-item label="存储">{{
+              formatText(asset.storage)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="园区">{{
+              formatText(asset.department?.campus?.name)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="部门">{{
+              formatText(asset.department?.deptPathOnly ?? asset.department?.name)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="采购日期">{{
+              toDate(asset.purchaseDate)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="保修到期">{{
+              asset.warrantyExpiry ? toDate(asset.warrantyExpiry) : '暂无'
+            }}</el-descriptions-item>
           </el-descriptions>
           <div
             style="
@@ -63,8 +151,12 @@
               border-radius: 8px;
             "
           >
-            <div style="font-size: 12px; color: #a1731a; font-weight: 700; margin-bottom: 6px">资产备注</div>
-            <div style="color: #4e5969; line-height: 1.6; white-space: pre-wrap">{{ formatText(asset.remark) }}</div>
+            <div style="font-size: 12px; color: #a1731a; font-weight: 700; margin-bottom: 6px">
+              资产备注
+            </div>
+            <div style="color: #4e5969; line-height: 1.6; white-space: pre-wrap">
+              {{ formatText(asset.remark) }}
+            </div>
           </div>
         </div>
       </div>
@@ -72,59 +164,123 @@
 
     <!-- 管理操作：需「出入库与流转操作」权限 -->
     <el-card shadow="never" style="margin-top: 16px" v-if="asset && canOperations">
-      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
+      <div
+        style="
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        "
+      >
         <div style="font-weight: 800">资产管理操作</div>
         <div style="color: #666; font-size: 13px">
           当前状态：<span style="font-weight: 700">{{ statusLabel(asset.status) }}</span>
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 14px">
+      <div
+        style="
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+          gap: 12px;
+          margin-top: 14px;
+        "
+      >
         <el-card shadow="never" style="border: 1px solid #eee" body-style="padding: 14px">
           <div style="font-weight: 700; margin-bottom: 8px">调拨</div>
-          <div style="color: #666; font-size: 13px; margin-bottom: 10px">使用中的电脑：在库内换人换部门</div>
-          <el-button type="primary" :disabled="asset.status !== 'in_use'" @click="openTransfer">调拨</el-button>
+          <div style="color: #666; font-size: 13px; margin-bottom: 10px">
+            使用中的电脑：在库内换人换部门
+          </div>
+          <el-button type="primary" :disabled="asset.status !== 'in_use'" @click="openTransfer"
+            >调拨</el-button
+          >
         </el-card>
 
         <el-card shadow="never" style="border: 1px solid #eee" body-style="padding: 14px">
           <div style="font-weight: 700; margin-bottom: 8px">在库调拨</div>
-          <div style="color: #666; font-size: 13px; margin-bottom: 10px">在库电脑：跨园区或部门移动库存归属</div>
-          <el-button type="primary" plain :disabled="asset.status !== 'in_stock'" @click="openStockTransfer">在库调拨</el-button>
+          <div style="color: #666; font-size: 13px; margin-bottom: 10px">
+            在库电脑：跨园区或部门移动库存归属
+          </div>
+          <el-button
+            type="primary"
+            plain
+            :disabled="asset.status !== 'in_stock'"
+            @click="openStockTransfer"
+            >在库调拨</el-button
+          >
         </el-card>
 
         <el-card shadow="never" style="border: 1px solid #eee" body-style="padding: 14px">
           <div style="font-weight: 700; margin-bottom: 8px">送修</div>
-          <div style="color: #666; font-size: 13px; margin-bottom: 10px">任意状态（非已报废）：填写故障与维修商</div>
-          <el-button type="primary" :disabled="asset.status === 'retired'" @click="openRepair">送修</el-button>
+          <div style="color: #666; font-size: 13px; margin-bottom: 10px">
+            任意状态（非已报废）：填写故障与维修商
+          </div>
+          <el-button type="primary" :disabled="asset.status === 'retired'" @click="openRepair"
+            >送修</el-button
+          >
         </el-card>
 
         <el-card shadow="never" style="border: 1px solid #eee" body-style="padding: 14px">
           <div style="font-weight: 700; margin-bottom: 8px">维修完成</div>
-          <div style="color: #666; font-size: 13px; margin-bottom: 10px">仅维修中：选择结果与维修费用</div>
-          <el-button type="primary" :disabled="asset.status !== 'in_repair'" @click="openRepairDone">维修完成</el-button>
+          <div style="color: #666; font-size: 13px; margin-bottom: 10px">
+            仅维修中：选择结果与维修费用
+          </div>
+          <el-button type="primary" :disabled="asset.status !== 'in_repair'" @click="openRepairDone"
+            >维修完成</el-button
+          >
         </el-card>
 
         <el-card shadow="never" style="border: 1px solid #eee" body-style="padding: 14px">
           <div style="font-weight: 700; margin-bottom: 8px">报废</div>
-          <div style="color: #666; font-size: 13px; margin-bottom: 10px">任意状态（非已报废）：填写报废原因</div>
-          <el-button type="danger" :disabled="asset.status === 'retired'" @click="openRetire">报废</el-button>
+          <div style="color: #666; font-size: 13px; margin-bottom: 10px">
+            任意状态（非已报废）：填写报废原因
+          </div>
+          <el-button type="danger" :disabled="asset.status === 'retired'" @click="openRetire"
+            >报废</el-button
+          >
         </el-card>
       </div>
     </el-card>
 
     <el-card shadow="never" style="margin-top: 16px" v-if="records.length">
       <div style="font-weight: 700; margin-bottom: 10px">曾用人</div>
-      <el-tag
-        v-for="u in uniqueUsers"
-        :key="u"
-        style="margin: 4px 6px 0 0"
-      >
+      <el-tag v-for="u in uniqueUsers" :key="u" style="margin: 4px 6px 0 0">
         {{ u }}
       </el-tag>
     </el-card>
 
     <el-card shadow="never" style="margin-top: 16px">
-      <div style="font-weight: 700; margin-bottom: 6px">流转历史</div>
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 6px;
+        "
+      >
+        <div style="font-weight: 700">流转历史</div>
+        <div>
+          <el-button
+            v-if="canDeleteAsset && manualRecordCount"
+            type="danger"
+            text
+            size="small"
+            @click="clearManualRecords"
+          >
+            清空补录历史
+          </el-button>
+          <el-button
+            v-if="canManualRecord"
+            type="primary"
+            text
+            size="small"
+            @click="manualRecordVisible = true"
+          >
+            + 补录历史
+          </el-button>
+        </div>
+      </div>
       <div style="color: #909399; font-size: 12px; margin-bottom: 10px">
         每条为当时业务记录的归属部门（含园区）；调拨等可能造成跨园区，以记录为准。
       </div>
@@ -133,10 +289,25 @@
           v-for="r in timelineItems"
           :key="r.key"
           :timestamp="new Date(r.time).toLocaleString()"
-          :type="r.kind === 'record' && r.action === 'return' ? 'success' : 'primary'"
+          :type="
+            r.kind === 'record' && r.action === 'manual_note'
+              ? 'warning'
+              : r.kind === 'record' && r.action === 'return'
+                ? 'success'
+                : 'primary'
+          "
           placement="top"
         >
-          <div class="timeline-title">{{ r.title }}</div>
+          <div class="timeline-title">
+            {{ r.title }}
+            <el-tag
+              v-if="r.kind === 'record' && r.action === 'manual_note'"
+              type="warning"
+              size="small"
+              style="margin-left: 6px"
+              >手动补录</el-tag
+            >
+          </div>
           <div class="timeline-body" v-if="r.kind === 'record'">
             <div class="timeline-meta">
               <el-tag effect="plain" size="small">
@@ -157,16 +328,41 @@
               <span class="timeline-value">{{ formatText(r.remark) }}</span>
             </div>
             <div v-if="r.proofImage" class="timeline-signature">
-              <span class="timeline-label">领用签名</span>
+              <span class="timeline-label">{{
+                r.action === 'signature_reset' ? '原领用签名（已作废）' : '领用签名'
+              }}</span>
               <img :src="r.proofImage" alt="手写签名" class="signature-img" />
+              <el-button
+                v-if="
+                  canOperations &&
+                  (r.action === 'check_out' ||
+                    r.action === 'pick_up' ||
+                    r.action === 'lend' ||
+                    r.action === 'transfer')
+                "
+                type="warning"
+                size="small"
+                text
+                @click="openResetSignature(r)"
+              >
+                重新签收
+              </el-button>
             </div>
-            <div v-if="(r.action === 'check_out' || r.action === 'lend') && !r.proofImage" class="timeline-unsigned">
+            <div
+              v-if="
+                (r.action === 'check_out' || r.action === 'pick_up' || r.action === 'lend') &&
+                !r.proofImage
+              "
+              class="timeline-unsigned"
+            >
               <el-tag type="warning" effect="light" size="small">未签名确认</el-tag>
             </div>
           </div>
           <div class="timeline-body" v-else>
             <div class="timeline-meta">
-              <el-tag type="warning" effect="plain" size="small">操作人：{{ r.operatorName }}</el-tag>
+              <el-tag type="warning" effect="plain" size="small"
+                >操作人：{{ r.operatorName }}</el-tag
+              >
             </div>
             <div class="timeline-remark">
               <span class="timeline-label">变更</span>
@@ -175,8 +371,91 @@
           </div>
         </el-timeline-item>
       </el-timeline>
-      <div v-else style="color:#666">暂无记录</div>
+      <div v-else style="color: #666">暂无记录</div>
     </el-card>
+
+    <el-dialog
+      v-model="manualRecordVisible"
+      title="补录流转历史"
+      width="480px"
+      :close-on-click-modal="false"
+    >
+      <el-form label-width="90px">
+        <el-form-item label="使用人" required>
+          <EmployeePicker
+            v-model:employee-id="manualRecordForm.employeeId"
+            v-model:user-name="manualRecordForm.userName"
+            :campus-id="manualRecordCampusId"
+            :departments="departments"
+            :campuses="campuses"
+            :allow-create="true"
+            placeholder="搜索员工，或输入历史使用人"
+          />
+        </el-form-item>
+        <el-form-item label="所属部门" required>
+          <DepartmentCascader
+            v-model="manualRecordForm.departmentId"
+            :departments="departments"
+            :campuses="campuses"
+          />
+        </el-form-item>
+        <el-form-item label="使用日期" required>
+          <el-date-picker
+            v-model="manualRecordForm.actionDate"
+            type="date"
+            placeholder="选择日期"
+            style="width: 100%"
+            :disabled-date="(d: Date) => d.getTime() > Date.now()"
+          />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input
+            v-model="manualRecordForm.remark"
+            type="textarea"
+            :rows="2"
+            placeholder="补录原因说明（可选）"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="manualRecordVisible = false">取消</el-button>
+        <el-button type="primary" :loading="manualRecordSubmitting" @click="submitManualRecord"
+          >确认补录</el-button
+        >
+      </template>
+    </el-dialog>
+
+    <!-- 重置签字确认 -->
+    <el-dialog
+      v-model="resetSignatureVisible"
+      title="重新签收"
+      width="460px"
+      :close-on-click-modal="false"
+    >
+      <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        title="此操作将作废原签名，资产状态回到「待签字确认」，接收人需重新签字。"
+        style="margin-bottom: 12px"
+      />
+      <el-form label-width="80px">
+        <el-form-item label="备注">
+          <el-input
+            v-model="resetSignatureRemark"
+            type="textarea"
+            :rows="2"
+            placeholder="重置原因（可选）"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="resetSignatureVisible = false">取消</el-button>
+        <el-button type="warning" :loading="resetSignatureSubmitting" @click="submitResetSignature"
+          >确认重置</el-button
+        >
+      </template>
+    </el-dialog>
 
     <el-card shadow="never" style="margin-top: 16px" v-if="repairs.length">
       <div style="font-weight: 700; margin-bottom: 10px">维修记录</div>
@@ -186,19 +465,44 @@
         <el-table-column prop="repairCost" label="维修费用" />
         <el-table-column prop="repairResult" label="结果" />
         <el-table-column label="开始/结束">
-          <template #default="{ row }">{{ toDate(row.startDate) }} - {{ toDate(row.endDate) }}</template>
+          <template #default="{ row }"
+            >{{ toDate(row.startDate) }} - {{ toDate(row.endDate) }}</template
+          >
         </el-table-column>
       </el-table>
     </el-card>
 
     <!-- 调拨 -->
-    <el-dialog v-model="transferDialogVisible" title="调拨" width="620px" :close-on-click-modal="false">
+    <el-dialog
+      v-model="transferDialogVisible"
+      title="调拨"
+      width="620px"
+      :close-on-click-modal="false"
+    >
+      <el-alert
+        type="error"
+        :closable="false"
+        show-icon
+        title="请勿私下交接资产，必须由 IT 部门介入完成调拨流程"
+        style="margin-bottom: 12px"
+      />
       <el-form :model="transferForm" label-width="100px">
         <el-form-item label="领用人">
-          <el-input v-model="transferForm.userName" placeholder="输入新使用人姓名" />
+          <EmployeePicker
+            v-model:employee-id="transferForm.employeeId"
+            v-model:user-name="transferForm.userName"
+            :campus-id="transferCampusId"
+            :departments="departments"
+            :campuses="campuses"
+            placeholder="搜索新使用人姓名或工号"
+          />
         </el-form-item>
         <el-form-item label="目标部门">
-          <DepartmentCascader v-model="transferForm.departmentId" :departments="departments" :campuses="campuses" />
+          <DepartmentCascader
+            v-model="transferForm.departmentId"
+            :departments="departments"
+            :campuses="campuses"
+          />
         </el-form-item>
         <el-form-item label="备注">
           <el-input type="textarea" v-model="transferForm.remark" :rows="4" placeholder="可选" />
@@ -206,12 +510,19 @@
       </el-form>
       <template #footer>
         <el-button @click="transferDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submittingTransfer" @click="submitTransfer">提交调拨</el-button>
+        <el-button type="primary" :loading="submittingTransfer" @click="submitTransfer"
+          >提交调拨</el-button
+        >
       </template>
     </el-dialog>
 
     <!-- 在库调拨 -->
-    <el-dialog v-model="stockTransferDialogVisible" title="在库调拨" width="620px" :close-on-click-modal="false">
+    <el-dialog
+      v-model="stockTransferDialogVisible"
+      title="在库调拨"
+      width="620px"
+      :close-on-click-modal="false"
+    >
       <el-alert
         type="info"
         :closable="false"
@@ -221,23 +532,44 @@
       />
       <el-form :model="stockTransferForm" label-width="100px">
         <el-form-item label="目标部门">
-          <DepartmentCascader v-model="stockTransferForm.departmentId" :departments="departments" :campuses="campuses" />
+          <DepartmentCascader
+            v-model="stockTransferForm.departmentId"
+            :departments="departments"
+            :campuses="campuses"
+          />
         </el-form-item>
         <el-form-item label="备注">
-          <el-input type="textarea" v-model="stockTransferForm.remark" :rows="4" placeholder="可选：调拨原因、交接说明等" />
+          <el-input
+            type="textarea"
+            v-model="stockTransferForm.remark"
+            :rows="4"
+            placeholder="可选：调拨原因、交接说明等"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="stockTransferDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submittingStockTransfer" @click="submitStockTransfer">提交在库调拨</el-button>
+        <el-button type="primary" :loading="submittingStockTransfer" @click="submitStockTransfer"
+          >提交在库调拨</el-button
+        >
       </template>
     </el-dialog>
 
     <!-- 送修 -->
-    <el-dialog v-model="repairDialogVisible" title="送修" width="680px" :close-on-click-modal="false">
+    <el-dialog
+      v-model="repairDialogVisible"
+      title="送修"
+      width="680px"
+      :close-on-click-modal="false"
+    >
       <el-form :model="repairForm" label-width="110px">
         <el-form-item label="故障描述" required>
-          <el-input type="textarea" v-model="repairForm.faultDescription" :rows="4" placeholder="填写故障现象" />
+          <el-input
+            type="textarea"
+            v-model="repairForm.faultDescription"
+            :rows="4"
+            placeholder="填写故障现象"
+          />
         </el-form-item>
         <el-form-item label="维修商" required>
           <el-input v-model="repairForm.repairVendor" placeholder="维修商/维修人名称" />
@@ -248,12 +580,19 @@
       </el-form>
       <template #footer>
         <el-button @click="repairDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submittingRepair" @click="submitRepair">提交送修</el-button>
+        <el-button type="primary" :loading="submittingRepair" @click="submitRepair"
+          >提交送修</el-button
+        >
       </template>
     </el-dialog>
 
     <!-- 维修完成 -->
-    <el-dialog v-model="repairDoneDialogVisible" title="维修完成" width="680px" :close-on-click-modal="false">
+    <el-dialog
+      v-model="repairDoneDialogVisible"
+      title="维修完成"
+      width="680px"
+      :close-on-click-modal="false"
+    >
       <el-form :model="repairDoneForm" label-width="110px">
         <el-form-item label="维修结果" required>
           <el-radio-group v-model="repairDoneForm.repairResult">
@@ -262,7 +601,12 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="维修费用" required>
-          <el-input-number v-model="repairDoneForm.repairCost" :min="0" :step="0.01" style="width: 100%" />
+          <el-input-number
+            v-model="repairDoneForm.repairCost"
+            :min="0"
+            :step="0.01"
+            style="width: 100%"
+          />
         </el-form-item>
         <el-form-item label="备注">
           <el-input type="textarea" v-model="repairDoneForm.remark" :rows="3" placeholder="可选" />
@@ -270,25 +614,44 @@
       </el-form>
       <template #footer>
         <el-button @click="repairDoneDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submittingRepairDone" @click="submitRepairDone">提交维修完成</el-button>
+        <el-button type="primary" :loading="submittingRepairDone" @click="submitRepairDone"
+          >提交维修完成</el-button
+        >
       </template>
     </el-dialog>
 
     <!-- 报废 -->
-    <el-dialog v-model="retireDialogVisible" title="报废" width="600px" :close-on-click-modal="false">
+    <el-dialog
+      v-model="retireDialogVisible"
+      title="报废"
+      width="600px"
+      :close-on-click-modal="false"
+    >
       <el-form :model="retireForm" label-width="100px">
         <el-form-item label="报废原因">
-          <el-input type="textarea" v-model="retireForm.remark" :rows="4" placeholder="填写报废原因/说明" />
+          <el-input
+            type="textarea"
+            v-model="retireForm.remark"
+            :rows="4"
+            placeholder="填写报废原因/说明"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="retireDialogVisible = false">取消</el-button>
-        <el-button type="danger" :loading="submittingRetire" @click="submitRetire">确认报废</el-button>
+        <el-button type="danger" :loading="submittingRetire" @click="submitRetire"
+          >确认报废</el-button
+        >
       </template>
     </el-dialog>
 
     <!-- 关键信息编辑：需「登记/编辑资产」权限 -->
-    <el-dialog v-model="editCoreDialogVisible" title="编辑资产关键信息（高风险）" width="720px" :close-on-click-modal="false">
+    <el-dialog
+      v-model="editCoreDialogVisible"
+      title="编辑资产关键信息（高风险）"
+      width="720px"
+      :close-on-click-modal="false"
+    >
       <el-alert
         type="warning"
         :closable="false"
@@ -327,7 +690,9 @@
       </el-form>
       <template #footer>
         <el-button @click="editCoreDialogVisible = false">取消</el-button>
-        <el-button type="danger" :loading="submittingEditCore" @click="submitEditCore">确认修改</el-button>
+        <el-button type="danger" :loading="submittingEditCore" @click="submitEditCore"
+          >确认修改</el-button
+        >
       </template>
     </el-dialog>
 
@@ -357,8 +722,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { apiRequest } from '../services/api'
 import { actionLabel } from '../actionLabel'
 import { useAuthStore } from '../stores/auth'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import DepartmentCascader from '../components/DepartmentCascader.vue'
+import EmployeePicker from '../components/EmployeePicker.vue'
 import { getPublicBaseURL } from '../lib/publicBaseUrl'
 import { copyTextToClipboardWithToast } from '../lib/clipboard'
 import { formatDepartmentDisplayLabel } from '../lib/departmentDisplay'
@@ -376,11 +742,25 @@ const asset = ref<any | null>(null)
 const records = ref<any[]>([])
 const repairs = ref<any[]>([])
 const campuses = ref<Array<{ id: number; name: string; sortOrder: number }>>([])
-const departments = ref<Array<{ id: number; name: string; displayPath?: string; campusId: number; parentId: number | null; sortOrder: number }>>([])
+const departments = ref<
+  Array<{
+    id: number
+    name: string
+    displayPath?: string
+    campusId: number
+    parentId: number | null
+    sortOrder: number
+  }>
+>([])
 
 const authStore = useAuthStore()
 const canOperations = computed(() => authStore.can('operations.execute'))
 const canEditAsset = computed(() => authStore.can('assets.write'))
+const canManualRecord = computed(() => canEditAsset.value && canOperations.value)
+const canDeleteAsset = computed(() => authStore.can('assets.delete'))
+const manualRecordCount = computed(
+  () => records.value.filter((record) => record.action === 'manual_note').length,
+)
 const changeLogs = ref<any[]>([])
 
 const transferQrDialogVisible = ref(false)
@@ -430,7 +810,14 @@ const uniqueUsers = computed(() => {
 const pendingSignUrl = computed(() => {
   if (asset.value?.status !== 'pending_confirmation') return ''
   const latestUnsigned = [...records.value]
-    .filter((r) => (r.action === 'check_out' || r.action === 'lend' || r.action === 'transfer') && !r.proofImage)
+    .filter(
+      (r) =>
+        (r.action === 'check_out' ||
+          r.action === 'pick_up' ||
+          r.action === 'lend' ||
+          r.action === 'transfer') &&
+        !r.proofImage,
+    )
     .sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime())[0]
   if (!latestUnsigned) return ''
   const dept =
@@ -464,7 +851,12 @@ async function copyTransferQrLink() {
   await copyTextToClipboardWithToast(transferQrSignUrl.value, '链接已复制')
 }
 
-async function showTransferSignQr(recordId: number | undefined, userName: string, departmentId: number | null, remark: string) {
+async function showTransferSignQr(
+  recordId: number | undefined,
+  userName: string,
+  departmentId: number | null,
+  remark: string,
+) {
   if (!recordId) {
     ElMessage.warning('未获取到签名记录编号，请刷新后从上方复制签名链接')
     return
@@ -502,26 +894,44 @@ const latestExpectedReturn = computed(() => {
 
 /** 流转时间线：最新在前，便于看到刚发生的归还等操作 */
 const sortedRecords = computed(() =>
-  [...records.value].sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime()),
+  [...records.value].sort(
+    (a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime(),
+  ),
 )
 const timelineItems = computed(() => {
+  const purchaseDate = asset.value?.purchaseDate
   const flow = sortedRecords.value.map((r: any) => ({
     key: `record-${r.id}`,
+    id: r.id,
     kind: 'record' as const,
-    time: r.actionDate,
+    // 入库记录的 actionDate 是提交时刻，但用户认知的"入库时间"是采购日期。
+    // 用 purchaseDate 排序，让导入历史 + 补录记录能按真实发生顺序展示。
+    time: r.action === 'stock_in' && purchaseDate ? purchaseDate : r.actionDate,
     title: actionLabel(r.action),
     action: String(r.action ?? ''),
     userName: r.userName,
     departmentDisplay: r.department?.displayPath ?? r.department?.name ?? '-',
     remark: r.remark ?? '-',
     recordOperatorName: r.operator?.realName?.trim() || r.operator?.username?.trim() || '',
-    expectedReturnDate: r.expectedReturnDate ? new Date(r.expectedReturnDate).toLocaleDateString() : '',
+    expectedReturnDate: r.expectedReturnDate
+      ? new Date(r.expectedReturnDate).toLocaleDateString()
+      : '',
     proofImage: r.proofImage ?? '',
   }))
   const edits = (changeLogs.value ?? []).map((l: any) => {
     const before = l?.detail?.before ?? {}
     const after = l?.detail?.after ?? {}
-    const keys = ['assetCode', 'serialNumber', 'brand', 'model', 'os', 'cpu', 'memory', 'storage', 'remark'] as const
+    const keys = [
+      'assetCode',
+      'serialNumber',
+      'brand',
+      'model',
+      'os',
+      'cpu',
+      'memory',
+      'storage',
+      'remark',
+    ] as const
     const labelMap: Record<(typeof keys)[number], string> = {
       assetCode: '电脑编号',
       serialNumber: '序列号',
@@ -556,9 +966,10 @@ function uuid() {
 }
 
 async function loadDepartments() {
-  const d = await apiRequest<{ items: any[]; campuses: Array<{ id: number; name: string; sortOrder: number }> }>(
-    '/api/departments/transfer-targets',
-  )
+  const d = await apiRequest<{
+    items: any[]
+    campuses: Array<{ id: number; name: string; sortOrder: number }>
+  }>('/api/departments/transfer-targets')
   departments.value = d.items ?? []
   campuses.value = d.campuses ?? []
 }
@@ -599,9 +1010,17 @@ const editCoreDialogVisible = ref(false)
 const submittingEditCore = ref(false)
 
 const transferForm = reactive<any>({
+  employeeId: null as number | null,
   userName: '',
   departmentId: null as number | null,
   remark: '',
+})
+
+const transferCampusId = computed<number | null>(() => {
+  const did = transferForm.departmentId
+  if (!did) return asset.value?.department?.campus?.id ?? asset.value?.department?.campusId ?? null
+  const dept = departments.value.find((d: any) => d.id === did)
+  return dept?.campusId ?? null
 })
 
 const stockTransferForm = reactive<any>({
@@ -637,6 +1056,7 @@ const editCoreForm = reactive<any>({
 })
 
 function openTransfer() {
+  transferForm.employeeId = asset.value?.currentEmployeeId ?? null
   transferForm.userName = asset.value?.currentUserName ?? ''
   transferForm.departmentId = asset.value?.department?.id ?? null
   transferForm.remark = ''
@@ -759,6 +1179,7 @@ async function submitTransfer() {
         requestId: uuid(),
         assetId,
         userName: transferForm.userName.trim(),
+        employeeId: transferForm.employeeId ?? undefined,
         departmentId: transferForm.departmentId,
         remark: transferForm.remark || undefined,
       },
@@ -766,7 +1187,12 @@ async function submitTransfer() {
     ElMessage.success('调拨已提交，请让接收人扫码签名确认')
     transferDialogVisible.value = false
     const rid = resolveRecordIdFromOpResult(result)
-    await showTransferSignQr(rid, transferForm.userName.trim(), transferForm.departmentId, transferForm.remark || '')
+    await showTransferSignQr(
+      rid,
+      transferForm.userName.trim(),
+      transferForm.departmentId,
+      transferForm.remark || '',
+    )
     await reload()
   } catch (e: any) {
     ElMessage.error(e?.message ?? '调拨失败')
@@ -778,7 +1204,8 @@ async function submitTransfer() {
 async function submitStockTransfer() {
   if (!asset.value) return
   if (!stockTransferForm.departmentId) return ElMessage.error('请选择目标部门')
-  if (stockTransferForm.departmentId === asset.value.departmentId) return ElMessage.warning('目标部门与当前部门一致')
+  if (stockTransferForm.departmentId === asset.value.departmentId)
+    return ElMessage.warning('目标部门与当前部门一致')
 
   submittingStockTransfer.value = true
   try {
@@ -874,6 +1301,145 @@ async function submitRetire() {
   }
 }
 
+const manualRecordVisible = ref(false)
+const manualRecordSubmitting = ref(false)
+const manualRecordForm = ref({
+  employeeId: null as number | null,
+  userName: '',
+  departmentId: null as number | null,
+  actionDate: null as Date | null,
+  remark: '',
+})
+const manualRecordCampusId = computed(() => {
+  const department = departments.value.find(
+    (item) => item.id === manualRecordForm.value.departmentId,
+  )
+  return (
+    department?.campusId ??
+    asset.value?.department?.campusId ??
+    asset.value?.department?.campus?.id ??
+    null
+  )
+})
+
+const resetSignatureVisible = ref(false)
+const resetSignatureSubmitting = ref(false)
+const resetSignatureRemark = ref('')
+const resetSignatureRecord = ref<{ id: number; userName?: string; assetCode?: string } | null>(null)
+
+function openResetSignature(record: any) {
+  resetSignatureRecord.value = {
+    id: Number(record.id ?? record.recordId),
+    userName: record.userName,
+    assetCode: asset.value?.assetCode,
+  }
+  resetSignatureRemark.value = ''
+  resetSignatureVisible.value = true
+}
+
+async function submitResetSignature() {
+  const target = resetSignatureRecord.value
+  if (!target?.id) return
+  resetSignatureSubmitting.value = true
+  try {
+    await apiRequest('/api/operations/reset-signature', {
+      method: 'POST',
+      body: {
+        requestId: `reset-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        recordId: target.id,
+        remark: resetSignatureRemark.value.trim() || undefined,
+      },
+    })
+    ElMessage.success('已作废原签字，等待重新签收')
+    resetSignatureVisible.value = false
+    resetSignatureRecord.value = null
+    await reload()
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '重置签字失败')
+  } finally {
+    resetSignatureSubmitting.value = false
+  }
+}
+
+async function submitManualRecord() {
+  const { employeeId, userName, departmentId, actionDate, remark } = manualRecordForm.value
+  if (!userName.trim()) return ElMessage.warning('请输入使用人')
+  if (!departmentId) return ElMessage.warning('请选择部门')
+  if (!actionDate) return ElMessage.warning('请选择使用日期')
+
+  manualRecordSubmitting.value = true
+  try {
+    await apiRequest('/api/operations/manual-record', {
+      method: 'POST',
+      body: {
+        requestId: `manual-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        assetId,
+        userName: userName.trim(),
+        employeeId: employeeId ?? undefined,
+        departmentId,
+        actionDate: actionDate.toISOString(),
+        remark: remark.trim() || undefined,
+      },
+    })
+    ElMessage.success('补录成功')
+    manualRecordVisible.value = false
+    manualRecordForm.value = {
+      employeeId: null,
+      userName: '',
+      departmentId: null,
+      actionDate: null,
+      remark: '',
+    }
+    await reload()
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '补录失败')
+  } finally {
+    manualRecordSubmitting.value = false
+  }
+}
+
+async function clearManualRecords() {
+  if (!asset.value || !manualRecordCount.value) return
+  try {
+    await ElMessageBox.confirm(
+      `确认清空 ${manualRecordCount.value} 条手动补录历史？真实流转记录不会受影响。`,
+      '高风险操作',
+      { type: 'error', confirmButtonText: '确认清空', cancelButtonText: '取消' },
+    )
+    await apiRequest(`/api/assets/${assetId}/manual-records`, { method: 'DELETE' })
+    ElMessage.success('补录历史已清空')
+    await reload()
+  } catch (e: any) {
+    if (e?.message) ElMessage.error(e.message)
+  }
+}
+
+async function deleteAsset() {
+  if (!asset.value) return
+  const assetCode = String(asset.value.assetCode ?? '')
+  try {
+    const { value } = await ElMessageBox.prompt(
+      `将永久删除资产、流转、维修和调拨消息数据。请输入资产编号 ${assetCode} 确认。`,
+      '删除资产',
+      {
+        type: 'error',
+        confirmButtonText: '永久删除',
+        cancelButtonText: '取消',
+        inputPlaceholder: assetCode,
+      },
+    )
+    if (String(value).trim() !== assetCode) {
+      ElMessage.error('资产编号不匹配，已取消删除')
+      return
+    }
+    await apiRequest(`/api/assets/${assetId}`, { method: 'DELETE' })
+    ElMessage.success('资产数据已删除')
+    await router.push('/assets')
+  } catch (e: any) {
+    if (e?.message) ElMessage.error(e.message)
+  }
+}
+
 onMounted(async () => {
   if (!Number.isFinite(assetId) || assetId <= 0) {
     ElMessage.error('无效的资产 ID')
@@ -902,6 +1468,12 @@ onMounted(async () => {
 .detail-id-hint {
   color: var(--ca-text-muted);
   font-size: 13px;
+}
+
+.detail-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .timeline-title {
@@ -1012,5 +1584,18 @@ onMounted(async () => {
 .qr-link {
   width: 100%;
   margin-top: 16px;
+}
+
+.employee-link {
+  color: inherit;
+  text-decoration: none;
+}
+.employee-link:hover {
+  text-decoration: underline;
+}
+.employee-no {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  margin-left: 2px;
 }
 </style>

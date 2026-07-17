@@ -15,11 +15,16 @@ export type Me = {
 
 type LoginResponse = { token: string; me: Me }
 
+/** fetchMe 缓存有效期（毫秒）。短过 LRU TTL 也够用：路由守卫每跳一次就用得上。 */
+const ME_TTL_MS = 5 * 60 * 1000
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     token: localStorage.getItem('token') as string | null,
     me: null as Me | null,
     hydrated: false,
+    /** 上次 fetchMe 成功时间戳，用于判断是否仍在 5 分钟缓存窗口内 */
+    meHydratedAt: 0,
   }),
   getters: {
     isAuthenticated: (state) => !!state.token,
@@ -38,6 +43,7 @@ export const useAuthStore = defineStore('auth', {
     clearToken() {
       this.token = null
       localStorage.removeItem('token')
+      this.meHydratedAt = 0
     },
     can(permission: string): boolean {
       if (!this.me) return false
@@ -51,10 +57,15 @@ export const useAuthStore = defineStore('auth', {
       })
       this.setToken(data.token)
       this.me = data.me
+      this.meHydratedAt = Date.now()
     },
     async fetchMe() {
+      if (this.me && Date.now() - this.meHydratedAt < ME_TTL_MS) {
+        return
+      }
       const data = await apiRequest<{ me: Me }>('/api/auth/me', { method: 'GET' })
       this.me = data.me
+      this.meHydratedAt = Date.now()
     },
     async logout() {
       if (this.token) {

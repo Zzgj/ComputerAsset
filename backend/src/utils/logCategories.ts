@@ -15,6 +15,8 @@ const ASSET_FLOW_ACTIONS = [
   '送修',
   '维修完成',
   '报废',
+  '手动补录流转历史',
+  '重置签字',
 ] as const
 
 export const LOG_CATEGORY_OPTIONS: Array<{ key: string; label: string }> = [

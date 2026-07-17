@@ -46,6 +46,8 @@
 
   --ca-transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --ca-transition-slow: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  --ca-ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ca-ease-out: cubic-bezier(0.33, 1, 0.68, 1);
 
   --el-color-primary: #4f46e5;
   --el-color-primary-light-3: #818cf8;
@@ -299,6 +301,54 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes ca-stagger-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ca-scale-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes ca-bounce-in {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
 .ca-animate {
   animation: ca-fade-in 0.4s ease-out;
+}
+
+.ca-stagger > * {
+  opacity: 0;
+  animation: ca-stagger-in 0.5s var(--ca-ease-out-expo) forwards;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+.ca-lift {
+  transition: transform var(--ca-transition), box-shadow var(--ca-transition);
+}
+
+.ca-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--ca-shadow-md);
+}
+
+.page-enter-active {
+  transition: opacity 0.15s ease, transform 0.15s var(--ca-ease-out-expo);
+}
+
+.page-leave-active {
+  transition: opacity 0.1s ease;
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.page-leave-to {
+  opacity: 0;
 }

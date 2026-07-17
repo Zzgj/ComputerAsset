@@ -50,6 +50,26 @@ export function applyCampusScopeToAssetCountWhere(where: Record<string, unknown>
   applyCampusScopeToAssetWhere(where, auth)
 }
 
+/** 员工：直接挂在 Employee.campusId */
+export function applyCampusScopeToEmployeeWhere(where: Record<string, unknown>, auth: AccessAuth): void {
+  if (auth.bypassAll || auth.campusesAll) return
+  if (!auth.campusIds.length) {
+    where.id = -1
+    return
+  }
+  const existing = where.campusId
+  if (typeof existing === 'number') {
+    // 用户指定了具体 campusId，与授权范围取交集
+    if (!auth.campusIds.includes(existing)) {
+      where.id = -1
+    }
+  } else if (existing && typeof existing === 'object' && existing !== null && !Array.isArray(existing)) {
+    where.campusId = { AND: [existing, { in: auth.campusIds }] }
+  } else {
+    where.campusId = { in: auth.campusIds }
+  }
+}
+
 export function campusIdsAllowed(auth: AccessAuth): number[] | null {
   if (auth.bypassAll || auth.campusesAll) return null
   return auth.campusIds

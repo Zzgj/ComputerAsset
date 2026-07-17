@@ -6,7 +6,7 @@
 
 覆盖电脑资产从入库到报废的完整生命周期，提供可视化仪表盘、细粒度权限控制与完整的审计追踪。
 
-[![Version](https://img.shields.io/badge/version-1.4.5-blue.svg)](https://github.com/Zzgj/ComputerAsset)
+[![Version](https://img.shields.io/badge/version-1.6.2-blue.svg)](https://github.com/Zzgj/ComputerAsset)
 [![License](https://img.shields.io/badge/license-ISC-green.svg)](https://opensource.org/licenses/ISC)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen.svg)](https://nodejs.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D.svg?logo=vue.js)](https://vuejs.org/)
@@ -48,33 +48,39 @@
 ### 资产全流程管理
 
 - **入库管理** — 支持设备模板自动填充，批量 Excel 导入
-- **出库 / 领用** — 直接出库或分配待领用，支持确认领用 / 取消分配
+- **出库 / 领用** — 直接出库或分配待领用，确认领用后需扫码签署领用单
 - **借用 / 归还** — 完整的借用与归还流转
-- **调拨** — 跨部门资产调拨
+- **调拨** — 跨部门 / 跨园区资产调拨，附扫码签字确认与跨园区消息提醒
 - **维修管理** — 送修 / 维修完成，记录维修结果
 - **报废处理** — 资产退役与报废登记
+- **历史补录** — 手动补录历史使用人记录（适用于 Excel 导入数据缺少完整流转历史的场景）
+- **精准筛选** — 资产列表支持多状态、园区联动部门树及上级部门包含全部子部门
 
 ### 可视化仪表盘
 
 - 资产总量统计与状态分布图表
 - 部门资产分布概览
-- 到期提醒与预警通知
+- 三类到期提醒（借用逾期 / 即将到期 / 待领用超时），支持点击编号跳转资产详情
+- "一人多名下资产"风险提示
 
 ### 审计与追踪
 
 - 出入库记录查询（支持分页、搜索、日期范围筛选）
-- 完整操作日志（摘要 + 结构化详情弹窗）
-- 资产详情时间线（含全部历史流转与关键信息变更前后值）
+- 完整操作日志（摘要 + 结构化详情弹窗），按业务类别分组
+- 资产详情时间线（含全部历史流转与关键信息变更前后值，手动补录记录以橙色节点区分）
+- 曾用人卡片自动汇总历史使用过该资产的所有人员
+- 员工详情保留历史持有电脑，资产归还后仍可按员工追溯
 
 ### 系统管理
 
-- **角色权限** — `super_admin` / `admin` / `viewer` 三级角色
-- **用户管理** — 账号创建、停用、密码重置
+- **角色权限** — 基于权限键 + 园区范围的细粒度 RBAC（默认 `super_admin` / `admin` / `viewer`，可自定义）
+- **用户管理** — 账号创建、停用、密码重置；有审计历史的账号仅可停用，不可物理删除
 - **部门管理** — 组织架构维护
 - **设备模板** — 型号模板管理，关联资产数统计
 - **系统配置** — 一人一机策略、提醒天数等
-- **数据备份** — SQLite 数据库文件下载备份
+- **数据备份** — SQLite 数据库文件下载备份，自动按数量轮转
 - **Excel 导入导出** — 批量数据操作，支持预校验与无效行分析
+- **健康检查** — `/api/health/live`（进程存活）与 `/api/health/ready`（含 DB 探活）双探针
 
 ---
 
@@ -263,7 +269,12 @@ pnpm run dev                  # 启动开发服务器
 | `JWT_SECRET` | — | JWT 签名密钥（**生产环境必须修改**） |
 | `JWT_EXPIRES_IN` | `24h` | JWT 令牌有效期 |
 | `BACKUP_DIR` | `backup` | 数据库备份目录（相对于 backend/） |
+| `BACKUP_RETENTION_COUNT` | `30` | 自动备份保留份数，0 表示不清理 |
 | `EXCEL_IMPORT_MAX_MB` | `20` | Excel 导入文件大小上限（MB），设为 `0` 不限制 |
+| `TRUST_PROXY` | `loopback` | 反代后真实客户端 IP 识别策略，详见 Express trust proxy 文档 |
+| `SLOW_QUERY_MS` | `200` | Prisma 慢查询阈值（毫秒），仅 dev 环境生效；0 表示关闭 |
+| `LOG_LEVEL` | dev=`debug` / prod=`info` | 日志级别：debug / info / warn / error |
+| `AUTO_MIGRATE` | — | 设为 `1` 时启动期自动跑 `prisma migrate deploy`（仅在直接 `node dist/server.js` 启动且部署脚本未先迁移时打开） |
 
 前端开发环境可在 `frontend/.env.development` 中配置 API 代理目标：
 
@@ -329,18 +340,13 @@ pnpm run start                    # 启动生产服务器（默认读取 fronten
 ## 资产状态流转
 
 ```text
-┌──────┐    分配     ┌────────┐   确认领用   ┌───────┐
-│ 在库 │ ──────────▶ │ 待领用 │ ──────────▶ │ 使用中 │
-└──┬───┘             └────┬───┘              └───┬───┘
-   │                      │ 取消分配              │
-   │                      ▼                      │ 归还
-   │                   ┌──────┐                  │
-   │   直接出库 ──────▶│ 使用中│◀─────────────────┘
-   │                   └──────┘
-   │
-   │   借出     ┌────────┐   归还
-   ├──────────▶ │ 借用中 │ ──────────▶ 在库
-   │            └────────┘
+┌──────┐    分配     ┌────────┐   确认领用   ┌────────┐   签字   ┌───────┐
+│ 在库 │ ──────────▶ │ 待领用 │ ──────────▶ │ 待签字 │ ──────▶ │ 使用中 │
+└──┬───┘             └────┬───┘              └────────┘          └───┬───┘
+   │                      │ 取消分配                                  │
+   │                      ▼                                          │ 归还
+   │                    在库                                         ▼
+   │   直接出库 / 借出 ─────▶ 待签字 ──────▶ 使用中 / 借用中 ──────▶ 在库
    │
    ▼ (任意状态)
 ┌────────┐   维修完成   ┌──────┐
@@ -357,16 +363,16 @@ pnpm run start                    # 启动生产服务器（默认读取 fronten
 
 ## 权限模型
 
-系统内置三种角色，权限逐级递增：
+系统内置三种角色，实际授权以权限键和园区范围为准：
 
 | 功能模块 | super_admin | admin | viewer |
 |----------|:-----------:|:-----:|:------:|
 | 仪表盘 / 资产列表 / 资产详情 / 记录查看 | ✅ | ✅ | ✅ |
 | 入库 / 出库 / 借用 / 归还 / 调拨 / 维修 / 报废 | ✅ | ✅ | ❌ |
 | 部门管理 / 设备模板管理 / 导入导出 | ✅ | ✅ | ❌ |
-| 用户管理 / 角色管理 / 系统配置 / 数据备份 | ✅ | ❌ | ❌ |
-| 删除资产 | ✅ | ❌ | ❌ |
-| 编辑资产关键信息（编号 / 序列号 / 品牌等） | ✅（需二次确认） | ❌ | ❌ |
+| 用户管理 / 角色管理 / 系统配置 / 数据备份 | ✅ | ✅ | ❌ |
+| 删除资产 / 清空手动补录 | ✅ | ✅（需 `assets.delete`） | ❌ |
+| 编辑资产关键信息（编号 / 序列号 / 品牌等） | ✅（需二次确认） | ✅ | ❌ |
 
 ---
 
@@ -378,7 +384,7 @@ pnpm run start                    # 启动生产服务器（默认读取 fronten
 |----------|----------|
 | `/api/auth` | 认证（登录 / 登出 / 令牌刷新） |
 | `/api/assets` | 资产 CRUD |
-| `/api/operations` | 业务操作（出库、借用、归还、调拨、维修、报废等） |
+| `/api/operations` | 业务操作（出库、借用、归还、调拨、维修、报废、手动补录等） |
 | `/api/dashboard` | 仪表盘统计数据 |
 | `/api/records` | 出入库记录 |
 | `/api/logs` | 操作日志 |
@@ -389,7 +395,8 @@ pnpm run start                    # 启动生产服务器（默认读取 fronten
 | `/api/config` | 系统配置 |
 | `/api/excel` | Excel 导入导出 |
 | `/api/backup` | 数据库备份 |
-| `/api/health` | 健康检查 |
+| `/api/transfer-notifications` | 跨园区调拨消息 |
+| `/api/health` `/api/health/live` `/api/health/ready` | 健康检查（live 仅进程；ready 含 DB） |
 
 ---
 
@@ -422,6 +429,113 @@ pnpm run start                    # 启动生产服务器（默认读取 fronten
 ---
 
 ## 更新日志
+
+### v1.6.2
+
+**新功能**
+- 员工离职办理页新增名下资产一键归还，批量归还至各园区「未分配」部门并记录完整审计日志
+- 员工详情新增历史持有资产，归还后仍可查看电脑、当时部门和最近关联日期
+- 拥有 `assets.delete` 权限的管理员可删除错误资产的全部业务数据，或仅清空手动补录历史
+
+**流程与体验优化**
+- 待领用资产点击「确认领用」后进入待签字，弹出二维码，签署领用单后才进入使用中
+- 资产列表默认按最近处理时间倒序，支持多状态同时筛选
+- 部门筛选改为园区联动的部门树；选择上级部门时自动包含全部下级部门
+- 快速新建员工的园区上下文改为由目标部门决定，页面明确提示切换方式
+
+**修复**
+- 删除已有业务记录的用户时，明确提示审计外键保护及停用方式，不再向前端暴露 Prisma 错误
+
+### v1.6.1
+
+**修复**
+- 快速新建员工对话框未锁定当前操作所在园区，跨园区选择会导致后续提交被 `assertEmployeeAccess` 拒绝并污染员工数据
+- 签字重置后原签名图片丢失：新建的 `signature_reset` 记录现在保留原 `proofImage`，资产详情时间线显示为「原领用签名（已作废）」
+- 路由守卫遇到网络抖动 / 5xx 时强制踢出登录：现仅在 401 时登出，其他错误复用缓存 `me` 继续渲染
+- 版本公告抽屉仅展示前 5 条历史版本：改为完整展示全部历史
+
+### v1.6.0
+
+**新功能**
+- 员工管理模块：新增员工档案（员工编号、姓名、所属园区/部门、状态），支持新建、编辑、跨园区调拨
+- 员工外部资源记录：手机卡 / 邮箱 / 域控账号 / 工牌 / 门禁卡 / 工位等，统一记录 active / closed 状态
+- 员工离职办理：聚合外部资源勾选关闭 + 未归还 IT 资产清单提示 + 强制完成 + 操作日志全留痕
+- 出库 / 借用 / 调拨页员工选择器：双模式（园区内员工远程搜索 + 找不到时快速新建）
+- 资产详情与列表展示员工链接，可一键跳转员工详情页
+- 历史数据自动回填员工档案（首启自动从 `Asset.currentUserName` 生成 `AUTO-{n}` 工号，统一归属泰鼎）
+- 调拨私下交接提醒：调拨对话框与签字确认页增加红字横幅，签字页增加「我已知晓」勾选框
+- 签字重置功能：IT 人员可在资产详情页对已签字记录执行「重新签收」，原签名作废、资产回到待签字状态
+- 版本升级公告：侧边栏铃铛图标 + 红点提醒，弹窗展示最新 5 个版本更新内容，已读状态存 localStorage
+
+**修复**
+- 自定义角色看到「补录历史」按钮但无法使用（按钮改为同时要求 `assets.write` + `operations.execute`）
+- 改密接口允许全空格密码（增加 trim 后长度校验）
+- `manual-record` 端点缺少目标部门的园区权限校验
+
+### v1.5.3
+
+**修复**
+- `deploy.bat` 的 `MIGRATE_EXIT` 判断在 `enabledelayedexpansion` 模式下被 `set` 重置为 0，导致 migration 失败时仍报 `[OK] Migration done`、成功时反报 `[FAIL]`；改用 `errorlevel` 直接判断
+- `deploy.bat` 排查清单补充"Windows TEMP 目录缺失"场景（如 `C:\Users\...\Temp\2` 不存在导致 Prisma CLI 启动崩溃）
+- 调拨消息页 tab 切换时 `el-empty` 与 `el-table` 互斥切换造成的导航栏闪烁；改用 `el-table` 的 `#empty` 插槽统一蒙层
+
+### v1.5.2
+
+**修复**
+- 部署脚本 `deploy/package-scripts/deploy.bat`：Prisma migrate 失败不再被静默吞为 WARN，提示具体排查方向并询问是否继续启动；避免了"deploy 看似成功、运行时缺表 500"的误导
+- 文档：在升级离线部署包时，若旧 `data/dev.db` 存在但 migration 不完整，需手动跑 `node node_modules/prisma/build/index.js migrate deploy` 补齐
+
+### v1.5.1
+
+**修复**
+- 修复流转历史时间线中补录记录的位置错乱：入库记录改为按 `asset.purchaseDate` 排序，让"采购日期早于补录日期"的入库记录正确显示在补录之下
+
+### v1.5.0
+
+**架构重构（六阶段渐进交付）**
+
+聚焦健壮性、性能、可维护性，全部改动保持业务功能与 API 契约不变；每阶段独立可验证、可回滚。
+
+**阶段 1 — 基础加固与可观测性**
+- `app.set('trust proxy')`：反代后 `OperationLog.ipAddress` 反映真实客户端 IP
+- 全请求 `X-Request-Id` 注入与回写，跨日志/前端 trace 关联
+- 轻量结构化日志（dev 文本 / prod JSON），errorHandler 5xx 统一上报
+- `/health/live`、`/health/ready`、`/health` 三级健康检查（含 DB 探活）
+- 备份目录按 `BACKUP_RETENTION_COUNT` 轮转（默认保留 30 份）
+- Prisma 慢查询日志（仅 dev，>200ms 打 warn）
+
+**阶段 2 — 数据层正确性**
+- 新增 6 个查询索引：`Asset` 的 status/deviceType/currentUserName/(departmentId,status)；`AssetRecord` 的 (assetId,createdAt)/userName
+- 高频查询从 `SCAN` 切换为 `SEARCH USING INDEX`
+- `in_user` 拼写修复 + 泰鼎部门归位迁移到 SQL migration，启动期不再重扫全表
+- `splitParenNamedDepartments` 用 `SystemConfig` 标记一次性化
+- `AUTO_MIGRATE=1` 启动兜底（直接 `node dist/server.js` 也能自动迁移）
+- JSON 请求体分级：全局 256KB、签字端点 2MB
+
+**阶段 3 — 性能与流程抽象**
+- 部门路径进程内缓存（`getDepartmentPathSnapshot`），9 处 routes 复用、5 处写入点失效
+- `requireAuth` LRU 缓存 sessionToken（10s TTL，max 2000），每受保护请求 DB roundtrip 显著下降
+- `runFlowOperation` 高阶函数收敛 7 个简单流转端点，operations.ts 1056→761 行
+- Dashboard 借出/待领用通知合并为单次查询（`include: { records: { take: 1 } }`）
+- 顺手修复 logout 后旧 token 仍可用的 bug
+
+**阶段 4 — 类型与校验收敛**
+- `HttpError` 类 + 静态工厂（badRequest/unauthorized/forbidden/notFound/conflict）
+- `Express.Request` 类型扩展（access/auth/requestId）消除 `(req as any)`
+- 引入 zod + `validate` 中间件，覆盖 auth 与 operations 11 个端点
+- errorHandler 识别 ZodError → 400 + `VALIDATION_FAILED` + 字段级 details
+- 引入 vitest，28 个单测覆盖纯函数 + HttpError + LRU 缓存
+
+**阶段 5 — 前端体验**
+- 路由懒加载：19 页中 15 页改 dynamic import，14 个独立 chunk 拆出
+- `useApi` composable：统一 loading + ElMessage 错误处理样板
+- `fetchMe` 5 分钟缓存：路由切换不再重复请求 `/api/auth/me`
+
+**阶段 6 — 仪表盘通知与流转历史补录**
+- 仪表盘三类通知（逾期 / 即将到期 / 待领用超时）全部展开详情表格，电脑编号可点击跳转资产详情
+- 资产详情页流转历史卡片新增"补录历史"功能，可手动补录 Excel 导入前的历史使用人记录
+- 新增 `AssetRecordAction.manual_note` 枚举值，时间线以橙色节点 + 标签区分手动补录
+- 曾用人卡片自动反映补录数据
 
 ### v1.4.5
 

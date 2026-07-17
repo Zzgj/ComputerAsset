@@ -1,4 +1,11 @@
 import type { NextFunction, Request, Response } from 'express'
+import { ZodError } from 'zod'
+
+import { logger } from '../utils/logger'
+import { HttpError } from '../utils/httpError'
+
+/** stack 截断长度：足够定位调用链，又不会让单条日志膨胀到几 KB */
+const STACK_LOG_MAX = 1500
 
 type AppError = {
   statusCode?: number
@@ -8,14 +15,32 @@ type AppError = {
 }
 
 export function errorHandler(
-  err: AppError & { code?: string; meta?: unknown },
-  _req: Request,
+  err: AppError & { code?: string; meta?: unknown; stack?: string },
+  req: Request,
   res: Response,
   _next: NextFunction,
 ) {
   let statusCode = err.statusCode ?? 500
   let message = err.message ?? 'Internal Server Error'
   let code = err.code
+  let details: unknown = err.details
+
+  // ZodError 翻译为 400 + 字段级 issue 列表
+  if (err instanceof ZodError) {
+    statusCode = 400
+    code = 'VALIDATION_FAILED'
+    message = '请求参数校验失败'
+    details = err.issues.map((i) => ({
+      path: i.path.join('.'),
+      code: i.code,
+      message: i.message,
+    }))
+  } else if (err instanceof HttpError) {
+    statusCode = err.statusCode
+    message = err.message
+    code = err.code
+    details = err.details
+  }
 
   const normalizedErrCode = typeof err?.code === 'string' ? err.code.trim() : String(err?.code ?? '')
   const normalizedMsg = typeof message === 'string' ? message : String(message)
@@ -52,12 +77,27 @@ export function errorHandler(
     }
   }
 
+  // 5xx 之前完全静默；现在统一上报，便于内网生产环境复盘
+  if (statusCode >= 500) {
+    const stack = typeof err.stack === 'string' && err.stack.length > STACK_LOG_MAX
+      ? err.stack.slice(0, STACK_LOG_MAX) + '…(truncated)'
+      : err.stack
+    logger.error('request failed', {
+      requestId: res.locals.requestId,
+      method: req.method,
+      path: req.originalUrl,
+      statusCode,
+      code,
+      message,
+      stack,
+    })
+  }
+
   res.status(statusCode).json({
     error: {
       message,
       code,
-      details: err.details,
+      details,
     },
   })
 }
-

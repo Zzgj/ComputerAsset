@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { apiRequest } from './services/api'
 import { useAuthStore } from './stores/auth'
 import { useIdleTimer } from './composables/useIdleTimer'
+import { changelog } from './data/changelog'
 import appPkg from '../package.json'
 
 const route = useRoute()
@@ -52,6 +53,24 @@ const activeMenu = computed(() => {
 
 type NavItem = { path: string; label: string; perm: string; icon: string }
 
+const navIcons: Record<string, string> = {
+  dashboard: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+  list: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>',
+  records: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+  log: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  'stock-in': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="12 3 12 15"/><polyline points="8 11 12 15 16 11"/><path d="M20 16v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4"/></svg>',
+  'stock-out': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="12 15 12 3"/><polyline points="8 7 12 3 16 7"/><path d="M20 16v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4"/></svg>',
+  return: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>',
+  message: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  import: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
+  template: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>',
+  department: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  users: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  role: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  config: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1.08 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1.08z"/></svg>',
+  backup: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>',
+}
+
 const sectionCommon: NavItem[] = [
   { path: '/dashboard', label: '仪表盘', perm: 'dashboard.view', icon: 'dashboard' },
   { path: '/assets', label: '资产列表', perm: 'assets.read', icon: 'list' },
@@ -68,6 +87,7 @@ const sectionBusiness: NavItem[] = [
 ]
 
 const sectionManage: NavItem[] = [
+  { path: '/employees', label: '员工管理', perm: 'employees.read', icon: 'users' },
   { path: '/templates', label: '设备型号管理', perm: 'templates.manage', icon: 'template' },
   { path: '/departments', label: '部门管理', perm: 'departments.manage', icon: 'department' },
 ]
@@ -109,6 +129,27 @@ const hasAnyFiltered = computed(() => {
 function go(path: string) {
   if (route.path !== path) router.push(path)
 }
+
+const collapsedSections = ref<Record<string, boolean>>({})
+function toggleSection(key: string) {
+  collapsedSections.value[key] = !collapsedSections.value[key]
+}
+
+const indicatorTop = ref(0)
+const sidebarNavRef = ref<HTMLElement | null>(null)
+
+function updateIndicator() {
+  nextTick(() => {
+    if (!sidebarNavRef.value) return
+    const active = sidebarNavRef.value.querySelector('.nav-item.active') as HTMLElement | null
+    if (active) {
+      indicatorTop.value = active.offsetTop
+    }
+  })
+}
+
+watch(activeMenu, updateIndicator)
+onMounted(updateIndicator)
 
 async function loadTransferUnreadCount(showNotice = false) {
   if (!authStore.can('operations.execute')) {
@@ -198,6 +239,34 @@ async function submitChangePassword() {
     changingPwd.value = false
   }
 }
+
+const CHANGELOG_STORAGE_KEY = 'changelogReadVersions'
+const changelogVisible = ref(false)
+const displayedChangelog = computed(() => changelog)
+const hasUnreadChangelog = computed(() => {
+  const latest = changelog[0]?.version
+  if (!latest) return false
+  try {
+    const read: string[] = JSON.parse(localStorage.getItem(CHANGELOG_STORAGE_KEY) || '[]')
+    return !read.includes(latest)
+  } catch { return true }
+})
+
+function openChangelog() {
+  changelogVisible.value = true
+  const latest = changelog[0]?.version
+  if (latest) {
+    try {
+      const read: string[] = JSON.parse(localStorage.getItem(CHANGELOG_STORAGE_KEY) || '[]')
+      if (!read.includes(latest)) {
+        read.push(latest)
+        localStorage.setItem(CHANGELOG_STORAGE_KEY, JSON.stringify(read.slice(-20)))
+      }
+    } catch {
+      localStorage.setItem(CHANGELOG_STORAGE_KEY, JSON.stringify([latest]))
+    }
+  }
+}
 </script>
 
 <template>
@@ -239,66 +308,87 @@ async function submitChangePassword() {
         />
       </div>
 
-      <nav class="sidebar-nav">
+      <nav class="sidebar-nav" ref="sidebarNavRef">
+        <div class="nav-indicator" :style="{ top: indicatorTop + 'px' }"></div>
         <template v-if="sectionCommonFiltered.length">
-          <div class="nav-group-label">常用</div>
-          <div
-            v-for="item in sectionCommonFiltered"
-            :key="item.path"
-            :class="['nav-item', { active: activeMenu === item.path }]"
-            @click="go(item.path)"
-          >
-            <span class="nav-dot"></span>
-            <span class="nav-label">{{ item.label }}</span>
+          <div class="nav-group-label" @click="toggleSection('common')">
+            <span>常用</span>
+            <svg :class="['nav-group-arrow', { collapsed: collapsedSections.common }]" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div :class="['nav-group-items', { collapsed: collapsedSections.common }]">
+            <div
+              v-for="item in sectionCommonFiltered"
+              :key="item.path"
+              :class="['nav-item', { active: activeMenu === item.path }]"
+              @click="go(item.path)"
+            >
+              <span class="nav-icon" v-html="navIcons[item.icon]"></span>
+              <span class="nav-label">{{ item.label }}</span>
+            </div>
           </div>
         </template>
 
         <template v-if="sectionBusinessFiltered.length">
-          <div class="nav-group-label">业务操作</div>
-          <div
-            v-for="item in sectionBusinessFiltered"
-            :key="item.path"
-            :class="['nav-item', { active: activeMenu === item.path }]"
-            @click="go(item.path)"
-          >
-            <span class="nav-dot"></span>
-            <span class="nav-label">{{ item.label }}</span>
-            <el-tag
-              v-if="item.path === '/transfer-notifications' && transferUnreadCount"
-              type="danger"
-              effect="dark"
-              size="small"
-              round
-              class="nav-badge"
+          <div class="nav-group-label" @click="toggleSection('business')">
+            <span>业务操作</span>
+            <svg :class="['nav-group-arrow', { collapsed: collapsedSections.business }]" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div :class="['nav-group-items', { collapsed: collapsedSections.business }]">
+            <div
+              v-for="item in sectionBusinessFiltered"
+              :key="item.path"
+              :class="['nav-item', { active: activeMenu === item.path }]"
+              @click="go(item.path)"
             >
-              {{ transferUnreadCount }}
-            </el-tag>
+              <span class="nav-icon" v-html="navIcons[item.icon]"></span>
+              <span class="nav-label">{{ item.label }}</span>
+              <el-tag
+                v-if="item.path === '/transfer-notifications' && transferUnreadCount"
+                type="danger"
+                effect="dark"
+                size="small"
+                round
+                class="nav-badge"
+              >
+                {{ transferUnreadCount }}
+              </el-tag>
+            </div>
           </div>
         </template>
 
         <template v-if="sectionManageFiltered.length">
-          <div class="nav-group-label">基础管理</div>
-          <div
-            v-for="item in sectionManageFiltered"
-            :key="item.path"
-            :class="['nav-item', { active: activeMenu === item.path }]"
-            @click="go(item.path)"
-          >
-            <span class="nav-dot"></span>
-            <span class="nav-label">{{ item.label }}</span>
+          <div class="nav-group-label" @click="toggleSection('manage')">
+            <span>基础管理</span>
+            <svg :class="['nav-group-arrow', { collapsed: collapsedSections.manage }]" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div :class="['nav-group-items', { collapsed: collapsedSections.manage }]">
+            <div
+              v-for="item in sectionManageFiltered"
+              :key="item.path"
+              :class="['nav-item', { active: activeMenu === item.path }]"
+              @click="go(item.path)"
+            >
+              <span class="nav-icon" v-html="navIcons[item.icon]"></span>
+              <span class="nav-label">{{ item.label }}</span>
+            </div>
           </div>
         </template>
 
         <template v-if="sectionSystemFiltered.length">
-          <div class="nav-group-label">系统管理</div>
-          <div
-            v-for="item in sectionSystemFiltered"
-            :key="item.path"
-            :class="['nav-item', { active: activeMenu === item.path }]"
-            @click="go(item.path)"
-          >
-            <span class="nav-dot"></span>
-            <span class="nav-label">{{ item.label }}</span>
+          <div class="nav-group-label" @click="toggleSection('system')">
+            <span>系统管理</span>
+            <svg :class="['nav-group-arrow', { collapsed: collapsedSections.system }]" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div :class="['nav-group-items', { collapsed: collapsedSections.system }]">
+            <div
+              v-for="item in sectionSystemFiltered"
+              :key="item.path"
+              :class="['nav-item', { active: activeMenu === item.path }]"
+              @click="go(item.path)"
+            >
+              <span class="nav-icon" v-html="navIcons[item.icon]"></span>
+              <span class="nav-label">{{ item.label }}</span>
+            </div>
           </div>
         </template>
 
@@ -308,6 +398,11 @@ async function submitChangePassword() {
       </nav>
 
       <div class="sidebar-footer">
+        <button class="sidebar-action-btn" @click="openChangelog">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          版本公告
+          <span v-if="hasUnreadChangelog" class="changelog-dot" />
+        </button>
         <button class="sidebar-action-btn" @click="openChangePassword">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           修改密码
@@ -320,7 +415,11 @@ async function submitChangePassword() {
     </aside>
 
     <main class="main-content">
-      <router-view />
+      <router-view v-slot="{ Component }">
+        <transition name="page" mode="out-in">
+          <component :is="Component" />
+        </transition>
+      </router-view>
     </main>
   </div>
 
@@ -339,6 +438,24 @@ async function submitChangePassword() {
     <template #footer>
       <el-button @click="changePwdVisible = false">取消</el-button>
       <el-button type="primary" :loading="changingPwd" @click="submitChangePassword">确认修改</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 版本公告 -->
+  <el-dialog v-model="changelogVisible" title="版本更新公告" width="560px">
+    <div class="changelog-list">
+      <div v-for="entry in displayedChangelog" :key="entry.version" class="changelog-entry">
+        <div class="changelog-version-header">
+          <el-tag type="primary" effect="dark" size="small">v{{ entry.version }}</el-tag>
+          <span class="changelog-date">{{ entry.date }}</span>
+        </div>
+        <ul class="changelog-changes">
+          <li v-for="(c, i) in entry.changes" :key="i">{{ c }}</li>
+        </ul>
+      </div>
+    </div>
+    <template #footer>
+      <el-button type="primary" @click="changelogVisible = false">知道了</el-button>
     </template>
   </el-dialog>
 
@@ -488,6 +605,7 @@ async function submitChangePassword() {
   flex: 1;
   overflow-y: auto;
   padding: 8px 12px;
+  position: relative;
 }
 
 .sidebar-nav::-webkit-scrollbar {
@@ -499,6 +617,17 @@ async function submitChangePassword() {
   border-radius: 2px;
 }
 
+.nav-indicator {
+  position: absolute;
+  left: 0;
+  width: 3px;
+  height: 36px;
+  background: #818cf8;
+  border-radius: 0 3px 3px 0;
+  transition: top 0.25s var(--ca-ease-out-expo);
+  box-shadow: 0 0 8px rgba(129, 140, 248, 0.4);
+}
+
 .nav-group-label {
   font-size: 10px;
   font-weight: 700;
@@ -506,6 +635,36 @@ async function submitChangePassword() {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   padding: 16px 12px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--ca-transition);
+}
+
+.nav-group-label:hover {
+  color: rgba(165, 180, 252, 0.7);
+}
+
+.nav-group-arrow {
+  transition: transform 0.25s var(--ca-ease-out-expo);
+}
+
+.nav-group-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+
+.nav-group-items {
+  max-height: 500px;
+  overflow: hidden;
+  transition: max-height 0.3s var(--ca-ease-out-expo), opacity 0.2s ease;
+  opacity: 1;
+}
+
+.nav-group-items.collapsed {
+  max-height: 0;
+  opacity: 0;
 }
 
 .nav-item {
@@ -527,18 +686,25 @@ async function submitChangePassword() {
   background: rgba(255, 255, 255, 0.12);
 }
 
-.nav-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(165, 180, 252, 0.3);
+.nav-icon {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  color: rgba(165, 180, 252, 0.5);
   transition: all var(--ca-transition);
 }
 
-.nav-item.active .nav-dot {
-  background: #818cf8;
-  box-shadow: 0 0 8px rgba(129, 140, 248, 0.5);
+.nav-item.active .nav-icon {
+  color: #818cf8;
+  filter: drop-shadow(0 0 4px rgba(129, 140, 248, 0.5));
+}
+
+.nav-item:hover .nav-icon {
+  color: rgba(199, 210, 254, 0.9);
+  transform: scale(1.1);
 }
 
 .nav-label {
@@ -603,6 +769,49 @@ async function submitChangePassword() {
 .sidebar-action-btn.logout:hover {
   color: #fca5a5;
   background: rgba(239, 68, 68, 0.1);
+}
+
+.changelog-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.changelog-list {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.changelog-entry {
+  padding: 12px 0;
+  border-bottom: 1px dashed var(--ca-border-light);
+}
+
+.changelog-entry:last-child {
+  border-bottom: none;
+}
+
+.changelog-version-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.changelog-date {
+  font-size: 13px;
+  color: var(--ca-text-secondary);
+}
+
+.changelog-changes {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--ca-text-primary);
+  font-size: 14px;
+  line-height: 1.7;
 }
 
 .main-content {

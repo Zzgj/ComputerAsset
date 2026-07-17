@@ -2,24 +2,29 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import { useAuthStore } from '../stores/auth'
 
+// 首屏热路径页面保持 eager import：登录后立即用到，懒加载会引入额外 chunk 请求
 import LoginPage from '../pages/LoginPage.vue'
 import SignaturePage from '../pages/SignaturePage.vue'
 import DashboardPage from '../pages/DashboardPage.vue'
 import AssetsPage from '../pages/AssetsPage.vue'
-import AssetDetailPage from '../pages/AssetDetailPage.vue'
-import StockInPage from '../pages/StockInPage.vue'
-import StockOutPage from '../pages/StockOutPage.vue'
-import ReturnPage from '../pages/ReturnPage.vue'
-import RecordsPage from '../pages/RecordsPage.vue'
-import TemplatesPage from '../pages/TemplatesPage.vue'
-import DepartmentsPage from '../pages/DepartmentsPage.vue'
-import UsersPage from '../pages/UsersPage.vue'
-import RolesPage from '../pages/RolesPage.vue'
-import ConfigPage from '../pages/ConfigPage.vue'
-import LogsPage from '../pages/LogsPage.vue'
-import ImportPage from '../pages/ImportPage.vue'
-import BackupPage from '../pages/BackupPage.vue'
-import TransferNotificationsPage from '../pages/TransferNotificationsPage.vue'
+
+// 其余页面按需异步加载，Vite 自动 code-split
+const AssetDetailPage = () => import('../pages/AssetDetailPage.vue')
+const StockInPage = () => import('../pages/StockInPage.vue')
+const StockOutPage = () => import('../pages/StockOutPage.vue')
+const ReturnPage = () => import('../pages/ReturnPage.vue')
+const RecordsPage = () => import('../pages/RecordsPage.vue')
+const TemplatesPage = () => import('../pages/TemplatesPage.vue')
+const DepartmentsPage = () => import('../pages/DepartmentsPage.vue')
+const UsersPage = () => import('../pages/UsersPage.vue')
+const RolesPage = () => import('../pages/RolesPage.vue')
+const ConfigPage = () => import('../pages/ConfigPage.vue')
+const LogsPage = () => import('../pages/LogsPage.vue')
+const ImportPage = () => import('../pages/ImportPage.vue')
+const BackupPage = () => import('../pages/BackupPage.vue')
+const TransferNotificationsPage = () => import('../pages/TransferNotificationsPage.vue')
+const EmployeesPage = () => import('../pages/EmployeesPage.vue')
+const EmployeeDetailPage = () => import('../pages/EmployeeDetailPage.vue')
 
 type Meta = {
   public?: boolean
@@ -97,6 +102,18 @@ const router = createRouter({
       meta: { requiresAuth: true, permissions: ['records.read'], title: '出入库记录' } satisfies Meta,
     },
     {
+      path: '/employees',
+      name: 'employees',
+      component: EmployeesPage,
+      meta: { requiresAuth: true, permissions: ['employees.read'], title: '员工管理' } satisfies Meta,
+    },
+    {
+      path: '/employees/:id',
+      name: 'employeeDetail',
+      component: EmployeeDetailPage,
+      meta: { requiresAuth: true, permissions: ['employees.read'], title: '员工详情' } satisfies Meta,
+    },
+    {
       path: '/templates',
       name: 'templates',
       component: TemplatesPage,
@@ -166,11 +183,16 @@ router.beforeEach(async (to, _from, next) => {
     return next('/login')
   }
 
-  if (!authStore.me) {
-    try {
-      await authStore.fetchMe()
-    } catch {
+  // fetchMe 内部已含 5 分钟缓存：me 已存在且未过期时直接返回，仅在过期或首次调用才发请求
+  try {
+    await authStore.fetchMe()
+  } catch (e: any) {
+    if (e?.status === 401) {
       await authStore.logout()
+      return next('/login')
+    }
+    // 非 401 错误（网络超时、5xx 等）不应踢出登录，使用缓存的 me 继续
+    if (!authStore.me) {
       return next('/login')
     }
   }

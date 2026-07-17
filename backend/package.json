@@ -1,6 +1,6 @@
 {
   "name": "backend",
-  "version": "1.4.5",
+  "version": "1.6.2",
   "description": "",
   "main": "dist/server.js",
   "scripts": {
@@ -8,6 +8,8 @@
     "build": "tsc -p tsconfig.build.json",
     "prestart": "pnpm run build",
     "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy"
@@ -27,7 +29,8 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
     "xlsx": "^0.18.5",
-    "xlsx-js-style": "^1.2.0"
+    "xlsx-js-style": "^1.2.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
@@ -38,6 +41,7 @@
     "@types/node": "^25.5.0",
     "prisma": "^7.5.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.6"
   }
 }

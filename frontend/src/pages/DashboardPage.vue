@@ -1,21 +1,21 @@
 <template>
-  <div class="ca-page ca-animate">
+  <div class="ca-page">
     <div class="stats-grid" v-if="stats">
-      <div class="ca-stat-card stat-total clickable" @click="goAssets('')">
+      <div class="ca-stat-card stat-total clickable ca-lift" style="--i:0" @click="goAssets('')">
         <div class="ca-stat-label">资产总数</div>
-        <div class="ca-stat-value">{{ stats.totalCount }}</div>
+        <div class="ca-stat-value">{{ totalDisplay }}</div>
       </div>
-      <div class="ca-stat-card stat-stock clickable" @click="goAssets('in_stock')">
+      <div class="ca-stat-card stat-stock clickable ca-lift" style="--i:1" @click="goAssets('in_stock')">
         <div class="ca-stat-label">在库</div>
-        <div class="ca-stat-value">{{ stats.inStockCount }}</div>
+        <div class="ca-stat-value">{{ stockDisplay }}</div>
       </div>
-      <div class="ca-stat-card stat-use clickable" @click="goAssets('in_use')">
+      <div class="ca-stat-card stat-use clickable ca-lift" style="--i:2" @click="goAssets('in_use')">
         <div class="ca-stat-label">使用中</div>
-        <div class="ca-stat-value">{{ stats.inUseCount }}</div>
+        <div class="ca-stat-value">{{ useDisplay }}</div>
       </div>
-      <div class="ca-stat-card stat-borrow clickable" @click="goAssets('borrowed')">
+      <div class="ca-stat-card stat-borrow clickable ca-lift" style="--i:3" @click="goAssets('borrowed')">
         <div class="ca-stat-label">借用中</div>
-        <div class="ca-stat-value">{{ stats.borrowedCount }}</div>
+        <div class="ca-stat-value">{{ borrowDisplay }}</div>
       </div>
     </div>
 
@@ -80,11 +80,11 @@
     </div>
 
     <div class="charts-grid">
-      <el-card shadow="never">
+      <el-card shadow="never" class="chart-card" style="--i:0">
         <div class="chart-title">状态分布</div>
         <VChart class="chart" :option="pieOption" autoresize />
       </el-card>
-      <el-card shadow="never">
+      <el-card shadow="never" class="chart-card" style="--i:1">
         <div class="chart-title">部门领用/借用对比</div>
         <VChart class="chart" :option="barOption" autoresize />
       </el-card>
@@ -124,10 +124,51 @@
           <div v-if="notifications?.overdue?.length">
             <div class="sub-title">借用超期明细</div>
             <el-table :data="notifications.overdue" size="small" style="width: 100%">
-              <el-table-column prop="assetCode" label="电脑编号" />
+              <el-table-column label="电脑编号">
+                <template #default="{ row }">
+                  <el-link type="primary" @click="goAsset(row.assetId)">{{ row.assetCode }}</el-link>
+                </template>
+              </el-table-column>
               <el-table-column prop="currentUserName" label="使用人" />
               <el-table-column prop="departmentName" label="部门" />
-              <el-table-column prop="daysOverdue" label="逾期天数" />
+              <el-table-column label="预期归还">
+                <template #default="{ row }">{{ formatDate(row.expectedReturnDate) }}</template>
+              </el-table-column>
+              <el-table-column prop="daysOverdue" label="逾期天数" width="90" />
+            </el-table>
+          </div>
+
+          <div v-if="notifications?.dueSoon?.length">
+            <div class="sub-title">借用即将到期明细</div>
+            <el-table :data="notifications.dueSoon" size="small" style="width: 100%">
+              <el-table-column label="电脑编号">
+                <template #default="{ row }">
+                  <el-link type="primary" @click="goAsset(row.assetId)">{{ row.assetCode }}</el-link>
+                </template>
+              </el-table-column>
+              <el-table-column prop="currentUserName" label="使用人" />
+              <el-table-column prop="departmentName" label="部门" />
+              <el-table-column label="预期归还">
+                <template #default="{ row }">{{ formatDate(row.expectedReturnDate) }}</template>
+              </el-table-column>
+              <el-table-column prop="daysRemaining" label="剩余天数" width="90" />
+            </el-table>
+          </div>
+
+          <div v-if="notifications?.waitingPickupTimeout?.length">
+            <div class="sub-title">待领用超时明细</div>
+            <el-table :data="notifications.waitingPickupTimeout" size="small" style="width: 100%">
+              <el-table-column label="电脑编号">
+                <template #default="{ row }">
+                  <el-link type="primary" @click="goAsset(row.assetId)">{{ row.assetCode }}</el-link>
+                </template>
+              </el-table-column>
+              <el-table-column prop="currentUserName" label="使用人" />
+              <el-table-column prop="departmentName" label="部门" />
+              <el-table-column label="分配日期">
+                <template #default="{ row }">{{ formatDate(row.assignedAt) }}</template>
+              </el-table-column>
+              <el-table-column prop="daysWaiting" label="等待天数" width="90" />
             </el-table>
           </div>
         </div>
@@ -161,6 +202,14 @@ import 'echarts'
 
 import { apiRequest } from '../services/api'
 import { actionLabel } from '../actionLabel'
+import { useCountUp } from '../composables/useCountUp'
+
+function formatDate(raw: unknown): string {
+  if (!raw) return '—'
+  const d = new Date(raw as string)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('zh-CN')
+}
 
 const router = useRouter()
 
@@ -218,6 +267,16 @@ const pageLoading = ref(true)
 const recordsLoading = ref(true)
 const multiExpanded = ref(false)
 
+const totalTarget = computed(() => stats.value?.totalCount ?? 0)
+const stockTarget = computed(() => stats.value?.inStockCount ?? 0)
+const useTarget = computed(() => stats.value?.inUseCount ?? 0)
+const borrowTarget = computed(() => stats.value?.borrowedCount ?? 0)
+
+const totalDisplay = useCountUp(totalTarget)
+const stockDisplay = useCountUp(stockTarget)
+const useDisplay = useCountUp(useTarget)
+const borrowDisplay = useCountUp(borrowTarget)
+
 const visibleMultiHolders = computed(() => {
   const all = stats.value?.multiDeviceHolders ?? []
   if (multiExpanded.value) return all
@@ -252,6 +311,9 @@ const pieOption = computed(() => {
       bottom: 0,
       textStyle: { color: '#64748b', fontSize: 12 },
     },
+    animationDuration: 800,
+    animationEasing: 'cubicOut' as const,
+    animationDelay: (idx: number) => idx * 100,
     series: [
       {
         name: '状态',
@@ -296,6 +358,9 @@ const barOption = computed(() => {
       containLabel: true,
     },
     tooltip: { trigger: 'axis', borderRadius: 8 },
+    animationDuration: 600,
+    animationEasing: 'cubicOut' as const,
+    animationDelay: (idx: number) => idx * 80,
     legend: {
       data: ['使用中', '借用中'],
       textStyle: { color: '#64748b', fontSize: 12 },
@@ -377,8 +442,20 @@ const barOption = computed(() => {
   gap: 16px;
 }
 
+.stats-grid .ca-stat-card {
+  opacity: 0;
+  animation: ca-scale-in 0.5s var(--ca-ease-out-expo) forwards;
+  animation-delay: calc(var(--i) * 80ms);
+}
+
 .clickable {
   cursor: pointer;
+}
+
+.chart-card {
+  opacity: 0;
+  animation: ca-stagger-in 0.5s var(--ca-ease-out-expo) forwards;
+  animation-delay: calc(var(--i) * 100ms + 400ms);
 }
 
 .stat-total::before { background: linear-gradient(90deg, #4f46e5, #818cf8); }
@@ -453,6 +530,10 @@ const barOption = computed(() => {
   gap: 8px;
   color: var(--ca-text-secondary);
   padding: 8px 0;
+}
+
+.empty-hint svg {
+  animation: ca-bounce-in 0.5s var(--ca-ease-out-expo) 0.3s both;
 }
 
 .sub-title {

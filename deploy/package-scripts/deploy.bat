@@ -112,18 +112,33 @@ cd /d "%BACKEND_DIR%"
 set "PRISMA_CLI=%BACKEND_DIR%\node_modules\.bin\prisma.cmd"
 if exist "!PRISMA_CLI!" (
     call "!PRISMA_CLI!" migrate deploy 2>&1
-    if !errorlevel! neq 0 (
-        echo     [WARN] Migration may have issues
-    ) else (
-        echo     [OK] Migration done
-    )
 ) else (
     node "%BACKEND_DIR%\node_modules\prisma\build\index.js" migrate deploy 2>&1
-    if !errorlevel! neq 0 (
-        echo     [WARN] Migration may have issues
-    ) else (
-        echo     [OK] Migration done
+)
+
+if errorlevel 1 (
+    echo.
+    echo     [FAIL] Database migration failed!
+    echo.
+    echo     Common causes:
+    echo       - prisma\migrations folder is incomplete (rebuild deploy-package)
+    echo       - data\dev.db is locked by another process (close all old sessions)
+    echo       - existing dev.db is from an incompatible older version
+    echo       - Windows TEMP directory missing (e.g. C:\Users\...\Temp\2 not exist)
+    echo.
+    echo     If the error is "no such table" or schema mismatch, you may need:
+    echo       node node_modules\prisma\build\index.js migrate resolve --rolled-back ^<migration_name^>
+    echo       node node_modules\prisma\build\index.js migrate deploy
+    echo.
+    set /p "MIG_CONT=     Continue starting service anyway? Endpoints depending on missing tables will 500. (y/N) "
+    if /i not "!MIG_CONT!"=="y" (
+        echo.
+        echo   Cancelled. Fix migration first.
+        pause
+        exit /b 1
     )
+) else (
+    echo     [OK] Migration done
 )
 
 echo.

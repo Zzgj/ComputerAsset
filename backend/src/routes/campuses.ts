@@ -4,6 +4,7 @@ import type { AccessAuth } from '../auth/accessContext'
 import { authHasPermission } from '../auth/accessContext'
 import { prisma } from '../prisma'
 import { requireAuth } from '../middleware/auth'
+import { invalidateDepartmentPathCache } from '../utils/departmentPath'
 
 export const campusesRouter = Router()
 
@@ -42,6 +43,7 @@ campusesRouter.post('/', requireAuth, async (req, res) => {
     const campus = await prisma.campus.create({
       data: { name, sortOrder, isActive },
     })
+    invalidateDepartmentPathCache()
     await prisma.operationLog.create({
       data: {
         operatorId: authUser.id,
@@ -90,6 +92,7 @@ campusesRouter.delete('/:id', requireAuth, async (req, res) => {
   }
 
   await prisma.campus.delete({ where: { id } })
+  invalidateDepartmentPathCache()
   await prisma.operationLog.create({
     data: {
       operatorId: authUser.id,

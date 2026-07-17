@@ -1,13 +1,26 @@
 <template>
-  <div class="ca-page ca-animate">
-    <el-card shadow="never">
+  <div class="ca-page">
+    <el-card shadow="never" class="filter-card">
       <div class="ca-page-header">
         <div>
           <div class="ca-page-title">资产列表</div>
           <div class="ca-page-subtitle">查看和管理所有电脑资产，支持多维度搜索和筛选</div>
         </div>
         <el-button v-if="canStockIn" type="primary" @click="router.push('/stock-in')">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            style="margin-right: 6px"
+          >
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
           新增入库
         </el-button>
       </div>
@@ -20,18 +33,42 @@
           @change="search"
           clearable
         />
-        <el-select v-model="query.status" placeholder="状态" style="width: 140px" clearable>
+        <el-select
+          v-model="query.statuses"
+          placeholder="状态（可多选）"
+          style="width: 220px"
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+          clearable
+        >
           <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
         <el-select v-model="query.deviceType" placeholder="设备类型" style="width: 120px" clearable>
-          <el-option v-for="o in deviceTypeFilterOptions" :key="o.value" :label="o.label" :value="o.value" />
+          <el-option
+            v-for="o in deviceTypeFilterOptions"
+            :key="o.value"
+            :label="o.label"
+            :value="o.value"
+          />
         </el-select>
-        <el-select v-model="query.campusId" placeholder="园区" style="width: 130px" clearable>
+        <el-select
+          v-model="query.campusId"
+          placeholder="园区"
+          style="width: 130px"
+          clearable
+          @change="onCampusChange"
+        >
           <el-option v-for="c in campuses" :key="c.id" :label="c.name" :value="c.id" />
         </el-select>
-        <el-select v-model="query.departmentId" placeholder="部门" style="width: 220px" filterable clearable>
-          <el-option v-for="d in departments" :key="d.id" :label="d.displayPath ?? d.name" :value="d.id" />
-        </el-select>
+        <div style="width: 260px">
+          <DepartmentCascader
+            v-model="query.departmentId"
+            :departments="filteredDepartments"
+            :campuses="filteredCampuses"
+            placeholder="选择部门（含下级）"
+          />
+        </div>
         <el-input
           v-model="query.historicalUser"
           placeholder="曾用人搜索"
@@ -47,7 +84,9 @@
           </template>
           <div class="assets-col-settings">
             <div v-for="c in columnDefs" :key="c.key" class="assets-col-settings__row">
-              <el-checkbox v-model="colVisible[c.key]" @change="persistColumnPrefs">{{ c.label }}</el-checkbox>
+              <el-checkbox v-model="colVisible[c.key]" @change="persistColumnPrefs">{{
+                c.label
+              }}</el-checkbox>
             </div>
             <div class="assets-col-settings__hint">设置保存在本浏览器</div>
           </div>
@@ -55,7 +94,7 @@
       </div>
     </el-card>
 
-    <el-card shadow="never">
+    <el-card shadow="never" class="table-card">
       <el-table :data="assets" v-loading="loading" style="width: 100%" border class="assets-table">
         <el-table-column prop="assetCode" label="电脑编号" min-width="140" />
         <el-table-column v-if="colVisible.deviceType" label="设备类型" min-width="100">
@@ -82,7 +121,25 @@
             <template v-if="!String(row.currentUserName ?? '').trim()">
               {{ formatText(row.currentUserName) }}
             </template>
-            <el-tooltip v-else-if="isMultiHolder(row.currentUserName)" content="该使用人名下有多台处于领用/借用等状态的电脑" placement="top">
+            <router-link
+              v-else-if="row.currentEmployee?.id"
+              :to="`/employees/${row.currentEmployee.id}`"
+              class="employee-link"
+            >
+              <el-tooltip
+                v-if="isMultiHolder(row.currentUserName)"
+                content="该使用人名下有多台处于领用/借用等状态的电脑"
+                placement="top"
+              >
+                <el-tag type="danger" effect="dark">{{ row.currentUserName }}</el-tag>
+              </el-tooltip>
+              <span v-else>{{ row.currentUserName }}</span>
+            </router-link>
+            <el-tooltip
+              v-else-if="isMultiHolder(row.currentUserName)"
+              content="该使用人名下有多台处于领用/借用等状态的电脑"
+              placement="top"
+            >
               <el-tag type="danger" effect="dark">{{ row.currentUserName }}</el-tag>
             </el-tooltip>
             <span v-else>{{ row.currentUserName }}</span>
@@ -92,11 +149,15 @@
           <template #default="{ row }">{{ formatText(row.department?.campus?.name) }}</template>
         </el-table-column>
         <el-table-column v-if="colVisible.department" label="部门" min-width="200">
-          <template #default="{ row }">{{ formatText(row.department?.deptPathOnly ?? row.department?.name) }}</template>
+          <template #default="{ row }">{{
+            formatText(row.department?.deptPathOnly ?? row.department?.name)
+          }}</template>
         </el-table-column>
         <el-table-column v-if="colVisible.template" label="设备模板" min-width="140">
           <template #default="{ row }">
-            <el-tag v-if="row.template?.name" type="primary" effect="plain">{{ row.template.name }}</el-tag>
+            <el-tag v-if="row.template?.name" type="primary" effect="plain">{{
+              row.template.name
+            }}</el-tag>
             <el-tag v-else type="info" effect="plain">自定义</el-tag>
           </template>
         </el-table-column>
@@ -128,6 +189,7 @@ import type { LocationQuery } from 'vue-router'
 import { apiRequest } from '../services/api'
 import { useAuthStore } from '../stores/auth'
 import { DEVICE_TYPE_OPTIONS, deviceTypeLabel } from '../constants/deviceType'
+import DepartmentCascader from '../components/DepartmentCascader.vue'
 
 const ASSETS_LIST_COLUMNS_KEY = 'ca_assets_list_columns_v2'
 
@@ -203,8 +265,26 @@ const loading = ref(false)
 const assets = ref<any[]>([])
 const total = ref(0)
 const multiHolderUserNames = ref<Set<string>>(new Set())
-const campuses = ref<Array<{ id: number; name: string }>>([])
-const departments = ref<Array<{ id: number; name: string; displayPath?: string }>>([])
+const campuses = ref<Array<{ id: number; name: string; sortOrder: number }>>([])
+const departments = ref<
+  Array<{
+    id: number
+    name: string
+    campusId: number
+    parentId: number | null
+    sortOrder: number
+    displayPath?: string
+  }>
+>([])
+
+const filteredCampuses = computed(() =>
+  query.campusId ? campuses.value.filter((campus) => campus.id === query.campusId) : campuses.value,
+)
+const filteredDepartments = computed(() =>
+  query.campusId
+    ? departments.value.filter((department) => department.campusId === query.campusId)
+    : departments.value,
+)
 
 const deviceTypeFilterOptions = [...DEVICE_TYPE_OPTIONS]
 
@@ -233,7 +313,7 @@ function statusTagType(status: string): '' | 'success' | 'warning' | 'danger' | 
 
 const query = reactive({
   q: '',
-  status: '',
+  statuses: [] as string[],
   deviceType: null as string | null,
   campusId: null as number | null,
   departmentId: null as number | null,
@@ -256,7 +336,10 @@ function applyListQueryFromRoute(q: LocationQuery) {
     return typeof v === 'string' ? v : ''
   }
   query.q = str('q')
-  query.status = str('status')
+  query.statuses = str('status')
+    .split(',')
+    .map((status) => status.trim())
+    .filter((status) => statusOptions.some((option) => option.value === status))
   const dt = str('deviceType')
   query.deviceType = deviceTypeFilterOptions.some((o) => o.value === dt) ? dt : null
   query.campusId = parseOptionalInt(q.campusId)
@@ -273,7 +356,7 @@ function buildListQueryForRoute(): Record<string, string> {
   const o: Record<string, string> = {}
   const qv = query.q.trim()
   if (qv) o.q = qv
-  if (query.status) o.status = query.status
+  if (query.statuses.length) o.status = query.statuses.join(',')
   if (query.deviceType != null && query.deviceType !== '') o.deviceType = query.deviceType
   if (query.campusId != null) o.campusId = String(query.campusId)
   if (query.departmentId != null) o.departmentId = String(query.departmentId)
@@ -300,8 +383,9 @@ async function loadAssets() {
   try {
     const params = new URLSearchParams()
     if (query.q) params.set('q', query.q)
-    if (query.status) params.set('status', query.status)
-    if (query.deviceType != null && query.deviceType !== '') params.set('deviceType', query.deviceType)
+    if (query.statuses.length) params.set('statusIn', query.statuses.join(','))
+    if (query.deviceType != null && query.deviceType !== '')
+      params.set('deviceType', query.deviceType)
     if (query.campusId) params.set('campusId', String(query.campusId))
     if (query.departmentId) params.set('departmentId', String(query.departmentId))
     if (query.historicalUser) params.set('historicalUser', query.historicalUser)
@@ -327,6 +411,18 @@ async function loadAssets() {
 function search() {
   query.page = 1
   loadAssets()
+}
+
+function onCampusChange() {
+  if (
+    query.departmentId &&
+    !departments.value.some(
+      (department) =>
+        department.id === query.departmentId && department.campusId === query.campusId,
+    )
+  ) {
+    query.departmentId = null
+  }
 }
 
 function goDetail(id: number) {
@@ -367,12 +463,22 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.filter-card {
+  border-bottom: 1px solid var(--ca-border-light);
+}
+
 .filter-bar {
   display: flex;
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
   margin-top: 16px;
+  padding-bottom: 4px;
+}
+
+.table-card {
+  opacity: 0;
+  animation: ca-stagger-in 0.4s var(--ca-ease-out-expo) 0.1s forwards;
 }
 
 .assets-table :deep(.el-table__body td) {
@@ -384,6 +490,19 @@ onMounted(async () => {
   border-left-color: transparent;
 }
 
+.assets-table :deep(.el-table__body tr) {
+  transition: background-color var(--ca-transition);
+  position: relative;
+}
+
+.assets-table :deep(.el-table__body tr:hover td) {
+  background-color: #f1f5f9 !important;
+}
+
+.assets-table :deep(.el-table__body tr:hover td:first-child) {
+  box-shadow: inset 2px 0 0 0 var(--ca-primary);
+}
+
 .assets-col-settings__row {
   margin-bottom: 8px;
 }
@@ -392,5 +511,13 @@ onMounted(async () => {
   margin-top: 8px;
   font-size: 12px;
   color: var(--ca-text-muted, #909399);
+}
+
+.employee-link {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+.employee-link:hover {
+  text-decoration: underline;
 }
 </style>

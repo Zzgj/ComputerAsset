@@ -2,7 +2,7 @@ import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 
 import { prisma } from '../prisma'
-import { requireAuth, requirePermission } from '../middleware/auth'
+import { requireAuth, requirePermission, invalidateSessionCache } from '../middleware/auth'
 
 function badRequest(message: string, details?: unknown): never {
   throw { statusCode: 400, message, details }
@@ -135,6 +135,11 @@ usersRouter.put('/:id', requireAuth, requirePermission('users.manage'), async (r
     },
   })
 
+  // 禁用 / 改角色后必须立即生效，不能等 session 缓存自然过期
+  if (typeof body.isActive === 'boolean' || newRoleId) {
+    invalidateSessionCache(id)
+  }
+
   await prisma.operationLog.create({
     data: {
       operatorId: authUser.id,
@@ -190,6 +195,28 @@ usersRouter.delete('/:id', requireAuth, requirePermission('users.manage'), async
 
   if (target.id === authUser.id) badRequest('不能删除当前登录用户')
   if (target.accessRole?.bypassAll) badRequest('不能删除超级管理员账号')
+
+  const [operationLogCount, assetRecordCount, sentNotificationCount, receivedNotificationCount] = await Promise.all([
+    prisma.operationLog.count({ where: { operatorId: id } }),
+    prisma.assetRecord.count({ where: { operatorId: id } }),
+    prisma.assetTransferNotification.count({ where: { senderId: id } }),
+    prisma.assetTransferNotification.count({ where: { recipientId: id } }),
+  ])
+  const auditReferenceCount =
+    operationLogCount + assetRecordCount + sentNotificationCount + receivedNotificationCount
+  if (auditReferenceCount > 0) {
+    throw {
+      statusCode: 409,
+      code: 'USER_HAS_AUDIT_HISTORY',
+      message: '该用户已产生业务或审计记录，为保留操作人追溯不能物理删除。请在「编辑用户」中停用账号。',
+      details: {
+        operationLogCount,
+        assetRecordCount,
+        sentNotificationCount,
+        receivedNotificationCount,
+      },
+    }
+  }
 
   await prisma.user.delete({ where: { id } })
 

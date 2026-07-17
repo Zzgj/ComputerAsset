@@ -9,6 +9,7 @@ import {
   computeDepartmentDisplayPath,
   departmentPathWithoutCampus,
 } from '../utils/departmentDisplay'
+import { getDepartmentPathSnapshot, invalidateDepartmentPathCache } from '../utils/departmentPath'
 
 type Tx = Omit<
   typeof prisma,
@@ -170,7 +171,8 @@ departmentsRouter.post('/', requireAuth, requirePermission('departments.manage')
     },
     include: { campus: true },
   })
-  const pathMap = buildDepartmentPathMap(await prisma.department.findMany())
+  invalidateDepartmentPathCache()
+  const { pathMap } = await getDepartmentPathSnapshot()
   const displayPath = computeDepartmentDisplayPath(created, pathMap)
 
   await prisma.operationLog.create({
@@ -272,7 +274,8 @@ departmentsRouter.put('/:id', requireAuth, requirePermission('departments.manage
     return row
   })
 
-  const pathMap = buildDepartmentPathMap(await prisma.department.findMany())
+  invalidateDepartmentPathCache()
+  const { pathMap } = await getDepartmentPathSnapshot()
   const displayPath = computeDepartmentDisplayPath(updated, pathMap)
 
   await prisma.operationLog.create({
@@ -317,5 +320,6 @@ departmentsRouter.delete('/:id', requireAuth, requirePermission('departments.man
   })
 
   await prisma.department.delete({ where: { id } })
+  invalidateDepartmentPathCache()
   res.json({ ok: true })
 })

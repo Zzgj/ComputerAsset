@@ -7,10 +7,10 @@ import { prisma } from '../prisma'
 import { requireAuth, requirePermission } from '../middleware/auth'
 import {
   attachDepartmentPathFields,
-  buildDepartmentPathMap,
   computeDepartmentDisplayPath,
   type DepartmentWithCampus,
 } from '../utils/departmentDisplay'
+import { getDepartmentPathSnapshot } from '../utils/departmentPath'
 
 /** 与「一人一机」一致：这些状态下资产记在某人名下 */
 const HOLDER_STATUSES: AssetStatus[] = [
@@ -96,10 +96,10 @@ dashboardRouter.get('/stats', requireAuth, requirePermission('dashboard.view'), 
     ...inUseByDept.map((x) => x.departmentId),
     ...borrowedByDept.map((x) => x.departmentId),
   ])
-  const allDeptsForPath = await prisma.department.findMany({ include: { campus: true } })
-  const pathMap = buildDepartmentPathMap(allDeptsForPath)
+  const { pathRows: allDeptsForPath, pathMap } = await getDepartmentPathSnapshot()
+  const deptById = new Map(allDeptsForPath.map((d) => [d.id, d]))
   const deptLabel = (id: number) => {
-    const d = allDeptsForPath.find((x) => x.id === id)
+    const d = deptById.get(id)
     return d ? computeDepartmentDisplayPath(d as DepartmentWithCampus, pathMap) : String(id)
   }
 
@@ -217,8 +217,7 @@ dashboardRouter.get('/recent-records', requireAuth, requirePermission('dashboard
     },
   })
 
-  const pathRows = await prisma.department.findMany({ include: { campus: true } })
-  const listPathMap = buildDepartmentPathMap(pathRows)
+  const { pathMap: listPathMap } = await getDepartmentPathSnapshot()
   const enriched = records.map((rec) => ({
     ...rec,
     department: attachDepartmentPathFields(rec.department as DepartmentWithCampus | null, listPathMap) ?? null,
@@ -237,30 +236,23 @@ dashboardRouter.get('/notifications', requireAuth, requirePermission('dashboard.
 
   const borrowedAssets = await prisma.asset.findMany({
     where: scopedAssetWhere(access, { status: AssetStatus.borrowed }),
-    include: { department: { include: { campus: true } } },
-  })
-
-  const lendRecords = await prisma.assetRecord.findMany({
-    where: {
-      action: AssetRecordAction.lend,
-      assetId: { in: borrowedAssets.map((a) => a.id) },
+    include: {
+      department: { include: { campus: true } },
+      records: {
+        where: { action: AssetRecordAction.lend },
+        orderBy: { actionDate: 'desc' },
+        take: 1,
+      },
     },
-    orderBy: { actionDate: 'desc' },
   })
-
-  const lendLatest = new Map<number, (typeof lendRecords)[number]>()
-  for (const r of lendRecords) {
-    if (!lendLatest.has(r.assetId)) lendLatest.set(r.assetId, r)
-  }
 
   const overdue: any[] = []
   const dueSoon: any[] = []
 
-  const notifPathDepts = await prisma.department.findMany({ include: { campus: true } })
-  const notifPathMap = buildDepartmentPathMap(notifPathDepts)
+  const { pathMap: notifPathMap } = await getDepartmentPathSnapshot()
 
   for (const a of borrowedAssets) {
-    const rec = lendLatest.get(a.id)
+    const rec = a.records[0]
     const expected = rec?.expectedReturnDate
     if (!expected) continue
     const diffDays = Math.ceil((expected.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24))
@@ -293,25 +285,19 @@ dashboardRouter.get('/notifications', requireAuth, requirePermission('dashboard.
 
   const waitingAssets = await prisma.asset.findMany({
     where: scopedAssetWhere(access, { status: AssetStatus.waiting_pickup }),
-    include: { department: { include: { campus: true } } },
-  })
-
-  const assignRecords = await prisma.assetRecord.findMany({
-    where: {
-      action: AssetRecordAction.assign,
-      assetId: { in: waitingAssets.map((a) => a.id) },
+    include: {
+      department: { include: { campus: true } },
+      records: {
+        where: { action: AssetRecordAction.assign },
+        orderBy: { actionDate: 'desc' },
+        take: 1,
+      },
     },
-    orderBy: { actionDate: 'desc' },
   })
-
-  const assignLatest = new Map<number, (typeof assignRecords)[number]>()
-  for (const r of assignRecords) {
-    if (!assignLatest.has(r.assetId)) assignLatest.set(r.assetId, r)
-  }
 
   const waitingPickupTimeout: any[] = []
   for (const a of waitingAssets) {
-    const rec = assignLatest.get(a.id)
+    const rec = a.records[0]
     const assignedAt = rec?.actionDate
     if (!assignedAt) continue
     const diffDays = Math.ceil((startOfToday.getTime() - assignedAt.getTime()) / (1000 * 60 * 60 * 24))

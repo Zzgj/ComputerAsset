@@ -3,7 +3,27 @@ import { Router } from 'express'
 import type { AccessAuth } from '../auth/accessContext'
 import { assertCampusAccess } from '../auth/accessContext'
 import { prisma } from '../prisma'
+import { HttpError } from '../utils/httpError'
 import { requireAuth, requirePermission } from '../middleware/auth'
+import { validate } from '../middleware/validate'
+import {
+  runFlowOperation,
+  staleAssetConflict,
+  updateAssetWithVersion,
+  type FlowTx as TxOps,
+} from './operations/_shared'
+import {
+  CheckOutSchema,
+  AssignSchema,
+  CancelAssignSchema,
+  PickUpSchema,
+  LendSchema,
+  ReturnSchema,
+  RetireSchema,
+  ConfirmSignatureSchema,
+  ManualRecordSchema,
+  ResetSignatureSchema,
+} from './operations.schemas'
 
 import { AssetStatus, AssetRecordAction, RepairResult } from '@prisma/client'
 
@@ -38,40 +58,45 @@ function toBoolean(value: unknown): boolean {
   return false
 }
 
-type TxOps = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
-
-function staleAssetConflict(): never {
-  throw {
-    statusCode: 409,
-    code: 'ASSET_VERSION_CONFLICT',
-    message: '资产已被其他人修改，请刷新后重试',
+/** 一人一机冲突校验：当配置启用时，给某人重新分配/借出资产前确认其名下没有占用资产 */
+async function assertNoOnePersonOneDeviceConflict(userName: string) {
+  const enabled = await getConfigBoolean('one_person_one_device', false)
+  if (!enabled) return
+  const conflicts = await prisma.asset.findMany({
+    where: {
+      currentUserName: userName,
+      status: {
+        in: [
+          AssetStatus.in_use,
+          AssetStatus.waiting_pickup,
+          AssetStatus.pending_confirmation,
+          AssetStatus.borrowed,
+          AssetStatus.in_repair,
+        ],
+      },
+    },
+    select: { id: true, assetCode: true, status: true },
+  })
+  if (conflicts.length > 0) {
+    throw {
+      statusCode: 409,
+      message: 'One person one device conflict',
+      code: 'ONE_PERSON_ONE_DEVICE_CONFLICT',
+      details: { conflicts },
+    }
   }
 }
 
-async function updateAssetWithVersion(
-  tx: TxOps,
-  asset: { id: number; version: number; status: AssetStatus },
-  data: any,
-  expectedStatus?: AssetStatus | AssetStatus[],
-) {
-  const statusWhere = Array.isArray(expectedStatus)
-    ? { in: expectedStatus }
-    : expectedStatus
-      ? expectedStatus
-      : undefined
-  const updated = await tx.asset.updateMany({
-    where: {
-      id: asset.id,
-      version: asset.version,
-      ...(statusWhere ? { status: statusWhere } : {}),
-    },
-    data: {
-      ...data,
-      version: { increment: 1 },
-    },
-  })
-  if (updated.count !== 1) staleAssetConflict()
-}
+/** 7 个简单流转端点的日志动作名集中处。其他端点（transfer/repair 等）日志在各自 handler 内声明 */
+const FLOW_LOG_ACTIONS = {
+  check_out: '出库（直接领用）',
+  assign: '分配（待领用）',
+  cancel_assign: '取消分配',
+  pick_up: '确认领用',
+  lend: '借出',
+  return: '归还',
+  retire: '报废',
+} as const
 
 async function getUnassignedDepartmentIdForCampus(tx: TxOps, campusId: number) {
   const dept = await tx.department.findFirst({
@@ -85,6 +110,17 @@ async function assertDeptCampus(tx: TxOps, access: AccessAuth, departmentId: num
   const d = await tx.department.findUnique({ where: { id: departmentId }, select: { campusId: true } })
   if (!d) badRequest('部门不存在')
   assertCampusAccess(access, d.campusId)
+}
+
+async function assertEmployeeAccess(tx: TxOps, access: AccessAuth, employeeId: number, departmentId?: number) {
+  const e = await tx.employee.findUnique({ where: { id: employeeId }, select: { campusId: true, status: true } })
+  if (!e) badRequest('员工不存在')
+  if (e.status !== 'active') badRequest('该员工已离职，请选择其他员工或重新激活')
+  assertCampusAccess(access, e.campusId)
+  if (departmentId !== undefined) {
+    const d = await tx.department.findUnique({ where: { id: departmentId }, select: { campusId: true } })
+    if (d && d.campusId !== e.campusId) badRequest('员工所属园区与目标部门园区不一致')
+  }
 }
 
 async function getActiveDeptCampusId(tx: TxOps, departmentId: number) {
@@ -147,436 +183,180 @@ async function createCrossCampusTransferNotifications(
 
 export const operationsRouter = Router()
 
-operationsRouter.post('/check-out', requireAuth, requirePermission('operations.execute'), async (req, res) => {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
+operationsRouter.post('/check-out', requireAuth, requirePermission('operations.execute'), validate({ body: CheckOutSchema }), async (req, res) => {
   const body = req.body as any
-  if (typeof body.requestId !== 'string') badRequest('requestId is required')
-  const assetId = toInt(body.assetId)
-  if (!assetId) badRequest('assetId is required')
-  if (typeof body.userName !== 'string' || body.userName.trim() === '') badRequest('userName is required')
   const userName = body.userName.trim()
-  const departmentId = toInt(body.departmentId)
-  if (!departmentId) badRequest('departmentId is required')
+  const departmentId = body.departmentId
+  const employeeId = typeof body.employeeId === 'number' ? body.employeeId : null
   const ignoreConflict = toBoolean(body.ignoreConflict)
 
-  const exist = await prisma.assetRecord.findUnique({ where: { requestId: body.requestId } })
-  if (exist) return res.json({ alreadyProcessed: true, assetRecord: exist })
-
-  const onePersonOneDeviceEnabled = await getConfigBoolean('one_person_one_device', false)
-  if (onePersonOneDeviceEnabled && !ignoreConflict) {
-    const conflicts = await prisma.asset.findMany({
-      where: {
-        currentUserName: userName,
-        status: {
-          in: [AssetStatus.in_use, AssetStatus.waiting_pickup, AssetStatus.borrowed, AssetStatus.in_repair],
+  await runFlowOperation(req, res, {
+    requestId: body.requestId,
+    assetId: body.assetId,
+    logAction: FLOW_LOG_ACTIONS.check_out,
+    recordAction: AssetRecordAction.check_out,
+    preflight: ignoreConflict ? undefined : () => assertNoOnePersonOneDeviceConflict(userName),
+    async mutate(asset, tx, { access }) {
+      if (asset.status !== AssetStatus.in_stock) badRequest('Asset must be in_stock for check-out')
+      await assertDeptCampus(tx, access, departmentId)
+      if (employeeId !== null) await assertEmployeeAccess(tx, access, employeeId, departmentId)
+      return {
+        updateData: { status: AssetStatus.pending_confirmation, currentUserName: userName, currentEmployeeId: employeeId, departmentId },
+        expectedStatus: AssetStatus.in_stock,
+        recordData: {
+          userName,
+          employeeId,
+          departmentId,
+          remark: typeof body.remark === 'string' ? body.remark : undefined,
         },
-      },
-      select: { id: true, assetCode: true, status: true },
-    })
-    if (conflicts.length > 0) {
-      throw {
-        statusCode: 409,
-        message: 'One person one device conflict',
-        code: 'ONE_PERSON_ONE_DEVICE_CONFLICT',
-        details: { conflicts },
       }
-    }
-  }
-
-  const now = new Date()
-
-  const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({
-      where: { id: assetId },
-      include: { department: { select: { campusId: true } } },
-    })
-    if (!asset) badNotFound('Asset not found')
-    if (asset.status !== AssetStatus.in_stock) badRequest('Asset must be in_stock for check-out')
-    assertCampusAccess(access, asset.department.campusId)
-    await assertDeptCampus(tx, access, departmentId)
-
-    await updateAssetWithVersion(
-      tx,
-      asset,
-      { status: AssetStatus.pending_confirmation, currentUserName: userName, departmentId },
-      AssetStatus.in_stock,
-    )
-
-    const assetRecord = await tx.assetRecord.create({
-      data: {
-        assetId,
-        action: AssetRecordAction.check_out,
-        userName,
-        departmentId,
-        actionDate: now,
-        expectedReturnDate: undefined,
-        proofImage: undefined,
-        remark: typeof body.remark === 'string' ? body.remark : undefined,
-        operatorId: authUser.id,
-        requestId: body.requestId,
-      },
-    })
-
-    await tx.operationLog.create({
-      data: {
-        operatorId: authUser.id,
-        action: '出库（直接领用）',
-        targetType: 'Asset',
-        targetId: assetId,
-        detail: { from: asset.status, to: AssetStatus.pending_confirmation },
-        ipAddress: req.ip ?? 'unknown',
-      },
-    })
-
-    return { assetId, assetRecord }
+    },
   })
-
-  res.json(result)
 })
 
-operationsRouter.post('/assign', requireAuth, requirePermission('operations.execute'), async (req, res) => {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
+operationsRouter.post('/assign', requireAuth, requirePermission('operations.execute'), validate({ body: AssignSchema }), async (req, res) => {
   const body = req.body as any
-  if (typeof body.requestId !== 'string') badRequest('requestId is required')
-  const assetId = toInt(body.assetId)
-  if (!assetId) badRequest('assetId is required')
-  if (typeof body.userName !== 'string' || body.userName.trim() === '') badRequest('userName is required')
-  const departmentId = toInt(body.departmentId)
-  if (!departmentId) badRequest('departmentId is required')
+  const departmentId = body.departmentId
+  const employeeId = typeof body.employeeId === 'number' ? body.employeeId : null
 
-  const exist = await prisma.assetRecord.findUnique({ where: { requestId: body.requestId } })
-  if (exist) return res.json({ alreadyProcessed: true, assetRecord: exist })
-
-  const now = new Date()
-  const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({
-      where: { id: assetId },
-      include: { department: { select: { campusId: true } } },
-    })
-    if (!asset) badNotFound('Asset not found')
-    if (asset.status !== AssetStatus.in_stock) badRequest('Asset must be in_stock for assign')
-    assertCampusAccess(access, asset.department.campusId)
-    await assertDeptCampus(tx, access, departmentId)
-
-    await updateAssetWithVersion(
-      tx,
-      asset,
-      { status: AssetStatus.waiting_pickup, currentUserName: body.userName, departmentId },
-      AssetStatus.in_stock,
-    )
-
-    const assetRecord = await tx.assetRecord.create({
-      data: {
-        assetId,
-        action: AssetRecordAction.assign,
-        userName: body.userName,
-        departmentId,
-        actionDate: now,
-        expectedReturnDate: undefined,
-        proofImage: undefined,
-        remark: typeof body.remark === 'string' ? body.remark : undefined,
-        operatorId: authUser.id,
-        requestId: body.requestId,
-      },
-    })
-
-    await tx.operationLog.create({
-      data: {
-        operatorId: authUser.id,
-        action: '分配（待领用）',
-        targetType: 'Asset',
-        targetId: assetId,
-        detail: { from: asset.status, to: AssetStatus.waiting_pickup },
-        ipAddress: req.ip ?? 'unknown',
-      },
-    })
-
-    return { assetId, assetRecord }
+  await runFlowOperation(req, res, {
+    requestId: body.requestId,
+    assetId: body.assetId,
+    logAction: FLOW_LOG_ACTIONS.assign,
+    recordAction: AssetRecordAction.assign,
+    async mutate(asset, tx, { access }) {
+      if (asset.status !== AssetStatus.in_stock) badRequest('Asset must be in_stock for assign')
+      await assertDeptCampus(tx, access, departmentId)
+      if (employeeId !== null) await assertEmployeeAccess(tx, access, employeeId, departmentId)
+      return {
+        updateData: { status: AssetStatus.waiting_pickup, currentUserName: body.userName, currentEmployeeId: employeeId, departmentId },
+        expectedStatus: AssetStatus.in_stock,
+        recordData: {
+          userName: body.userName,
+          employeeId,
+          departmentId,
+          remark: typeof body.remark === 'string' ? body.remark : undefined,
+        },
+      }
+    },
   })
-
-  res.json(result)
 })
 
-operationsRouter.post('/cancel-assign', requireAuth, requirePermission('operations.execute'), async (req, res) => {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
+operationsRouter.post('/cancel-assign', requireAuth, requirePermission('operations.execute'), validate({ body: CancelAssignSchema }), async (req, res) => {
   const body = req.body as any
-  if (typeof body.requestId !== 'string') badRequest('requestId is required')
-  const assetId = toInt(body.assetId)
-  if (!assetId) badRequest('assetId is required')
 
-  const exist = await prisma.assetRecord.findUnique({ where: { requestId: body.requestId } })
-  if (exist) return res.json({ alreadyProcessed: true, assetRecord: exist })
-
-  const now = new Date()
-
-  const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({
-      where: { id: assetId },
-      include: { department: { select: { campusId: true } } },
-    })
-    if (!asset) badNotFound('Asset not found')
-    if (asset.status !== AssetStatus.waiting_pickup) badRequest('Asset must be waiting_pickup for cancel-assign')
-    assertCampusAccess(access, asset.department.campusId)
-
-    const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
-
-    await updateAssetWithVersion(
-      tx,
-      asset,
-      { status: AssetStatus.in_stock, currentUserName: '', departmentId: unassignedDepartmentId },
-      AssetStatus.waiting_pickup,
-    )
-
-    const assetRecord = await tx.assetRecord.create({
-      data: {
-        assetId,
-        action: AssetRecordAction.cancel_assign,
-        userName: asset.currentUserName,
-        departmentId: asset.departmentId,
-        actionDate: now,
-        expectedReturnDate: undefined,
-        proofImage: undefined,
-        remark: typeof body.remark === 'string' ? body.remark : undefined,
-        operatorId: authUser.id,
-        requestId: body.requestId,
-      },
-    })
-
-    await tx.operationLog.create({
-      data: {
-        operatorId: authUser.id,
-        action: '取消分配',
-        targetType: 'Asset',
-        targetId: assetId,
-        detail: { from: asset.status, to: AssetStatus.in_stock },
-        ipAddress: req.ip ?? 'unknown',
-      },
-    })
-
-    return { assetId, assetRecord }
+  await runFlowOperation(req, res, {
+    requestId: body.requestId,
+    assetId: body.assetId,
+    logAction: FLOW_LOG_ACTIONS.cancel_assign,
+    recordAction: AssetRecordAction.cancel_assign,
+    async mutate(asset, tx) {
+      if (asset.status !== AssetStatus.waiting_pickup) badRequest('Asset must be waiting_pickup for cancel-assign')
+      const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
+      return {
+        updateData: { status: AssetStatus.in_stock, currentUserName: '', currentEmployeeId: null, departmentId: unassignedDepartmentId },
+        expectedStatus: AssetStatus.waiting_pickup,
+        recordData: {
+          userName: asset.currentUserName,
+          employeeId: asset.currentEmployeeId,
+          departmentId: asset.departmentId,
+          remark: typeof body.remark === 'string' ? body.remark : undefined,
+        },
+      }
+    },
   })
-
-  res.json(result)
 })
 
-operationsRouter.post('/pick-up', requireAuth, requirePermission('operations.execute'), async (req, res) => {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
+operationsRouter.post('/pick-up', requireAuth, requirePermission('operations.execute'), validate({ body: PickUpSchema }), async (req, res) => {
   const body = req.body as any
-  if (typeof body.requestId !== 'string') badRequest('requestId is required')
-  const assetId = toInt(body.assetId)
-  if (!assetId) badRequest('assetId is required')
 
-  const exist = await prisma.assetRecord.findUnique({ where: { requestId: body.requestId } })
-  if (exist) return res.json({ alreadyProcessed: true, assetRecord: exist })
-
-  const now = new Date()
-
-  const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({
-      where: { id: assetId },
-      include: { department: { select: { campusId: true } } },
-    })
-    if (!asset) badNotFound('Asset not found')
-    if (asset.status !== AssetStatus.waiting_pickup) badRequest('Asset must be waiting_pickup for pick-up')
-    assertCampusAccess(access, asset.department.campusId)
-
-    await updateAssetWithVersion(tx, asset, { status: AssetStatus.in_use }, AssetStatus.waiting_pickup)
-
-    const assetRecord = await tx.assetRecord.create({
-      data: {
-        assetId,
-        action: AssetRecordAction.pick_up,
-        userName: asset.currentUserName,
-        departmentId: asset.departmentId,
-        actionDate: now,
-        expectedReturnDate: undefined,
-        proofImage: undefined,
-        remark: typeof body.remark === 'string' ? body.remark : undefined,
-        operatorId: authUser.id,
-        requestId: body.requestId,
-      },
-    })
-
-    await tx.operationLog.create({
-      data: {
-        operatorId: authUser.id,
-        action: '确认领用',
-        targetType: 'Asset',
-        targetId: assetId,
-        detail: { from: asset.status, to: AssetStatus.in_use },
-        ipAddress: req.ip ?? 'unknown',
-      },
-    })
-
-    return { assetId, assetRecord }
+  await runFlowOperation(req, res, {
+    requestId: body.requestId,
+    assetId: body.assetId,
+    logAction: FLOW_LOG_ACTIONS.pick_up,
+    recordAction: AssetRecordAction.pick_up,
+    async mutate(asset) {
+      if (asset.status !== AssetStatus.waiting_pickup) badRequest('Asset must be waiting_pickup for pick-up')
+      return {
+        updateData: { status: AssetStatus.pending_confirmation },
+        expectedStatus: AssetStatus.waiting_pickup,
+        recordData: {
+          userName: asset.currentUserName,
+          employeeId: asset.currentEmployeeId,
+          departmentId: asset.departmentId,
+          remark: typeof body.remark === 'string' ? body.remark : undefined,
+        },
+      }
+    },
   })
-
-  res.json(result)
 })
 
-operationsRouter.post('/lend', requireAuth, requirePermission('operations.execute'), async (req, res) => {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
+operationsRouter.post('/lend', requireAuth, requirePermission('operations.execute'), validate({ body: LendSchema }), async (req, res) => {
   const body = req.body as any
-  if (typeof body.requestId !== 'string') badRequest('requestId is required')
-  const assetId = toInt(body.assetId)
-  if (!assetId) badRequest('assetId is required')
-  if (typeof body.userName !== 'string' || body.userName.trim() === '') badRequest('userName is required')
   const userName = body.userName.trim()
-  const departmentId = toInt(body.departmentId)
-  if (!departmentId) badRequest('departmentId is required')
+  const departmentId = body.departmentId
+  const employeeId = typeof body.employeeId === 'number' ? body.employeeId : null
   const ignoreConflict = toBoolean(body.ignoreConflict)
 
-  if (!body.expectedReturnDate) badRequest('expectedReturnDate is required')
-  const expectedReturnDate = new Date(body.expectedReturnDate as any)
+  const expectedReturnDate = new Date(body.expectedReturnDate as string)
   if (Number.isNaN(expectedReturnDate.getTime())) badRequest('expectedReturnDate is invalid')
 
-  const exist = await prisma.assetRecord.findUnique({ where: { requestId: body.requestId } })
-  if (exist) return res.json({ alreadyProcessed: true, assetRecord: exist })
-
-  const onePersonOneDeviceEnabled = await getConfigBoolean('one_person_one_device', false)
-  if (onePersonOneDeviceEnabled && !ignoreConflict) {
-    const conflicts = await prisma.asset.findMany({
-      where: {
-        currentUserName: userName,
-        status: {
-          in: [AssetStatus.in_use, AssetStatus.waiting_pickup, AssetStatus.borrowed, AssetStatus.in_repair],
+  await runFlowOperation(req, res, {
+    requestId: body.requestId,
+    assetId: body.assetId,
+    logAction: FLOW_LOG_ACTIONS.lend,
+    recordAction: AssetRecordAction.lend,
+    preflight: ignoreConflict ? undefined : () => assertNoOnePersonOneDeviceConflict(userName),
+    async mutate(asset, tx, { access }) {
+      if (asset.status !== AssetStatus.in_stock) badRequest('Asset must be in_stock for lend')
+      await assertDeptCampus(tx, access, departmentId)
+      if (employeeId !== null) await assertEmployeeAccess(tx, access, employeeId, departmentId)
+      return {
+        updateData: { status: AssetStatus.pending_confirmation, currentUserName: userName, currentEmployeeId: employeeId, departmentId },
+        expectedStatus: AssetStatus.in_stock,
+        recordData: {
+          userName,
+          employeeId,
+          departmentId,
+          expectedReturnDate,
+          remark: typeof body.remark === 'string' ? body.remark : undefined,
         },
-      },
-      select: { id: true, assetCode: true, status: true },
-    })
-    if (conflicts.length > 0) {
-      throw {
-        statusCode: 409,
-        message: 'One person one device conflict',
-        code: 'ONE_PERSON_ONE_DEVICE_CONFLICT',
-        details: { conflicts },
+        logDetail: { from: asset.status, to: AssetStatus.pending_confirmation, expectedReturnDate },
       }
-    }
-  }
-
-  const now = new Date()
-  const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({
-      where: { id: assetId },
-      include: { department: { select: { campusId: true } } },
-    })
-    if (!asset) badNotFound('Asset not found')
-    if (asset.status !== AssetStatus.in_stock) badRequest('Asset must be in_stock for lend')
-    assertCampusAccess(access, asset.department.campusId)
-    await assertDeptCampus(tx, access, departmentId)
-
-    await updateAssetWithVersion(
-      tx,
-      asset,
-      { status: AssetStatus.pending_confirmation, currentUserName: userName, departmentId },
-      AssetStatus.in_stock,
-    )
-
-    const assetRecord = await tx.assetRecord.create({
-      data: {
-        assetId,
-        action: AssetRecordAction.lend,
-        userName,
-        departmentId,
-        actionDate: now,
-        expectedReturnDate,
-        proofImage: undefined,
-        remark: typeof body.remark === 'string' ? body.remark : undefined,
-        operatorId: authUser.id,
-        requestId: body.requestId,
-      },
-    })
-
-    await tx.operationLog.create({
-      data: {
-        operatorId: authUser.id,
-        action: '借出',
-        targetType: 'Asset',
-        targetId: assetId,
-        detail: { from: asset.status, to: AssetStatus.pending_confirmation, expectedReturnDate },
-        ipAddress: req.ip ?? 'unknown',
-      },
-    })
-
-    return { assetId, assetRecord }
+    },
   })
-
-  res.json(result)
 })
 
-operationsRouter.post('/return', requireAuth, requirePermission('operations.execute'), async (req, res) => {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
+operationsRouter.post('/return', requireAuth, requirePermission('operations.execute'), validate({ body: ReturnSchema }), async (req, res) => {
   const body = req.body as any
-  if (typeof body.requestId !== 'string') badRequest('requestId is required')
-  const assetId = toInt(body.assetId)
-  if (!assetId) badRequest('assetId is required')
 
-  const exist = await prisma.assetRecord.findUnique({ where: { requestId: body.requestId } })
-  if (exist) return res.json({ alreadyProcessed: true, assetRecord: exist })
-
-  const now = new Date()
-
-  const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({
-      where: { id: assetId },
-      include: { department: { select: { campusId: true } } },
-    })
-    if (!asset) badNotFound('Asset not found')
-    if (asset.status !== AssetStatus.in_use && asset.status !== AssetStatus.borrowed) {
-      badRequest('Asset must be in_use or borrowed for return')
-    }
-    assertCampusAccess(access, asset.department.campusId)
-
-    const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
-
-    await updateAssetWithVersion(
-      tx,
-      asset,
-      { status: AssetStatus.in_stock, currentUserName: '', departmentId: unassignedDepartmentId },
-      [AssetStatus.in_use, AssetStatus.borrowed],
-    )
-
-    const assetRecord = await tx.assetRecord.create({
-      data: {
-        assetId,
-        action: AssetRecordAction.return,
-        userName: asset.currentUserName,
-        departmentId: asset.departmentId,
-        actionDate: now,
-        expectedReturnDate: undefined,
-        proofImage: undefined,
-        remark: typeof body.remark === 'string' ? body.remark : undefined,
-        operatorId: authUser.id,
-        requestId: body.requestId,
-      },
-    })
-
-    await tx.operationLog.create({
-      data: {
-        operatorId: authUser.id,
-        action: '归还',
-        targetType: 'Asset',
-        targetId: assetId,
-        detail: { from: asset.status, to: AssetStatus.in_stock },
-        ipAddress: req.ip ?? 'unknown',
-      },
-    })
-
-    return { assetId, assetRecord }
+  await runFlowOperation(req, res, {
+    requestId: body.requestId,
+    assetId: body.assetId,
+    logAction: FLOW_LOG_ACTIONS.return,
+    recordAction: AssetRecordAction.return,
+    async mutate(asset, tx) {
+      if (asset.status !== AssetStatus.in_use && asset.status !== AssetStatus.borrowed) {
+        badRequest('Asset must be in_use or borrowed for return')
+      }
+      const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
+      return {
+        updateData: { status: AssetStatus.in_stock, currentUserName: '', currentEmployeeId: null, departmentId: unassignedDepartmentId },
+        expectedStatus: [AssetStatus.in_use, AssetStatus.borrowed],
+        recordData: {
+          userName: asset.currentUserName,
+          employeeId: asset.currentEmployeeId,
+          departmentId: asset.departmentId,
+          remark: typeof body.remark === 'string' ? body.remark : undefined,
+        },
+      }
+    },
   })
-
-  res.json(result)
 })
 
 operationsRouter.post('/transfer', requireAuth, requirePermission('operations.execute'), async (req, res) => {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
+  const access = req.access!
+  const authUser = req.auth!
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
   const assetId = toInt(body.assetId)
@@ -584,6 +364,7 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
   if (typeof body.userName !== 'string' || body.userName.trim() === '') badRequest('userName is required')
   const departmentId = toInt(body.departmentId)
   if (!departmentId) badRequest('departmentId is required')
+  const employeeId = typeof body.employeeId === 'number' ? body.employeeId : null
 
   const exist = await prisma.assetRecord.findUnique({ where: { requestId: body.requestId } })
   if (exist) return res.json({ alreadyProcessed: true, assetRecord: exist })
@@ -600,6 +381,7 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
     const fromCampusId = asset.department.campusId
     assertCampusAccess(access, fromCampusId)
     const toCampusId = await getActiveDeptCampusId(tx, departmentId)
+    if (employeeId !== null) await assertEmployeeAccess(tx, access, employeeId, departmentId)
 
     await updateAssetWithVersion(
       tx,
@@ -618,6 +400,7 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
         assetId,
         action: AssetRecordAction.transfer,
         userName: body.userName,
+        employeeId: employeeId ?? undefined,
         departmentId,
         actionDate: now,
         expectedReturnDate: undefined,
@@ -628,6 +411,7 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
       },
     })
 
+    // 将选定的 employeeId 存入 OperationLog.detail，confirm-signature 时取用
     const notificationCount = await createCrossCampusTransferNotifications(tx, {
       assetId,
       assetCode: asset.assetCode,
@@ -663,8 +447,8 @@ operationsRouter.post('/transfer', requireAuth, requirePermission('operations.ex
 })
 
 operationsRouter.post('/stock-transfer', requireAuth, requirePermission('operations.execute'), async (req, res) => {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
+  const access = req.access!
+  const authUser = req.auth!
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
   const assetId = toInt(body.assetId)
@@ -692,7 +476,7 @@ operationsRouter.post('/stock-transfer', requireAuth, requirePermission('operati
     await updateAssetWithVersion(
       tx,
       asset,
-      { status: AssetStatus.in_stock, currentUserName: '', departmentId },
+      { status: AssetStatus.in_stock, currentUserName: '', currentEmployeeId: null, departmentId },
       AssetStatus.in_stock,
     )
 
@@ -746,8 +530,8 @@ operationsRouter.post('/stock-transfer', requireAuth, requirePermission('operati
 })
 
 operationsRouter.post('/repair', requireAuth, requirePermission('operations.execute'), async (req, res) => {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
+  const access = req.access!
+  const authUser = req.auth!
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
   const assetId = toInt(body.assetId)
@@ -788,6 +572,7 @@ operationsRouter.post('/repair', requireAuth, requirePermission('operations.exec
         assetId,
         action: AssetRecordAction.repair,
         userName: asset.currentUserName,
+        employeeId: asset.currentEmployeeId,
         departmentId: asset.departmentId,
         actionDate: now,
         expectedReturnDate: undefined,
@@ -816,8 +601,8 @@ operationsRouter.post('/repair', requireAuth, requirePermission('operations.exec
 })
 
 operationsRouter.post('/repair-done', requireAuth, requirePermission('operations.execute'), async (req, res) => {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
+  const access = req.access!
+  const authUser = req.auth!
   const body = req.body as any
   if (typeof body.requestId !== 'string') badRequest('requestId is required')
   const assetId = toInt(body.assetId)
@@ -869,6 +654,7 @@ operationsRouter.post('/repair-done', requireAuth, requirePermission('operations
       {
         status: toStatus,
         currentUserName: '',
+        currentEmployeeId: null,
         departmentId: unassignedDepartmentId,
       },
       AssetStatus.in_repair,
@@ -879,6 +665,7 @@ operationsRouter.post('/repair-done', requireAuth, requirePermission('operations
         assetId,
         action: AssetRecordAction.repair_done,
         userName: asset.currentUserName,
+        employeeId: asset.currentEmployeeId,
         departmentId: asset.departmentId,
         actionDate: now,
         expectedReturnDate: undefined,
@@ -906,107 +693,82 @@ operationsRouter.post('/repair-done', requireAuth, requirePermission('operations
   res.json(result)
 })
 
-operationsRouter.post('/retire', requireAuth, requirePermission('operations.execute'), async (req, res) => {
-  const access = (req as any).access as AccessAuth
-  const authUser = (req as any).auth as { id: number }
+operationsRouter.post('/retire', requireAuth, requirePermission('operations.execute'), validate({ body: RetireSchema }), async (req, res) => {
   const body = req.body as any
-  if (typeof body.requestId !== 'string') badRequest('requestId is required')
-  const assetId = toInt(body.assetId)
-  if (!assetId) badRequest('assetId is required')
 
-  const exist = await prisma.assetRecord.findUnique({ where: { requestId: body.requestId } })
-  if (exist) return res.json({ alreadyProcessed: true, assetRecord: exist })
-
-  const now = new Date()
-
-  const result = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({
-      where: { id: assetId },
-      include: { department: { select: { campusId: true } } },
-    })
-    if (!asset) badNotFound('Asset not found')
-    if (asset.status === AssetStatus.retired) badRequest('Asset already retired')
-    assertCampusAccess(access, asset.department.campusId)
-
-    const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
-
-    await updateAssetWithVersion(
-      tx,
-      asset,
-      { status: AssetStatus.retired, currentUserName: '', departmentId: unassignedDepartmentId },
-    )
-
-    const assetRecord = await tx.assetRecord.create({
-      data: {
-        assetId,
-        action: AssetRecordAction.retire,
-        userName: asset.currentUserName,
-        departmentId: asset.departmentId,
-        actionDate: now,
-        expectedReturnDate: undefined,
-        proofImage: undefined,
-        remark: typeof body.remark === 'string' ? body.remark : undefined,
-        operatorId: authUser.id,
-        requestId: body.requestId,
-      },
-    })
-
-    await tx.operationLog.create({
-      data: {
-        operatorId: authUser.id,
-        action: '报废',
-        targetType: 'Asset',
-        targetId: assetId,
-        detail: { from: asset.status, to: AssetStatus.retired },
-        ipAddress: req.ip ?? 'unknown',
-      },
-    })
-
-    return { assetId, assetRecord }
+  await runFlowOperation(req, res, {
+    requestId: body.requestId,
+    assetId: body.assetId,
+    logAction: FLOW_LOG_ACTIONS.retire,
+    recordAction: AssetRecordAction.retire,
+    async mutate(asset, tx) {
+      if (asset.status === AssetStatus.retired) badRequest('Asset already retired')
+      const unassignedDepartmentId = await getUnassignedDepartmentIdForCampus(tx, asset.department.campusId)
+      return {
+        updateData: { status: AssetStatus.retired, currentUserName: '', currentEmployeeId: null, departmentId: unassignedDepartmentId },
+        recordData: {
+          userName: asset.currentUserName,
+          employeeId: asset.currentEmployeeId,
+          departmentId: asset.departmentId,
+          remark: typeof body.remark === 'string' ? body.remark : undefined,
+        },
+      }
+    },
   })
-
-  res.json(result)
 })
 
-operationsRouter.post('/confirm-signature', async (req, res) => {
-  const body = req.body as { recordId?: unknown; signatureImage?: unknown }
-  const recordId = toInt(body.recordId)
-  if (!recordId) return res.status(400).json({ error: { message: 'recordId is required' } })
-  if (typeof body.signatureImage !== 'string' || !body.signatureImage.startsWith('data:image/')) {
-    return res.status(400).json({ error: { message: 'Invalid signature image' } })
-  }
+operationsRouter.post('/confirm-signature', validate({ body: ConfirmSignatureSchema }), async (req, res) => {
+  const { recordId, signatureImage } = req.body as { recordId: number; signatureImage: string }
 
   const record = await prisma.assetRecord.findUnique({ where: { id: recordId } })
-  if (!record) return res.status(404).json({ error: { message: 'Record not found' } })
+  if (!record) throw HttpError.notFound('Record not found')
   if (
     record.action !== AssetRecordAction.check_out &&
+    record.action !== AssetRecordAction.pick_up &&
     record.action !== AssetRecordAction.lend &&
     record.action !== AssetRecordAction.transfer
   ) {
-    return res.status(400).json({ error: { message: 'This record type cannot be signed' } })
+    throw HttpError.badRequest('This record type cannot be signed')
   }
   if (record.proofImage) {
-    return res.status(400).json({ error: { message: 'Already signed' } })
+    throw HttpError.badRequest('Already signed')
   }
 
   await prisma.$transaction(async (tx) => {
     const signed = await tx.assetRecord.updateMany({
       where: { id: recordId, proofImage: null },
-      data: { proofImage: body.signatureImage as string },
+      data: { proofImage: signatureImage },
     })
     if (signed.count !== 1) {
-      throw { statusCode: 409, code: 'SIGNATURE_ALREADY_COMPLETED', message: '该签字已完成，请勿重复提交' }
+      throw new HttpError(409, '该签字已完成，请勿重复提交', { code: 'SIGNATURE_ALREADY_COMPLETED' })
     }
 
     const asset = await tx.asset.findUnique({ where: { id: record.assetId } })
     if (asset && asset.status === AssetStatus.pending_confirmation) {
       if (record.action === AssetRecordAction.transfer) {
+        // 优先使用 record 中存储的 employeeId（调拨时选定），避免按 userName 重名误匹配
+        let resolvedEmployeeId: number | null = record.employeeId ?? null
+        if (resolvedEmployeeId === null) {
+          const dept = await tx.department.findUnique({
+            where: { id: record.departmentId },
+            select: { campusId: true },
+          })
+          const matchedEmployee = dept
+            ? await tx.employee.findFirst({
+                where: { name: record.userName, campusId: dept.campusId, status: 'active' },
+                orderBy: { id: 'asc' },
+                select: { id: true },
+              })
+            : null
+          resolvedEmployeeId = matchedEmployee?.id ?? null
+        }
         await updateAssetWithVersion(
           tx,
           asset,
           {
             status: AssetStatus.in_use,
             currentUserName: record.userName,
+            currentEmployeeId: resolvedEmployeeId,
             departmentId: record.departmentId,
           },
           AssetStatus.pending_confirmation,
@@ -1035,6 +797,7 @@ operationsRouter.get('/signature-record/:id', async (req, res) => {
   if (!record) return res.status(404).json({ error: { message: 'Record not found' } })
   if (
     record.action !== AssetRecordAction.check_out &&
+    record.action !== AssetRecordAction.pick_up &&
     record.action !== AssetRecordAction.lend &&
     record.action !== AssetRecordAction.transfer
   ) {
@@ -1053,4 +816,156 @@ operationsRouter.get('/signature-record/:id', async (req, res) => {
       asset: record.asset,
     },
   })
+})
+
+operationsRouter.post('/manual-record', requireAuth, requirePermission('assets.write'), validate({ body: ManualRecordSchema }), async (req, res) => {
+  const access = req.access!
+  const authUser = req.auth!
+  const { requestId, assetId, userName, employeeId, departmentId, actionDate: actionDateStr, remark } = req.body as {
+    requestId: string
+    assetId: number
+    userName: string
+    employeeId?: number
+    departmentId: number
+    actionDate: string
+    remark?: string
+  }
+
+  const exist = await prisma.assetRecord.findUnique({ where: { requestId } })
+  if (exist) {
+    res.json({ alreadyProcessed: true, assetRecord: exist })
+    return
+  }
+
+  const actionDate = new Date(actionDateStr)
+  if (Number.isNaN(actionDate.getTime())) badRequest('actionDate is invalid')
+  if (actionDate.getTime() > Date.now()) badRequest('actionDate 不能是未来日期')
+
+  const asset = await prisma.asset.findUnique({
+    where: { id: assetId },
+    include: { department: { select: { campusId: true } } },
+  })
+  if (!asset) badNotFound('Asset not found')
+  assertCampusAccess(access, asset.department.campusId)
+
+  const dept = await prisma.department.findUnique({
+    where: { id: departmentId },
+    select: { campusId: true },
+  })
+  if (!dept) badRequest('部门不存在')
+  // 防止跨园区伪造历史：目标部门也要在调用者的园区授权范围内。
+  assertCampusAccess(access, dept.campusId)
+  if (employeeId) await assertEmployeeAccess(prisma, access, employeeId, departmentId)
+
+  const result = await prisma.$transaction(async (tx) => {
+    const assetRecord = await tx.assetRecord.create({
+      data: {
+        assetId,
+        action: AssetRecordAction.manual_note,
+        userName,
+        employeeId: employeeId ?? undefined,
+        departmentId,
+        actionDate,
+        remark: remark || undefined,
+        operatorId: authUser.id,
+        requestId,
+      },
+    })
+
+    await tx.operationLog.create({
+      data: {
+        operatorId: authUser.id,
+        action: '手动补录流转历史',
+        targetType: 'Asset',
+        targetId: assetId,
+        detail: { userName, departmentId, actionDate: actionDateStr, remark: remark || null },
+        ipAddress: req.ip ?? 'unknown',
+      },
+    })
+
+    await tx.asset.update({ where: { id: assetId }, data: { updatedAt: new Date() } })
+
+    return { assetId, assetRecord }
+  })
+
+  res.json(result)
+})
+
+operationsRouter.post('/reset-signature', requireAuth, requirePermission('operations.execute'), validate({ body: ResetSignatureSchema }), async (req, res) => {
+  const access = req.access!
+  const authUser = req.auth!
+  const { requestId, recordId, remark } = req.body as { requestId: string; recordId: number; remark?: string }
+
+  const exist = await prisma.assetRecord.findUnique({ where: { requestId } })
+  if (exist) {
+    res.json({ alreadyProcessed: true })
+    return
+  }
+
+  const record = await prisma.assetRecord.findUnique({
+    where: { id: recordId },
+    include: { asset: { include: { department: true } } },
+  })
+  if (!record) badNotFound('签字记录不存在')
+  if (
+    record.action !== AssetRecordAction.check_out &&
+    record.action !== AssetRecordAction.pick_up &&
+    record.action !== AssetRecordAction.lend &&
+    record.action !== AssetRecordAction.transfer
+  ) {
+    badRequest('该记录类型不支持重置签字')
+  }
+  if (!record.proofImage) {
+    badRequest('该记录尚未签字，无需重置')
+  }
+
+  assertCampusAccess(access, record.asset.department.campusId)
+
+  const result = await prisma.$transaction(async (tx) => {
+    const originalProofImage = record.proofImage
+
+    await tx.assetRecord.update({
+      where: { id: recordId },
+      data: { proofImage: null },
+    })
+
+    const asset = await tx.asset.findUnique({ where: { id: record.assetId } })
+    if (asset) {
+      if (asset.status === AssetStatus.in_use) {
+        await updateAssetWithVersion(tx, asset, { status: AssetStatus.pending_confirmation }, AssetStatus.in_use)
+      } else if (asset.status === AssetStatus.borrowed) {
+        await updateAssetWithVersion(tx, asset, { status: AssetStatus.pending_confirmation }, AssetStatus.borrowed)
+      }
+    }
+
+    const resetRecord = await tx.assetRecord.create({
+      data: {
+        assetId: record.assetId,
+        action: AssetRecordAction.signature_reset,
+        userName: record.userName,
+        employeeId: record.employeeId,
+        departmentId: record.departmentId,
+        actionDate: new Date(),
+        remark: remark || `重置签字（原记录 #${recordId}）`,
+        proofImage: originalProofImage,
+        operatorId: authUser.id,
+        requestId,
+      },
+    })
+
+    await tx.operationLog.create({
+      data: {
+        operatorId: authUser.id,
+        action: '重置签字',
+        targetType: 'Asset',
+        targetId: record.assetId,
+        detail: { recordId, remark: remark || null },
+        ipAddress: req.ip ?? 'unknown',
+      },
+    })
+
+    return { resetRecord }
+  })
+
+  res.json(result)
 })
