@@ -1,5 +1,5 @@
 <template>
-  <div class="sign-page">
+  <div class="sign-page" :class="{ 'sign-fullscreen': isFullscreen }">
     <div class="sign-card" v-if="loading">
       <div class="sign-header">
         <h2>正在校验签字记录</h2>
@@ -7,13 +7,13 @@
       </div>
     </div>
 
-    <div class="sign-card" v-else-if="!submitted && !errorMsg">
-      <div class="sign-header">
+    <div class="sign-card" :class="{ 'fullscreen-card': isFullscreen }" v-else-if="!submitted && !errorMsg">
+      <div class="sign-header" v-show="!isFullscreen">
         <h2>{{ signTitle }}</h2>
         <p>{{ signSubtitle }}</p>
       </div>
 
-      <div class="info-section">
+      <div class="info-section" v-show="!isFullscreen">
         <div class="info-row"><span class="info-label">资产编号</span><span class="info-value">{{ info.assetCode }}</span></div>
         <div class="info-row"><span class="info-label">领用人</span><span class="info-value">{{ info.userName }}</span></div>
         <div class="info-row"><span class="info-label">部门</span><span class="info-value">{{ info.department }}</span></div>
@@ -21,27 +21,56 @@
         <div class="info-row" v-if="info.remark"><span class="info-label">备注</span><span class="info-value">{{ info.remark }}</span></div>
       </div>
 
-      <div v-if="signKind === 'transfer'" class="transfer-warning">
+      <div v-if="signKind === 'transfer' && !isFullscreen" class="transfer-warning">
         <div class="transfer-warning-text">请勿私下交接资产，必须由 IT 部门介入完成调拨流程</div>
       </div>
 
-      <div class="sign-section">
-        <div class="sign-label">请在下方区域手写签名</div>
-        <canvas
-          ref="canvasRef"
-          class="sign-canvas"
-          @mousedown="startDraw"
-          @mousemove="draw"
-          @mouseup="endDraw"
-          @mouseleave="endDraw"
-          @touchstart.prevent="startDrawTouch"
-          @touchmove.prevent="drawTouch"
-          @touchend="endDraw"
-        />
+      <div class="sign-section" :class="{ 'sign-section-fullscreen': isFullscreen }">
+        <div class="sign-label-row" v-show="!isFullscreen">
+          <div class="sign-label">请在下方区域手写签名</div>
+          <el-button text size="small" @click="toggleFullscreen" class="fullscreen-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3"/>
+              <path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
+              <path d="M3 16v3a2 2 0 0 0 2 2h3"/>
+              <path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
+            </svg>
+            全屏签名
+          </el-button>
+        </div>
+
+        <div class="canvas-wrapper" :class="{ 'canvas-wrapper-fullscreen': isFullscreen }">
+          <canvas
+            ref="canvasRef"
+            class="sign-canvas"
+            :class="{ 'sign-canvas-fullscreen': isFullscreen }"
+            @mousedown="startDraw"
+            @mousemove="draw"
+            @mouseup="endDraw"
+            @mouseleave="endDraw"
+            @touchstart.prevent="startDrawTouch"
+            @touchmove.prevent="drawTouch"
+            @touchend="endDraw"
+          />
+          <div v-if="isFullscreen" class="fullscreen-toolbar">
+            <el-button @click="clearCanvas" size="small">清除重签</el-button>
+            <el-button text size="small" @click="toggleFullscreen" class="fullscreen-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 3v3a2 2 0 0 1-2 2H3"/>
+                <path d="M21 8h-3a2 2 0 0 1-2-2V3"/>
+                <path d="M3 16h3a2 2 0 0 1 2 2v3"/>
+                <path d="M16 21v-3a2 2 0 0 1 2-2h3"/>
+              </svg>
+              退出全屏
+            </el-button>
+            <el-button type="primary" :loading="submitting" @click="submitSignature" :disabled="!canSubmitSignature" size="small">确认签名</el-button>
+          </div>
+        </div>
+
         <div v-if="signKind === 'transfer'" class="acknowledge-check">
           <el-checkbox v-model="acknowledged">我已知晓：资产交接必须由 IT 部门介入，不得私下进行</el-checkbox>
         </div>
-        <div class="sign-actions">
+        <div class="sign-actions" v-show="!isFullscreen">
           <el-button @click="clearCanvas">清除重签</el-button>
           <el-button type="primary" :loading="submitting" @click="submitSignature" :disabled="!canSubmitSignature">确认签名并提交</el-button>
         </div>
@@ -63,7 +92,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { apiRequest } from '../services/api'
@@ -88,6 +117,7 @@ const submitting = ref(false)
 const submitted = ref(false)
 const submittedMessage = ref('领用确认已完成，可关闭此页面')
 const errorMsg = ref('')
+const isFullscreen = ref(false)
 
 const signKind = ref('')
 const signTitle = computed(() =>
@@ -101,6 +131,44 @@ const canSubmitSignature = computed(() => {
   if (signKind.value === 'transfer' && !acknowledged.value) return false
   return true
 })
+
+function initCanvas() {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  // 使用 devicePixelRatio 提高清晰度
+  const dpr = window.devicePixelRatio || 1
+  const w = canvas.offsetWidth
+  // 全屏模式下 canvas 高度由 flex 撑开，读 offsetHeight；非全屏固定 200px
+  let h = 200
+  if (isFullscreen.value) {
+    h = canvas.offsetHeight
+    // flex 布局可能尚未完成，用视口高度兜底
+    if (!h || h < 50) h = window.innerHeight - 120
+  }
+  canvas.width = w * dpr
+  canvas.height = h * dpr
+  const ctx = canvas.getContext('2d')
+  if (ctx) {
+    ctx.scale(dpr, dpr)
+    ctx.fillStyle = '#fff'
+    ctx.fillRect(0, 0, w, h)
+    ctx.strokeStyle = '#1e293b'
+    ctx.lineWidth = 2.5
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+  }
+}
+
+function toggleFullscreen() {
+  isFullscreen.value = !isFullscreen.value
+  // 等待 DOM 更新 + 浏览器布局完成后重新初始化画布尺寸
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      initCanvas()
+      hasDrawn.value = false
+    })
+  })
+}
 
 onMounted(async () => {
   const q = route.query
@@ -122,20 +190,22 @@ onMounted(async () => {
   await loadRecordState()
   if (submitted.value || errorMsg.value) return
 
-  const canvas = canvasRef.value
-  if (canvas) {
-    canvas.width = canvas.offsetWidth
-    canvas.height = 200
-    const ctx = canvas.getContext('2d')
-    if (ctx) {
-      ctx.fillStyle = '#fff'
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-      ctx.strokeStyle = '#1e293b'
-      ctx.lineWidth = 2.5
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
-    }
+  initCanvas()
+
+  // 自动检测移动端，提示可全屏
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) && !isFullscreen.value) {
+    // 不自动进入全屏，但提示用户
+    setTimeout(() => {
+      ElMessage.info({
+        message: '点击「全屏签名」可获得更大书写区域',
+        duration: 4000,
+      })
+    }, 500)
   }
+})
+
+onUnmounted(() => {
+  isFullscreen.value = false
 })
 
 async function loadRecordState() {
@@ -172,21 +242,33 @@ function getCtx() {
   return canvasRef.value?.getContext('2d') ?? null
 }
 
+function getCanvasPoint(clientX: number, clientY: number) {
+  const canvas = canvasRef.value
+  if (!canvas) return { x: 0, y: 0 }
+  const rect = canvas.getBoundingClientRect()
+  // canvas 内部尺寸 = offsetWidth * dpr，但 ctx.scale(dpr,dpr) 后绘图坐标 = CSS 像素
+  // getBoundingClientRect 返回 CSS 像素，所以直接用即可
+  return {
+    x: clientX - rect.left,
+    y: clientY - rect.top,
+  }
+}
+
 function startDraw(e: MouseEvent) {
   drawing.value = true
   const ctx = getCtx()
   if (!ctx) return
-  const rect = canvasRef.value!.getBoundingClientRect()
+  const pt = getCanvasPoint(e.clientX, e.clientY)
   ctx.beginPath()
-  ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top)
+  ctx.moveTo(pt.x, pt.y)
 }
 
 function draw(e: MouseEvent) {
   if (!drawing.value) return
   const ctx = getCtx()
   if (!ctx) return
-  const rect = canvasRef.value!.getBoundingClientRect()
-  ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top)
+  const pt = getCanvasPoint(e.clientX, e.clientY)
+  ctx.lineTo(pt.x, pt.y)
   ctx.stroke()
   hasDrawn.value = true
 }
@@ -195,17 +277,17 @@ function startDrawTouch(e: TouchEvent) {
   drawing.value = true
   const ctx = getCtx()
   if (!ctx || !e.touches[0]) return
-  const rect = canvasRef.value!.getBoundingClientRect()
+  const pt = getCanvasPoint(e.touches[0].clientX, e.touches[0].clientY)
   ctx.beginPath()
-  ctx.moveTo(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top)
+  ctx.moveTo(pt.x, pt.y)
 }
 
 function drawTouch(e: TouchEvent) {
   if (!drawing.value) return
   const ctx = getCtx()
   if (!ctx || !e.touches[0]) return
-  const rect = canvasRef.value!.getBoundingClientRect()
-  ctx.lineTo(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top)
+  const pt = getCanvasPoint(e.touches[0].clientX, e.touches[0].clientY)
+  ctx.lineTo(pt.x, pt.y)
   ctx.stroke()
   hasDrawn.value = true
 }
@@ -218,8 +300,9 @@ function clearCanvas() {
   const canvas = canvasRef.value
   const ctx = getCtx()
   if (!canvas || !ctx) return
+  const dpr = window.devicePixelRatio || 1
   ctx.fillStyle = '#fff'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr)
   ctx.strokeStyle = '#1e293b'
   ctx.lineWidth = 2.5
   ctx.lineCap = 'round'
@@ -250,6 +333,7 @@ async function submitSignature() {
     })
     submitted.value = true
     submittedMessage.value = '领用确认已完成，可关闭此页面'
+    isFullscreen.value = false
   } catch (e: any) {
     if (e?.code === 'SIGNATURE_ALREADY_COMPLETED' || e?.status === 409) {
       submitted.value = true
@@ -272,6 +356,11 @@ async function submitSignature() {
   padding: 24px 16px;
 }
 
+.sign-page.sign-fullscreen {
+  padding: 0;
+  background: #fff;
+}
+
 .sign-card {
   width: 100%;
   max-width: 540px;
@@ -280,6 +369,17 @@ async function submitSignature() {
   box-shadow: var(--ca-shadow-md);
   padding: 32px 24px;
   align-self: flex-start;
+}
+
+.sign-card.fullscreen-card {
+  max-width: none;
+  width: 100%;
+  height: 100vh;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
 }
 
 .sign-header {
@@ -335,11 +435,42 @@ async function submitSignature() {
   margin-top: 16px;
 }
 
+.sign-section-fullscreen {
+  margin-top: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.sign-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
 .sign-label {
   font-size: 14px;
   font-weight: 600;
   color: var(--ca-text-primary);
-  margin-bottom: 12px;
+}
+
+.fullscreen-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #6366f1;
+  font-size: 13px;
+}
+
+.canvas-wrapper {
+  position: relative;
+}
+
+.canvas-wrapper-fullscreen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .sign-canvas {
@@ -349,6 +480,21 @@ async function submitSignature() {
   border-radius: var(--ca-radius-sm);
   cursor: crosshair;
   touch-action: none;
+}
+
+.sign-canvas-fullscreen {
+  flex: 1;
+  height: auto;
+  border: 2px solid var(--ca-border);
+  border-radius: 8px;
+}
+
+.fullscreen-toolbar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0 4px;
 }
 
 .transfer-warning {

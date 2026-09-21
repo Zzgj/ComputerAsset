@@ -151,6 +151,7 @@ export async function ensureSeed() {
         { configKey: 'default_borrow_days', configValue: '7' },
         { configKey: 'waiting_pickup_alert_days', configValue: '3' },
         { configKey: 'borrow_advance_alert_days', configValue: '1' },
+        { configKey: 'external_base_url', configValue: '' },
       ],
     })
   }
@@ -204,6 +205,30 @@ export async function ensureSeed() {
         configKey: EMPLOYEE_BOOTSTRAP_KEY,
         configValue: new Date().toISOString(),
         description: '一次性数据回填：从 Asset.currentUserName 生成员工记录并归属泰鼎园区',
+      },
+    })
+  }
+
+  // 一次性为已有非 bypassAll 角色补全 batches.manage 权限
+  const batchPermsBackfillDone = await prisma.systemConfig.findUnique({
+    where: { configKey: 'data_fix.backfill_batch_permissions_v1' },
+  })
+  if (!batchPermsBackfillDone) {
+    const roles = await prisma.accessRole.findMany({
+      where: { bypassAll: false },
+      select: { id: true, permissions: { select: { key: true } } },
+    })
+    for (const role of roles) {
+      const existing = new Set(role.permissions.map((p) => p.key))
+      if (existing.has('operations.execute') && !existing.has('batches.manage')) {
+        await prisma.accessRolePermission.create({ data: { roleId: role.id, key: 'batches.manage' } })
+      }
+    }
+    await prisma.systemConfig.create({
+      data: {
+        configKey: 'data_fix.backfill_batch_permissions_v1',
+        configValue: new Date().toISOString(),
+        description: '一次性权限回填：为已有业务管理角色补全 batches.manage',
       },
     })
   }

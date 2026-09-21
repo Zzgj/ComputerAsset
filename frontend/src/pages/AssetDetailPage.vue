@@ -77,6 +77,15 @@
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
             </svg>
             <span>待签字确认</span>
+            <el-radio-group
+              v-if="canShowExternalToggle"
+              v-model="pendingLinkMode"
+              size="small"
+              class="pending-link-mode"
+            >
+              <el-radio-button value="internal">内网</el-radio-button>
+              <el-radio-button value="external">外网</el-radio-button>
+            </el-radio-group>
             <el-button type="primary" size="small" text @click="copySignUrl"
               >复制签名链接</el-button
             >
@@ -141,6 +150,12 @@
             <el-descriptions-item label="保修到期">{{
               asset.warrantyExpiry ? toDate(asset.warrantyExpiry) : '暂无'
             }}</el-descriptions-item>
+            <el-descriptions-item label="所属批次">
+              <el-tag v-if="asset.batch?.batchNo" type="info" effect="plain" size="small">{{
+                asset.batch.batchNo + (asset.batch.name ? ' · ' + asset.batch.name : '')
+              }}</el-tag>
+              <span v-else style="color: var(--ca-text-muted)">无</span>
+            </el-descriptions-item>
           </el-descriptions>
           <div
             style="
@@ -687,6 +702,11 @@
         <el-form-item label="备注">
           <el-input type="textarea" v-model="editCoreForm.remark" :rows="3" />
         </el-form-item>
+        <el-form-item label="所属批次">
+          <el-select v-model="editCoreForm.batchId" placeholder="无批次" clearable filterable>
+            <el-option v-for="b in batches" :key="b.id" :label="b.batchNo + (b.name ? ' · ' + b.name : '')" :value="b.id" />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="editCoreDialogVisible = false">取消</el-button>
@@ -699,6 +719,12 @@
     <el-dialog v-model="transferQrDialogVisible" title="调拨签字确认" width="400px" align-center>
       <div class="qr-dialog-body">
         <p class="qr-hint">请让接收人使用手机扫描二维码，核对调拨信息后手写签名确认</p>
+        <div v-if="hasExternalUrl" class="qr-mode-toggle">
+          <el-radio-group v-model="transferLinkMode" @change="onTransferLinkModeChange" size="small">
+            <el-radio-button value="internal">内网</el-radio-button>
+            <el-radio-button value="external">外网</el-radio-button>
+          </el-radio-group>
+        </div>
         <img v-if="transferQrDataUrl" :src="transferQrDataUrl" alt="签名二维码" class="qr-image" />
         <div class="qr-link">
           <el-input :model-value="transferQrSignUrl" readonly size="small">
@@ -725,7 +751,7 @@ import { useAuthStore } from '../stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DepartmentCascader from '../components/DepartmentCascader.vue'
 import EmployeePicker from '../components/EmployeePicker.vue'
-import { getPublicBaseURL } from '../lib/publicBaseUrl'
+import { getPublicBaseURL, getBaseUrlForMode, loadExternalBaseUrl, getCachedExternalBaseUrl } from '../lib/publicBaseUrl'
 import { copyTextToClipboardWithToast } from '../lib/clipboard'
 import { formatDepartmentDisplayLabel } from '../lib/departmentDisplay'
 
@@ -742,6 +768,7 @@ const asset = ref<any | null>(null)
 const records = ref<any[]>([])
 const repairs = ref<any[]>([])
 const campuses = ref<Array<{ id: number; name: string; sortOrder: number }>>([])
+const batches = ref<Array<{ id: number; batchNo: string; name?: string }>>([])
 const departments = ref<
   Array<{
     id: number
@@ -766,6 +793,11 @@ const changeLogs = ref<any[]>([])
 const transferQrDialogVisible = ref(false)
 const transferQrDataUrl = ref('')
 const transferQrSignUrl = ref('')
+const transferLinkMode = ref<'internal' | 'external'>('internal')
+const hasExternalUrl = ref(false)
+
+// 存储调拨二维码生成参数，切换内外网时重新生成
+const transferQrParams = ref<{ recordId: number; userName: string; departmentId: number | null; remark: string } | null>(null)
 
 function toDate(d: any) {
   if (!d) return '暂无'
@@ -807,8 +839,10 @@ const uniqueUsers = computed(() => {
   return Array.from(set)
 })
 
-const pendingSignUrl = computed(() => {
-  if (asset.value?.status !== 'pending_confirmation') return ''
+const pendingLinkMode = ref<'internal' | 'external'>('internal')
+
+const pendingSignParams = computed(() => {
+  if (asset.value?.status !== 'pending_confirmation') return null
   const latestUnsigned = [...records.value]
     .filter(
       (r) =>
@@ -819,7 +853,7 @@ const pendingSignUrl = computed(() => {
         !r.proofImage,
     )
     .sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime())[0]
-  if (!latestUnsigned) return ''
+  if (!latestUnsigned) return null
   const dept =
     latestUnsigned.department?.displayPath ??
     latestUnsigned.department?.deptPathOnly ??
@@ -834,8 +868,17 @@ const pendingSignUrl = computed(() => {
     remark: latestUnsigned.remark ?? '',
   })
   if (latestUnsigned.action === 'transfer') params.set('kind', 'transfer')
-  return `${getPublicBaseURL()}/sign?${params.toString()}`
+  return params
 })
+
+const pendingSignUrl = computed(() => {
+  const params = pendingSignParams.value
+  if (!params) return ''
+  const baseUrl = getBaseUrlForMode(pendingLinkMode.value)
+  return `${baseUrl}/sign?${params.toString()}`
+})
+
+const canShowExternalToggle = computed(() => hasExternalUrl.value && asset.value?.status === 'pending_confirmation' && !!pendingSignParams.value)
 
 async function copySignUrl() {
   await copyTextToClipboardWithToast(pendingSignUrl.value, '签名链接已复制')
@@ -861,8 +904,16 @@ async function showTransferSignQr(
     ElMessage.warning('未获取到签名记录编号，请刷新后从上方复制签名链接')
     return
   }
+  transferQrParams.value = { recordId, userName, departmentId, remark }
+  transferLinkMode.value = 'internal'
+  await regenerateTransferQr()
+}
+
+async function regenerateTransferQr() {
+  if (!transferQrParams.value) return
+  const { recordId, userName, departmentId, remark } = transferQrParams.value
   const deptLabel = formatDepartmentDisplayLabel(departmentId, departments.value, campuses.value)
-  const baseUrl = getPublicBaseURL()
+  const baseUrl = getBaseUrlForMode(transferLinkMode.value)
   const params = new URLSearchParams({
     recordId: String(recordId),
     assetCode: asset.value?.assetCode ?? '',
@@ -882,6 +933,10 @@ async function showTransferSignQr(
     ElMessage.warning('二维码生成失败，请使用复制链接')
     transferQrDialogVisible.value = true
   }
+}
+
+async function onTransferLinkModeChange() {
+  await regenerateTransferQr()
 }
 
 const latestExpectedReturn = computed(() => {
@@ -972,6 +1027,11 @@ async function loadDepartments() {
   }>('/api/departments/transfer-targets')
   departments.value = d.items ?? []
   campuses.value = d.campuses ?? []
+  // 加载批次列表
+  try {
+    const bRes = await apiRequest<{ items: any[] }>('/api/batches')
+    batches.value = bRes.items ?? []
+  } catch { /* 静默 */ }
 }
 
 async function reload() {
@@ -1052,6 +1112,7 @@ const editCoreForm = reactive<any>({
   cpu: '',
   memory: '',
   storage: '',
+  batchId: null as number | null,
   remark: '',
 })
 
@@ -1099,6 +1160,7 @@ function openEditCore() {
     cpu: asset.value.cpu ?? '',
     memory: asset.value.memory ?? '',
     storage: asset.value.storage ?? '',
+    batchId: asset.value.batchId ?? null,
     remark: asset.value.remark ?? '',
   })
   editCoreDialogVisible.value = true
@@ -1117,7 +1179,8 @@ async function submitEditCore() {
     String(editCoreForm.cpu ?? '') !== String(asset.value.cpu ?? '') ||
     String(editCoreForm.memory ?? '') !== String(asset.value.memory ?? '') ||
     String(editCoreForm.storage ?? '') !== String(asset.value.storage ?? '') ||
-    String(editCoreForm.remark ?? '') !== String(asset.value.remark ?? '')
+    String(editCoreForm.remark ?? '') !== String(asset.value.remark ?? '') ||
+    Number(editCoreForm.batchId ?? 0) !== Number(asset.value.batchId ?? 0)
   if (!changed) return ElMessage.warning('未检测到变更')
 
   // 仅当模板字段发生变化时才解绑模板；仅改编号/序列号不应影响模板关联。
@@ -1150,6 +1213,7 @@ async function submitEditCore() {
         cpu: editCoreForm.cpu ?? '',
         memory: editCoreForm.memory ?? '',
         storage: editCoreForm.storage ?? '',
+        batchId: editCoreForm.batchId ?? null,
         remark: editCoreForm.remark ?? '',
         currentUserName: asset.value.currentUserName ?? '',
         departmentId: asset.value.departmentId,
@@ -1448,6 +1512,9 @@ onMounted(async () => {
   }
   await reload()
   if (canOperations.value) await loadDepartments()
+  // 加载外网地址配置
+  await loadExternalBaseUrl()
+  hasExternalUrl.value = !!getCachedExternalBaseUrl()
 })
 </script>
 
@@ -1547,6 +1614,10 @@ onMounted(async () => {
   font-weight: 600;
 }
 
+.pending-link-mode {
+  margin-right: 4px;
+}
+
 .borrow-return-hint {
   display: flex;
   align-items: center;
@@ -1566,6 +1637,10 @@ onMounted(async () => {
   flex-direction: column;
   align-items: center;
   text-align: center;
+}
+
+.qr-mode-toggle {
+  margin-bottom: 16px;
 }
 
 .qr-hint {

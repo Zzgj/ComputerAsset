@@ -85,6 +85,11 @@
         <el-divider class="section-divider" />
 
         <div class="form-section-label">其他</div>
+        <el-form-item label="所属批次">
+          <el-select v-model="form.batchId" placeholder="可选：选择已有批次或留空" class="field-lg" clearable filterable>
+            <el-option v-for="b in batches" :key="b.id" :label="b.batchNo + (b.name ? ' · ' + b.name : '')" :value="b.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="备注">
           <el-input type="textarea" v-model="form.remark" :rows="3" class="field-xl" placeholder="可选：用途、供应商等说明" />
         </el-form-item>
@@ -122,6 +127,7 @@ const router = useRouter()
 const templates = ref<any[]>([])
 const campuses = ref<Array<{ id: number; name: string; sortOrder: number }>>([])
 const departments = ref<any[]>([])
+const batches = ref<Array<{ id: number; batchNo: string; name?: string }>>([])
 const genLoading = ref(false)
 const submitting = ref(false)
 const pageLoading = ref(true)
@@ -154,6 +160,7 @@ const form = reactive<any>({
   storage: '',
   departmentId: null as number | null,
   purchaseDate: null as string | null,
+  batchId: null as number | null,
   remark: '',
 })
 const isOtherDeviceType = computed(() => form.deviceType === 'other')
@@ -196,6 +203,11 @@ async function load() {
     templates.value = t.items ?? []
     departments.value = d.items ?? []
     campuses.value = c.items ?? []
+    // 批次列表
+    try {
+      const bRes = await apiRequest<{ items: any[] }>('/api/batches')
+      batches.value = bRes.items ?? []
+    } catch { /* 静默 */ }
   } finally {
     pageLoading.value = false
   }
@@ -229,6 +241,7 @@ async function submit() {
         requestId,
         assetCode: form.assetCode,
         templateId: form.templateId ?? undefined,
+        batchId: form.batchId ?? undefined,
         deviceType: form.deviceType,
         serialNumber: form.serialNumber,
         brand: String(form.brand ?? '').trim(),

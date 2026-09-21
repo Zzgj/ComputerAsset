@@ -18,6 +18,7 @@ import { backupRouter } from './backup'
 import { recordsRouter } from './records'
 import { transferNotificationsRouter } from './transferNotifications'
 import { employeesRouter } from './employees'
+import { batchesRouter } from './batches'
 
 export const router = Router()
 
@@ -63,5 +64,6 @@ router.use('/logs', logsRouter)
 router.use('/records', recordsRouter)
 router.use('/transfer-notifications', transferNotificationsRouter)
 router.use('/employees', employeesRouter)
+router.use('/batches', batchesRouter)
 router.use('/excel', excelRouter)
 router.use('/backup', backupRouter)

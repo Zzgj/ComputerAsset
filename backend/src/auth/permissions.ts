@@ -20,6 +20,7 @@ export const PERMISSIONS = [
   'employees.write',
   'employees.resign',
   'employees.transfer_campus',
+  'batches.manage',
 ] as const
 
 export type PermissionKey = (typeof PERMISSIONS)[number]
@@ -45,6 +46,7 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   'employees.write': '编辑员工',
   'employees.resign': '办理员工离职',
   'employees.transfer_campus': '修改员工园区归属',
+  'batches.manage': '管理资产批次',
 }
 
 export const PERMISSION_DESCRIPTIONS: Partial<Record<PermissionKey, string>> = {
@@ -53,6 +55,7 @@ export const PERMISSION_DESCRIPTIONS: Partial<Record<PermissionKey, string>> = {
   'employees.write': '新建员工、编辑员工基本信息与外部资源条目（手机卡 / 邮箱 / 域控等）。受园区范围限制。',
   'employees.resign': '办理员工离职：批量标记外部资源关闭、将员工状态置为已离职。受园区范围限制。',
   'employees.transfer_campus': '修改员工所属园区。高权限操作，建议仅授予超级管理员。',
+  'batches.manage': '管理资产批次：新建、编辑、删除批次。',
 }
 
 export function isPermissionKey(s: string): s is PermissionKey {

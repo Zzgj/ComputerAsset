@@ -328,7 +328,29 @@ employeesRouter.patch(
       data.remark = body.remark ? String(body.remark).trim() : null
     }
 
-    const updated = await prisma.employee.update({ where: { id }, data })
+    // 员工姓名变更时同步更新资产和流转记录中的旧名称
+    const oldName = await prisma.employee.findUnique({ where: { id }, select: { name: true } })
+    const newName = typeof data.name === 'string' ? data.name : undefined
+    const nameChanged = newName !== undefined && oldName && oldName.name !== newName
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const emp = await tx.employee.update({ where: { id }, data })
+
+      if (nameChanged && oldName) {
+        // 同步更新该员工名下资产的 currentUserName
+        await tx.asset.updateMany({
+          where: { currentEmployeeId: id, currentUserName: oldName.name },
+          data: { currentUserName: newName },
+        })
+        // 同步更新该员工的历史流转记录中的 userName（按 employeeId 绑定关系）
+        await tx.assetRecord.updateMany({
+          where: { employeeId: id },
+          data: { userName: newName },
+        })
+      }
+
+      return emp
+    })
 
     await prisma.operationLog.create({
       data: {
@@ -336,7 +358,10 @@ employeesRouter.patch(
         action: '编辑员工',
         targetType: 'Employee',
         targetId: id,
-        detail: data as Record<string, any>,
+        detail: {
+          ...data as Record<string, any>,
+          ...(nameChanged ? { nameSync: { from: oldName?.name, to: newName } } : {}),
+        },
         ipAddress: req.ip ?? 'unknown',
       },
     })

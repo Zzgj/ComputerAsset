@@ -77,6 +77,9 @@
           @keyup.enter="search"
           @change="search"
         />
+        <el-select v-model="query.batchId" placeholder="批次" style="width: 180px" clearable @change="search">
+          <el-option v-for="b in batches" :key="b.id" :label="b.batchNo + (b.name ? ' · ' + b.name : '')" :value="b.id" />
+        </el-select>
         <el-button type="primary" @click="search">搜索</el-button>
         <el-popover placement="bottom-end" :width="240" trigger="click">
           <template #reference>
@@ -153,6 +156,12 @@
             formatText(row.department?.deptPathOnly ?? row.department?.name)
           }}</template>
         </el-table-column>
+        <el-table-column v-if="colVisible.batch" label="批次" min-width="140">
+          <template #default="{ row }">
+            <el-tag v-if="row.batch?.batchNo" type="info" effect="plain" size="small">{{ row.batch.batchNo }}</el-tag>
+            <span v-else style="color: var(--ca-text-muted)">—</span>
+          </template>
+        </el-table-column>
         <el-table-column v-if="colVisible.template" label="设备模板" min-width="140">
           <template #default="{ row }">
             <el-tag v-if="row.template?.name" type="primary" effect="plain">{{
@@ -203,6 +212,7 @@ type AssetListColKey =
   | 'currentUser'
   | 'campus'
   | 'department'
+  | 'batch'
 
 const columnDefs: { key: AssetListColKey; label: string }[] = [
   { key: 'deviceType', label: '设备类型' },
@@ -213,6 +223,7 @@ const columnDefs: { key: AssetListColKey; label: string }[] = [
   { key: 'currentUser', label: '使用人' },
   { key: 'campus', label: '园区' },
   { key: 'department', label: '部门' },
+  { key: 'batch', label: '批次' },
   { key: 'template', label: '设备模板' },
 ]
 
@@ -226,6 +237,7 @@ function defaultColumnVisibility(): Record<AssetListColKey, boolean> {
     currentUser: true,
     campus: true,
     department: true,
+    batch: false,
     template: false,
   }
 }
@@ -266,6 +278,7 @@ const assets = ref<any[]>([])
 const total = ref(0)
 const multiHolderUserNames = ref<Set<string>>(new Set())
 const campuses = ref<Array<{ id: number; name: string; sortOrder: number }>>([])
+const batches = ref<Array<{ id: number; batchNo: string; name?: string }>>([])
 const departments = ref<
   Array<{
     id: number
@@ -318,6 +331,7 @@ const query = reactive({
   campusId: null as number | null,
   departmentId: null as number | null,
   historicalUser: '',
+  batchId: null as number | null,
   page: 1,
   pageSize: 20,
 })
@@ -376,6 +390,11 @@ async function loadFilters() {
   ])
   departments.value = dRes.items ?? []
   campuses.value = cRes.items ?? []
+  // 加载批次列表
+  try {
+    const bRes = await apiRequest<{ items: any[] }>('/api/batches')
+    batches.value = bRes.items ?? []
+  } catch { /* 静默 */ }
 }
 
 async function loadAssets() {
@@ -389,6 +408,7 @@ async function loadAssets() {
     if (query.campusId) params.set('campusId', String(query.campusId))
     if (query.departmentId) params.set('departmentId', String(query.departmentId))
     if (query.historicalUser) params.set('historicalUser', query.historicalUser)
+    if (query.batchId) params.set('batchId', String(query.batchId))
     params.set('page', String(query.page))
     params.set('pageSize', String(query.pageSize))
 

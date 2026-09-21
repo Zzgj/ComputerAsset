@@ -71,6 +71,7 @@ assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req,
   const assetCodeFilter = typeof req.query.assetCode === 'string' ? req.query.assetCode.trim() : ''
   const userNameFilter = typeof req.query.userName === 'string' ? req.query.userName.trim() : ''
   const historicalUser = typeof req.query.historicalUser === 'string' ? req.query.historicalUser.trim() : ''
+  const batchId = toInt(req.query.batchId)
   const departmentId = toInt(req.query.departmentId)
   const campusId = toInt(req.query.campusId)
   const deviceTypeRaw = typeof req.query.deviceType === 'string' ? req.query.deviceType.trim() : ''
@@ -129,6 +130,10 @@ assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req,
     }
   }
 
+  if (batchId) {
+    where.batchId = batchId
+  }
+
   applyCampusScopeToAssetWhere(where, access)
 
   const total = await prisma.asset.count({ where })
@@ -140,6 +145,7 @@ assetsRouter.get('/', requireAuth, requirePermission('assets.read'), async (req,
     include: {
       department: { include: { campus: true } },
       template: true,
+      batch: true,
       currentEmployee: { select: { id: true, employeeNo: true, name: true } },
     },
   })
@@ -217,6 +223,7 @@ assetsRouter.get('/:id', requireAuth, requirePermission('assets.read'), async (r
     include: {
       department: { include: { campus: true } },
       template: true,
+      batch: true,
       currentEmployee: { select: { id: true, employeeNo: true, name: true, campusId: true } },
     },
   })
@@ -367,6 +374,13 @@ assetsRouter.post('/', requireAuth, requirePermission('assets.write'), async (re
   if (!deptRow) badRequest('departmentId is invalid')
   assertCampusAccess(access, deptRow.campusId)
 
+  // 校验批次是否存在
+  const batchId = typeof body.batchId === 'number' ? body.batchId : null
+  if (batchId !== null) {
+    const batch = await prisma.assetBatch.findUnique({ where: { id: batchId }, select: { id: true } })
+    if (!batch) badRequest('所选批次不存在')
+  }
+
   let asset: any
   try {
     asset = await prisma.$transaction(async (tx) => {
@@ -374,6 +388,7 @@ assetsRouter.post('/', requireAuth, requirePermission('assets.write'), async (re
         data: {
           assetCode,
           templateId: template?.id ?? null,
+          batchId,
           deviceType,
           brand,
           model,
@@ -476,6 +491,7 @@ assetsRouter.put('/:id', requireAuth, requirePermission('assets.write'), async (
     serialNumber:
       typeof body.serialNumber === 'string' && body.serialNumber.trim() ? body.serialNumber.trim() : old.serialNumber,
     templateId: resolvedTemplateId,
+    batchId: typeof body.batchId === 'number' ? body.batchId : (body.batchId === null ? null : undefined),
     deviceType,
     brand: typeof body.brand === 'string' ? body.brand : template?.brand,
     model: typeof body.model === 'string' ? body.model : template?.model,
@@ -528,11 +544,12 @@ assetsRouter.put('/:id', requireAuth, requirePermission('assets.write'), async (
 
   const asset = await prisma.asset.findUnique({
     where: { id },
-    include: { department: { include: { campus: true } }, template: true },
+    include: { department: { include: { campus: true } }, template: true, batch: true },
   })
 
   const before = {
     templateId: old.templateId,
+    batchId: old.batchId,
     assetCode: old.assetCode,
     serialNumber: old.serialNumber,
     brand: old.brand,
@@ -545,6 +562,7 @@ assetsRouter.put('/:id', requireAuth, requirePermission('assets.write'), async (
   }
   const after = {
     templateId: asset?.templateId,
+    batchId: asset?.batchId,
     assetCode: asset?.assetCode,
     serialNumber: asset?.serialNumber,
     brand: asset?.brand,

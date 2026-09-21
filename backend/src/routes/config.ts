@@ -9,6 +9,11 @@ function badRequest(message: string, details?: unknown): never {
 
 export const configRouter = Router()
 
+configRouter.get('/external-base-url', requireAuth, async (_req, res) => {
+  const cfg = await prisma.systemConfig.findUnique({ where: { configKey: 'external_base_url' } })
+  res.json({ externalBaseUrl: cfg?.configValue?.trim() ?? '' })
+})
+
 configRouter.get('/', requireAuth, requirePermission('config.manage'), async (_req, res) => {
   const items = await prisma.systemConfig.findMany()
   res.json({ items })
@@ -23,6 +28,7 @@ configRouter.put('/', requireAuth, requirePermission('config.manage'), async (re
     'default_borrow_days',
     'waiting_pickup_alert_days',
     'borrow_advance_alert_days',
+    'external_base_url',
   ]
 
   const updateData: Record<string, string> = {}
@@ -40,9 +46,10 @@ configRouter.put('/', requireAuth, requirePermission('config.manage'), async (re
 
   await prisma.$transaction(async (tx) => {
     for (const [configKey, configValue] of Object.entries(updateData)) {
-      await tx.systemConfig.update({
+      await tx.systemConfig.upsert({
         where: { configKey },
-        data: { configValue },
+        update: { configValue },
+        create: { configKey, configValue },
       })
     }
   })

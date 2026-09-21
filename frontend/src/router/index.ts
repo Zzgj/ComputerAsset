@@ -25,6 +25,7 @@ const BackupPage = () => import('../pages/BackupPage.vue')
 const TransferNotificationsPage = () => import('../pages/TransferNotificationsPage.vue')
 const EmployeesPage = () => import('../pages/EmployeesPage.vue')
 const EmployeeDetailPage = () => import('../pages/EmployeeDetailPage.vue')
+const BatchesPage = () => import('../pages/BatchesPage.vue')
 
 type Meta = {
   public?: boolean
@@ -112,6 +113,12 @@ const router = createRouter({
       name: 'employeeDetail',
       component: EmployeeDetailPage,
       meta: { requiresAuth: true, permissions: ['employees.read'], title: '员工详情' } satisfies Meta,
+    },
+    {
+      path: '/batches',
+      name: 'batches',
+      component: BatchesPage,
+      meta: { requiresAuth: true, permissions: ['assets.read'], title: '批次管理' } satisfies Meta,
     },
     {
       path: '/templates',

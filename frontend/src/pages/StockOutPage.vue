@@ -283,6 +283,12 @@
     <el-dialog v-model="qrDialogVisible" title="领用签名确认" width="400px" align-center>
       <div class="qr-dialog-body">
         <p class="qr-hint">请让领用人使用手机扫描二维码，核对信息后手写签名确认</p>
+        <div v-if="hasExternalUrl" class="qr-mode-toggle">
+          <el-radio-group v-model="linkMode" @change="onLinkModeChange" size="small">
+            <el-radio-button value="internal">内网</el-radio-button>
+            <el-radio-button value="external">外网</el-radio-button>
+          </el-radio-group>
+        </div>
         <img v-if="qrDataUrl" :src="qrDataUrl" alt="签名二维码" class="qr-image" />
         <div class="qr-link">
           <el-input :model-value="qrSignUrl" readonly size="small">
@@ -306,7 +312,7 @@ import { apiRequest } from '../services/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DepartmentCascader from '../components/DepartmentCascader.vue'
 import EmployeePicker from '../components/EmployeePicker.vue'
-import { getPublicBaseURL } from '../lib/publicBaseUrl'
+import { getBaseUrlForMode, loadExternalBaseUrl, getCachedExternalBaseUrl } from '../lib/publicBaseUrl'
 import { copyTextToClipboardWithToast } from '../lib/clipboard'
 import { formatDepartmentDisplayLabel } from '../lib/departmentDisplay'
 
@@ -315,6 +321,11 @@ const submitting = ref(false)
 const qrDialogVisible = ref(false)
 const qrDataUrl = ref('')
 const qrSignUrl = ref('')
+const linkMode = ref<'internal' | 'external'>('internal')
+const hasExternalUrl = ref(false)
+
+// 存储生成二维码所需的原始参数，切换内外网时重新生成
+const qrParams = ref<{ recordId: number; assetCode: string; userName: string; departmentLabel: string; remark: string } | null>(null)
 
 const campuses = ref<Array<{ id: number; name: string; sortOrder: number }>>([])
 const departments = ref<any[]>([])
@@ -478,7 +489,16 @@ async function showSignQr(
     ElMessage.warning('未获取到签名记录编号，请从资产详情页复制签名链接')
     return
   }
-  const baseUrl = getPublicBaseURL()
+  qrParams.value = { recordId, assetCode, userName, departmentLabel, remark }
+  // 默认内网模式
+  linkMode.value = 'internal'
+  await regenerateQr()
+}
+
+async function regenerateQr() {
+  if (!qrParams.value) return
+  const { recordId, assetCode, userName, departmentLabel, remark } = qrParams.value
+  const baseUrl = getBaseUrlForMode(linkMode.value)
   const params = new URLSearchParams({
     recordId: String(recordId),
     assetCode,
@@ -497,6 +517,10 @@ async function showSignQr(
     ElMessage.warning('二维码生成失败，请手动发送签名链接')
     qrDialogVisible.value = true
   }
+}
+
+async function onLinkModeChange() {
+  await regenerateQr()
 }
 
 async function doCheckOut() {
@@ -821,6 +845,9 @@ onMounted(async () => {
   await ensureDefaultLendDate()
   await loadDepartments()
   await loadAssets()
+  // 加载外网地址配置
+  await loadExternalBaseUrl()
+  hasExternalUrl.value = !!getCachedExternalBaseUrl()
 })
 </script>
 
@@ -918,6 +945,10 @@ onMounted(async () => {
   flex-direction: column;
   align-items: center;
   text-align: center;
+}
+
+.qr-mode-toggle {
+  margin-bottom: 16px;
 }
 
 .qr-hint {

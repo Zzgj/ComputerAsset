@@ -175,11 +175,29 @@ model AssetTemplate {
   assets      Asset[]
 }
 
+model AssetBatch {
+  id          Int      @id @default(autoincrement())
+  batchNo     String   @unique
+  name        String?
+  purchaseDate DateTime?
+  remark      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assets      Asset[]
+
+  @@index([batchNo])
+  @@index([createdAt])
+}
+
 model Asset {
   id                Int              @id @default(autoincrement())
   assetCode         String           @unique
   templateId        Int?
   template          AssetTemplate?  @relation(fields: [templateId], references: [id])
+
+  batchId           Int?
+  batch             AssetBatch?     @relation(fields: [batchId], references: [id])
 
   deviceType        String
   brand             String
@@ -213,6 +231,7 @@ model Asset {
   @@index([currentEmployeeId])
   @@index([departmentId, status])
   @@index([updatedAt])
+  @@index([batchId])
 }
 
 model AssetRecord {
