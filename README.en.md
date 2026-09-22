@@ -4,11 +4,11 @@
 
 ### Enterprise Computer Asset Management System
 
-[English](README.md) | [中文](README.zh.md)
+[English](README.en.md) | [中文](README.md)
 
 Covers the full lifecycle of computer assets from stock-in to retirement, with visual dashboards, fine-grained access control, and complete audit trails.
 
-[![Version](https://img.shields.io/badge/version-1.6.3-blue.svg)](https://github.com/Zzgj/ComputerAsset)
+[![Version](https://img.shields.io/badge/version-1.6.4-blue.svg)](https://github.com/Zzgj/ComputerAsset)
 [![License](https://img.shields.io/badge/license-ISC-green.svg)](https://opensource.org/licenses/ISC)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen.svg)](https://nodejs.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D.svg?logo=vue.js)](https://vuejs.org/)
@@ -444,6 +444,13 @@ Before importing, the system performs a pre-validation showing detected count, i
 ---
 
 ## Changelog
+
+### v1.6.4
+
+**Fixes**
+- Mobile landscape fullscreen signature misalignment: listen for orientation change, reinitialize canvas after rotation
+- Event listener leak after submitting fullscreen signature
+- Canvas width fallback when offsetWidth is 0
 
 ### v1.6.3
 
