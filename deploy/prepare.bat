@@ -113,24 +113,36 @@ copy "%BACKEND_DIR%\.env.example" "%DEPLOY_DIR%\backend\" >nul
 
 echo     正在安装生产依赖 (使用 npm, 生成标准 node_modules) ...
 cd /d "%DEPLOY_DIR%\backend"
-call npm install --production
+call npm install --omit=dev --legacy-peer-deps
+if %errorlevel% neq 0 (
+    echo     [失败] npm install 失败，尝试清理后重试 ...
+    rd /s /q node_modules 2>nul
+    del package-lock.json 2>nul
+    call npm install --omit=dev --legacy-peer-deps
+    if %errorlevel% neq 0 (
+        echo     [失败] 生产依赖安装失败，请手动在 deploy-package\backend 执行 npm install
+        pause
+        exit /b 1
+    )
+)
 echo     [通过] 生产依赖安装完成
 
-echo     正在复制 Prisma 引擎和客户端 ...
+echo     正在复制 Prisma 客户端 ...
 mkdir "%DEPLOY_DIR%\backend\node_modules\.prisma" >nul 2>&1
 robocopy "%BACKEND_DIR%\node_modules\.prisma" "%DEPLOY_DIR%\backend\node_modules\.prisma" /e /nfl /ndl /njh /njs /nc /ns /np >nul
-if exist "%BACKEND_DIR%\node_modules\@prisma\engines" (
-    mkdir "%DEPLOY_DIR%\backend\node_modules\@prisma\engines" >nul 2>&1
-    robocopy "%BACKEND_DIR%\node_modules\@prisma\engines" "%DEPLOY_DIR%\backend\node_modules\@prisma\engines" /e /nfl /ndl /njh /njs /nc /ns /np >nul
-)
-echo     [通过] Prisma 文件复制完成
+echo     [通过] Prisma 客户端复制完成
 
-echo     正在复制 prisma CLI ...
-if not exist "%DEPLOY_DIR%\backend\node_modules\prisma" (
-    mkdir "%DEPLOY_DIR%\backend\node_modules\prisma" >nul 2>&1
-    robocopy "%BACKEND_DIR%\node_modules\prisma" "%DEPLOY_DIR%\backend\node_modules\prisma" /e /nfl /ndl /njh /njs /nc /ns /np >nul
+echo     正在安装 Prisma CLI ...
+cd /d "%DEPLOY_DIR%\backend"
+call npm install prisma@7.5.0 --legacy-peer-deps --no-save
+if %errorlevel% neq 0 (
+    echo     [警告] Prisma CLI 安装失败，尝试从开发目录复制 ...
+    if not exist "%DEPLOY_DIR%\backend\node_modules\prisma" (
+        mkdir "%DEPLOY_DIR%\backend\node_modules\prisma" >nul 2>&1
+        robocopy "%BACKEND_DIR%\node_modules\prisma" "%DEPLOY_DIR%\backend\node_modules\prisma" /e /nfl /ndl /njh /njs /nc /ns /np >nul
+    )
 )
-echo     [通过] prisma CLI 复制完成
+echo     [通过] Prisma CLI 就绪
 
 echo     正在复制前端静态文件 ...
 mkdir "%DEPLOY_DIR%\frontend\dist" >nul 2>&1

@@ -98,19 +98,27 @@ cp "$BACKEND_DIR/.env.example" "$DEPLOY_DIR/backend/"
 
 echo "    正在安装生产依赖 (使用 npm, 生成标准 node_modules) ..."
 cd "$DEPLOY_DIR/backend"
-npm install --production
+npm install --omit=dev --legacy-peer-deps || {
+  echo "    首次安装失败，清理后重试 ..."
+  rm -rf node_modules package-lock.json
+  npm install --omit=dev --legacy-peer-deps || {
+    echo "    [失败] 生产依赖安装失败，请手动在 deploy-package/backend 执行 npm install"
+    exit 1
+  }
+}
 echo -e "    ${GREEN}[通过]${NC} 生产依赖安装完成"
 
 echo "    正在复制 Prisma 引擎和客户端 ..."
 cp -r "$BACKEND_DIR/node_modules/.prisma" "$DEPLOY_DIR/backend/node_modules/.prisma"
-if [ -d "$BACKEND_DIR/node_modules/@prisma/engines" ]; then
-  mkdir -p "$DEPLOY_DIR/backend/node_modules/@prisma/engines"
-  cp -r "$BACKEND_DIR/node_modules/@prisma/engines/"* "$DEPLOY_DIR/backend/node_modules/@prisma/engines/"
-fi
-if [ ! -d "$DEPLOY_DIR/backend/node_modules/prisma" ]; then
-  cp -r "$BACKEND_DIR/node_modules/prisma" "$DEPLOY_DIR/backend/node_modules/prisma"
-fi
-echo -e "    ${GREEN}[通过]${NC} Prisma 文件复制完成"
+echo -e "    ${GREEN}[通过]${NC} Prisma 客户端复制完成"
+
+echo "    正在安装 Prisma CLI ..."
+cd "$DEPLOY_DIR/backend"
+npm install prisma@7.5.0 --legacy-peer-deps --no-save || {
+  echo "    [警告] Prisma CLI 安装失败，尝试从开发目录复制 ..."
+  cp -r "$BACKEND_DIR/node_modules/prisma" "$DEPLOY_DIR/backend/node_modules/prisma" 2>/dev/null || true
+}
+echo -e "    ${GREEN}[通过]${NC} Prisma CLI 就绪"
 
 echo "    正在复制前端静态文件 ..."
 cp -r "$FRONTEND_DIR/dist/"* "$DEPLOY_DIR/frontend/dist/"
