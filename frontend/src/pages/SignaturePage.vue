@@ -137,7 +137,7 @@ function initCanvas() {
   if (!canvas) return
   // 使用 devicePixelRatio 提高清晰度
   const dpr = window.devicePixelRatio || 1
-  const w = canvas.offsetWidth
+  let w = canvas.offsetWidth
   // 全屏模式下 canvas 高度由 flex 撑开，读 offsetHeight；非全屏固定 200px
   let h = 200
   if (isFullscreen.value) {
@@ -145,6 +145,8 @@ function initCanvas() {
     // flex 布局可能尚未完成，用视口高度兜底
     if (!h || h < 50) h = window.innerHeight - 120
   }
+  // 宽度兜底
+  if (!w || w < 50) w = window.innerWidth - 24
   canvas.width = w * dpr
   canvas.height = h * dpr
   const ctx = canvas.getContext('2d')
@@ -161,6 +163,11 @@ function initCanvas() {
 
 function toggleFullscreen() {
   isFullscreen.value = !isFullscreen.value
+  if (isFullscreen.value) {
+    startOrientationWatch()
+  } else {
+    stopOrientationWatch()
+  }
   // 等待 DOM 更新 + 浏览器布局完成后重新初始化画布尺寸
   nextTick(() => {
     requestAnimationFrame(() => {
@@ -168,6 +175,37 @@ function toggleFullscreen() {
       hasDrawn.value = false
     })
   })
+}
+
+/** 全屏模式下监听屏幕旋转，重新初始化画布以保持坐标一致 */
+let orientationHandler: (() => void) | null = null
+let resizeTimer: ReturnType<typeof setTimeout> | null = null
+
+function startOrientationWatch() {
+  if (orientationHandler) return
+  // orientationchange 在旋转动画开始时触发，延迟等动画完成后再重置画布
+  orientationHandler = () => {
+    if (!isFullscreen.value) return
+    if (resizeTimer) clearTimeout(resizeTimer)
+    resizeTimer = setTimeout(() => {
+      initCanvas()
+      hasDrawn.value = false
+    }, 350)
+  }
+  window.addEventListener('orientationchange', orientationHandler)
+  window.addEventListener('resize', orientationHandler)
+}
+
+function stopOrientationWatch() {
+  if (resizeTimer) {
+    clearTimeout(resizeTimer)
+    resizeTimer = null
+  }
+  if (orientationHandler) {
+    window.removeEventListener('orientationchange', orientationHandler)
+    window.removeEventListener('resize', orientationHandler)
+    orientationHandler = null
+  }
 }
 
 onMounted(async () => {
@@ -206,6 +244,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   isFullscreen.value = false
+  stopOrientationWatch()
 })
 
 async function loadRecordState() {
@@ -334,6 +373,7 @@ async function submitSignature() {
     submitted.value = true
     submittedMessage.value = '领用确认已完成，可关闭此页面'
     isFullscreen.value = false
+    stopOrientationWatch()
   } catch (e: any) {
     if (e?.code === 'SIGNATURE_ALREADY_COMPLETED' || e?.status === 409) {
       submitted.value = true
