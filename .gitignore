@@ -55,3 +55,9 @@ frontend/.vite/
 # Deploy output
 /deploy-package/
 /ComputerAsset-*.zip
+
+# Python tools build artifacts
+tools/build/
+tools/__pycache__/
+tools/dist/
+tools/*.spec
