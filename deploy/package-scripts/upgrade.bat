@@ -278,76 +278,32 @@ REM [7/12] Check if dependencies need updating
 REM ----------------------------------------------------------
 echo.
 echo -----------------------------------------------------------
-echo   [7/12] Check Dependencies
+echo   [7/12] Update node_modules (offline: copy from new package)
 echo -----------------------------------------------------------
 echo.
 
-set "NEEDS_INSTALL=0"
-
-REM Compare old and new package.json
-if exist "!BACKUP_DIR!\backend\package.json" (
-    fc "!BACKUP_DIR!\backend\package.json" "%BK_BACKEND%\package.json" >nul 2>&1
-    if !errorlevel! neq 0 (
-        echo     [INFO] package.json changed, npm install needed
-        set "NEEDS_INSTALL=1"
+REM 内网环境无法 npm install，直接从新部署包复制 node_modules
+if exist "%NEW_BACKEND%\node_modules" (
+    echo     [INFO] Copying node_modules from new package ...
+    if exist "%BK_BACKEND%\node_modules" rmdir /s /q "%BK_BACKEND%\node_modules" 2>nul
+    robocopy "%NEW_BACKEND%\node_modules" "%BK_BACKEND%\node_modules" /e /nfl /ndl /njh /njs /nc /ns /np >nul 2>&1
+    set "RC=!errorlevel!"
+    if !RC! gtr 7 (
+        echo     [FAIL] Failed to copy node_modules ^(rc=!RC!^)
+        set /a FAIL+=1
+    ) else (
+        echo     [OK] node_modules copied from new package
     )
 ) else (
-    echo     [INFO] No previous package.json to compare, running npm install
-    set "NEEDS_INSTALL=1"
-)
-
-REM Check if key dependencies exist in node_modules
-if "!NEEDS_INSTALL!"=="0" (
+    echo     [INFO] New package has no node_modules, keeping existing
     if not exist "%BK_BACKEND%\node_modules\dotenv" (
-        echo     [INFO] dotenv missing from node_modules
-        set "NEEDS_INSTALL=1"
+        echo     [WARN] dotenv missing - service may not start
+        set /a FAIL+=1
     )
     if not exist "%BK_BACKEND%\node_modules\express" (
-        echo     [INFO] express missing from node_modules
-        set "NEEDS_INSTALL=1"
+        echo     [WARN] express missing - service may not start
+        set /a FAIL+=1
     )
-    if not exist "%BK_BACKEND%\node_modules\@prisma\client" (
-        echo     [INFO] @prisma/client missing from node_modules
-        set "NEEDS_INSTALL=1"
-    )
-)
-
-if "!NEEDS_INSTALL!"=="1" (
-    echo.
-    echo     [INFO] Running npm install --omit=dev --legacy-peer-deps ...
-    pushd "%BK_BACKEND%"
-    
-    set "NPM_TRIES=0"
-    :npm_install_retry
-    set /a NPM_TRIES+=1
-    echo     [INFO] Attempt !NPM_TRIES!/3 ...
-    call npm install --omit=dev --legacy-peer-deps 2>&1
-    set "NPM_RC=!errorlevel!"
-    
-    if !NPM_RC! equ 0 (
-        echo     [OK] npm install succeeded
-    ) else (
-        echo     [WARN] npm install failed ^(rc=!NPM_RC!^)
-        if !NPM_TRIES! lss 3 (
-            echo     [INFO] Retrying in 5 seconds...
-            timeout /t 5 /nobreak >nul
-            goto :npm_install_retry
-        ) else (
-            echo     [FAIL] npm install failed after 3 attempts
-            echo     [INFO] Trying with --force ...
-            call npm install --omit=dev --legacy-peer-deps --force 2>&1
-            set "NPM_RC=!errorlevel!"
-            if !NPM_RC! neq 0 (
-                echo     [FAIL] npm install --force also failed
-                set /a FAIL+=1
-            ) else (
-                echo     [OK] npm install --force succeeded
-            )
-        )
-    )
-    popd
-) else (
-    echo     [OK] Dependencies up to date, skipping npm install
 )
 REM ----------------------------------------------------------
 REM [8/12] Copy Prisma client from new package
@@ -401,17 +357,9 @@ if exist "!PRISMA_CLI!" (
 ) else if exist "!PRISMA_CLI_FALLBACK!" (
     echo     [OK] Prisma CLI found at node_modules\prisma\build\index.js
 ) else (
-    echo     [WARN] Prisma CLI not found, installing prisma@7.5.0 ...
-    pushd "%BK_BACKEND%"
-    call npm install prisma@7.5.0 --no-save --legacy-peer-deps 2>&1
-    set "PRISMA_RC=!errorlevel!"
-    popd
-    if !PRISMA_RC! neq 0 (
-        echo     [FAIL] Failed to install prisma CLI
-        set /a FAIL+=1
-    ) else (
-        echo     [OK] Prisma CLI installed
-    )
+    echo     [FAIL] Prisma CLI not found in node_modules
+    echo     [INFO] Make sure prepare.bat was run to generate complete deploy-package
+    set /a FAIL+=1
 )
 REM ----------------------------------------------------------
 REM [10/12] Run prisma migrate deploy
