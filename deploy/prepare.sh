@@ -127,6 +127,7 @@ cp "$ROOT_DIR/deploy/package-scripts/deploy.bat" "$DEPLOY_DIR/"
 cp "$ROOT_DIR/deploy/package-scripts/stop.bat" "$DEPLOY_DIR/"
 cp "$ROOT_DIR/deploy/package-scripts/restart.bat" "$DEPLOY_DIR/"
 cp "$ROOT_DIR/deploy/README.txt" "$DEPLOY_DIR/"
+cp "$ROOT_DIR/deploy/package-scripts/upgrade.bat" "$DEPLOY_DIR/" 2>/dev/null || true
 
 for required in deploy.bat stop.bat restart.bat README.txt; do
   if [ ! -f "$DEPLOY_DIR/$required" ]; then

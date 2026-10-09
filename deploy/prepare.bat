@@ -173,6 +173,12 @@ if %errorlevel% neq 0 (
     pause
     exit /b 1
 )
+copy "%ROOT_DIR%\deploy\package-scripts\upgrade.bat" "%DEPLOY_DIR%\" >nul 2>&1
+if exist "%ROOT_DIR%\deploy\package-scripts\upgrade.bat" (
+    echo     [通过] upgrade.bat 已复制
+) else (
+    echo     [提示] upgrade.bat 不存在，跳过
+)
 
 echo     [通过] 部署包组装完成
 
