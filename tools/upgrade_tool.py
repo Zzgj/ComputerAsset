@@ -91,6 +91,62 @@ def read_version(base_path):
     return ver, None
 
 
+def test_network_reachable(path):
+    """测试网络连通性（UNC 路径的 host 或本地路径的盘符）。
+    返回 (bool, msg)。
+    """
+    p = norm(path)
+    if not p:
+        return False, "路径为空"
+
+    # 判断是 UNC 路径还是本地路径
+    if p.startswith("\\\\"):
+        # UNC 路径: \\server\share\... → 提取 server 名
+        parts = p.replace("/", "\\").strip("\\").split("\\")
+        if len(parts) < 1:
+            return False, "UNC 路径格式无效"
+        host = parts[0]
+        # 用 socket 测试 445 端口（SMB）或 ping
+        import socket
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            result = sock.connect_ex((host, 445))
+            sock.close()
+            if result == 0:
+                return True, f"网络连通: {host}:445 (SMB)"
+            else:
+                # 445 不通，尝试 ping
+                try:
+                    ping_proc = subprocess.run(
+                        ["ping", "-n", "1", "-w", "3000", host],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    if ping_proc.returncode == 0:
+                        return True, f"网络连通: {host} (ping OK, SMB 端口未开放)"
+                    else:
+                        return False, f"网络不通: 无法连接 {host}"
+                except Exception:
+                    return False, f"网络不通: {host} (SMB 端口关闭且 ping 失败)"
+        except socket.gaierror:
+            return False, f"无法解析主机名: {host}"
+        except Exception as e:
+            return False, f"网络测试异常: {e}"
+    else:
+        # 本地路径: 检查盘符是否存在
+        drive = p[:2] if len(p) >= 2 and p[1] == ":" else ""
+        if drive:
+            try:
+                import ctypes
+                if ctypes.windll.kernel32.GetLogicalDrives() & (1 << (ord(drive[0].upper()) - ord('A'))):
+                    return True, f"本地磁盘可用: {drive}"
+                else:
+                    return False, f"磁盘不存在: {drive}"
+            except Exception:
+                return True, "本地路径（跳过磁盘检查）"
+        return True, "本地路径"
+
+
 def test_path_accessible(path):
     """测试路径是否可访问（存在且可读）。返回 (bool, msg)。"""
     p = norm(path)
@@ -102,7 +158,7 @@ def test_path_accessible(path):
         if not os.path.isdir(p):
             return False, "路径不是目录"
         os.listdir(p)  # 尝试列目录验证可读性
-        return True, "连接成功"
+        return True, "路径可访问"
     except OSError as e:
         return False, f"访问失败: {e}"
 
@@ -428,34 +484,71 @@ class UpgradeToolApp:
         self._update_upgrade_button()
 
     def _test_connection(self):
-        """测试服务器路径连通性，并读取服务器版本。"""
+        """测试服务器连通性：分步检测网络、路径、版本。"""
         path = self.server_var.get().strip()
         if not path:
             messagebox.showwarning("提示", "请输入服务器路径")
             return
-        self._set_status("正在测试连接…")
+        self._set_status("正在测试网络连通…")
         self._set_bottom_status("测试中…")
+        self.log("=" * 40)
         self.log(f"测试连接: {path}")
 
         def worker():
-            ok, msg = test_path_accessible(path)
-            self.msg_queue.put(("server_ok", ok))
-            if ok:
-                self.log(f"  [OK] {msg}")
-                self._set_status("连接成功，读取版本…")
-                ver, verr = read_version(path)
-                if ver:
-                    self.msg_queue.put(("version_server", ver))
-                    self.log(f"  服务器版本: {ver}")
-                else:
-                    self.msg_queue.put(("version_server", None))
-                    self.log(f"  [警告] 服务器版本读取失败: {verr}")
+            # 步骤 1: 网络连通
+            self._set_status("步骤 1/3: 测试网络连通…")
+            net_ok, net_msg = test_network_reachable(path)
+            if net_ok:
+                self.log(f"  [OK] 网络连通 — {net_msg}")
             else:
-                self.log(f"  [失败] {msg}")
+                self.log(f"  [失败] 网络不通 — {net_msg}")
+                self.msg_queue.put(("server_ok", False))
                 self.msg_queue.put(("version_server", None))
-                self._set_status("连接失败")
-                self._set_bottom_status("连接失败")
-            self._set_bottom_status("就绪" if ok else "连接失败")
+                self._set_status("网络不通")
+                self._set_bottom_status("网络不通")
+                return
+
+            # 步骤 2: 路径可访问
+            self._set_status("步骤 2/3: 测试路径可访问…")
+            path_ok, path_msg = test_path_accessible(path)
+            if path_ok:
+                self.log(f"  [OK] 路径可访问 — {path_msg}")
+                self.msg_queue.put(("server_ok", True))
+            else:
+                self.log(f"  [失败] 路径不可访问 — {path_msg}")
+                self.log(f"  [提示] 请检查:")
+                self.log(f"    - 共享文件夹是否已设置")
+                self.log(f"    - 路径是否正确（包括子目录）")
+                self.log(f"    - 是否有访问权限")
+                self.msg_queue.put(("server_ok", False))
+                self.msg_queue.put(("version_server", None))
+                self._set_status("路径不可访问")
+                self._set_bottom_status("路径不可访问")
+                return
+
+            # 步骤 3: 版本对比
+            self._set_status("步骤 3/3: 读取版本信息…")
+            ver, verr = read_version(path)
+            if ver:
+                self.msg_queue.put(("version_server", ver))
+                self.log(f"  [OK] 服务器版本: {ver}")
+
+                # 文件差异对比
+                lv = self.local_version
+                if lv:
+                    if lv == ver:
+                        self.log(f"  [提示] 本地与服务器版本相同 ({ver})，无需升级")
+                    else:
+                        self.log(f"  [提示] 版本不同: 本地 {lv} vs 服务器 {ver}，可以升级")
+                else:
+                    self.log(f"  [提示] 请先选择本地升级包路径")
+            else:
+                self.msg_queue.put(("version_server", None))
+                self.log(f"  [警告] 无法读取服务器版本: {verr}")
+                self.log(f"  [提示] 可能是首次部署，服务器上还没有 package.json")
+
+            self._set_status("测试完成")
+            self._set_bottom_status("就绪")
 
         t = threading.Thread(target=worker, daemon=True)
         t.start()
