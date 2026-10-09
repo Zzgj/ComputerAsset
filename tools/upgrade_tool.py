@@ -111,8 +111,10 @@ def test_network_reachable(path):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(5)
-            result = sock.connect_ex((host, 445))
-            sock.close()
+            try:
+                result = sock.connect_ex((host, 445))
+            finally:
+                sock.close()
             if result == 0:
                 return True, f"网络连通: {host}:445 (SMB)"
             else:
@@ -600,6 +602,46 @@ class UpgradeToolApp:
         """后台线程: 执行实际复制操作。"""
         local = norm(local)
         server = norm(server)
+
+        # 检查服务器服务是否还在运行（端口检测）
+        try:
+            import socket
+            port = 3000
+            # 从 .env 读取端口
+            env_path = os.path.join(server, "backend", ".env")
+            if os.path.isfile(env_path):
+                try:
+                    with open(env_path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line.startswith("PORT=") and not line.startswith("#"):
+                                port = int(line.split("=", 1)[1].strip().strip('"'))
+                                break
+                except Exception:
+                    pass
+            # 尝试连接端口，判断服务是否在运行
+            host = "127.0.0.1"
+            # 如果是 UNC 路径，提取主机名
+            if server.startswith("\\\\"):
+                parts = server.replace("/", "\\").strip("\\").split("\\")
+                if parts:
+                    host = parts[0]
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(3)
+                try:
+                    result = sock.connect_ex((host, port))
+                finally:
+                    sock.close()
+                if result == 0:
+                    self.log(f"[警告] 服务器端口 {port} 仍在监听，建议先停止服务再升级")
+                    self.log(f"  请在服务器上运行 stop.bat 停止服务后重试")
+                    self.msg_queue.put(("upgrade_error", f"服务器服务仍在运行（端口 {port}），请先在服务器上执行 stop.bat 停止服务"))
+                    return
+            except Exception:
+                pass  # 无法检测端口，继续升级
+        except Exception:
+            pass  # 安全降级，不阻断升级
 
         # 提示受保护项
         for item in PROTECTED_ITEMS:
