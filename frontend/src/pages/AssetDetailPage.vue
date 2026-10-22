@@ -968,7 +968,6 @@ const sortedRecords = computed(() =>
 const timelineItems = computed(() => {
   const purchaseDate = asset.value?.purchaseDate
   const flow = sortedRecords.value
-    .filter((r: any) => r.action !== 'transfer_undo')
     .map((r: any) => ({
     key: `record-${r.id}`,
     id: r.id,
@@ -1084,19 +1083,13 @@ const editCoreDialogVisible = ref(false)
 const submittingEditCore = ref(false)
 const submittingTransferUndo = ref(false)
 
-/** 判断某条 transfer 记录是否是最近的、尚未被撤销的调拨 */
+/** 判断某条 transfer 记录是否是最近的调拨（仅最近一条可撤销） */
 function canUndoTransfer(recordId: number): boolean {
   const transferRecords = records.value
     .filter((r: any) => r.action === 'transfer')
     .sort((a: any, b: any) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime())
   if (!transferRecords.length) return false
-  const latest = transferRecords[0]
-  if (latest.id !== recordId) return false
-  // 检查是否已有 transfer_undo 撤销了这条记录
-  const undone = records.value.some(
-    (r: any) => r.action === 'transfer_undo' && typeof r.remark === 'string' && r.remark.includes(`原记录#${recordId}`),
-  )
-  return !undone
+  return transferRecords[0].id === recordId
 }
 
 async function submitTransferUndo(recordId: number) {

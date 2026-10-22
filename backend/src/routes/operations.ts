@@ -920,12 +920,13 @@ operationsRouter.post('/transfer-undo', requireAuth, requirePermission('operatio
       orderBy: { createdAt: 'desc' },
     })
     if (!transferRecord) badRequest('未找到可撤销的调拨记录')
-    // 不能撤销已被 transfer_undo 撤销过的记录
-    const alreadyUndone = await tx.assetRecord.findFirst({
+    // 不能撤销已被撤销过的记录（通过 OperationLog 检查）
+    const alreadyUndone = await tx.operationLog.findFirst({
       where: {
-        assetId,
-        action: AssetRecordAction.transfer_undo,
-        remark: { contains: `原记录#${transferRecord.id}` },
+        targetType: 'Asset',
+        targetId: assetId,
+        action: '撤销调拨',
+        detail: { string_contains: `\"undoneRecordId\":${transferRecord.id}` },
       },
     })
     if (alreadyUndone) badRequest('该调拨记录已被撤销')
@@ -960,20 +961,6 @@ operationsRouter.post('/transfer-undo', requireAuth, requirePermission('operatio
         AssetStatus.in_use,
       )
 
-      const undoRecord = await tx.assetRecord.create({
-        data: {
-          assetId,
-          action: AssetRecordAction.transfer_undo,
-          userName: fromUser,
-          employeeId: asset.currentEmployeeId,
-          departmentId: fromDept,
-          actionDate: now,
-          remark: `撤销调拨（原记录#${transferRecord.id}）`,
-          operatorId: authUser.id,
-          requestId: body.requestId,
-        },
-      })
-
       await tx.operationLog.create({
         data: {
           operatorId: authUser.id,
@@ -991,7 +978,7 @@ operationsRouter.post('/transfer-undo', requireAuth, requirePermission('operatio
         },
       })
 
-      return { assetId, assetRecord: undoRecord }
+      return { assetId, undone: true }
     } else {
       // 待签字（pending_confirmation）的调拨：撤销调拨，回到调拨前状态
       if (asset.status !== AssetStatus.pending_confirmation) {
@@ -1014,20 +1001,6 @@ operationsRouter.post('/transfer-undo', requireAuth, requirePermission('operatio
         where: { recordId: transferRecord.id },
       })
 
-      const undoRecord = await tx.assetRecord.create({
-        data: {
-          assetId,
-          action: AssetRecordAction.transfer_undo,
-          userName: asset.currentUserName,
-          employeeId: asset.currentEmployeeId,
-          departmentId: asset.departmentId,
-          actionDate: now,
-          remark: `撤销调拨（原记录#${transferRecord.id}，待签字状态撤销）`,
-          operatorId: authUser.id,
-          requestId: body.requestId,
-        },
-      })
-
       await tx.operationLog.create({
         data: {
           operatorId: authUser.id,
@@ -1042,7 +1015,7 @@ operationsRouter.post('/transfer-undo', requireAuth, requirePermission('operatio
         },
       })
 
-      return { assetId, assetRecord: undoRecord }
+      return { assetId, undone: true }
     }
   })
 
