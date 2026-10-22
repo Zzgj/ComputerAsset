@@ -965,7 +965,7 @@ operationsRouter.post('/transfer-undo', requireAuth, requirePermission('operatio
           assetId,
           action: AssetRecordAction.transfer_undo,
           userName: fromUser,
-          employeeId: transferRecord.employeeId,
+          employeeId: asset.currentEmployeeId,
           departmentId: fromDept,
           actionDate: now,
           remark: `撤销调拨（原记录#${transferRecord.id}）`,
