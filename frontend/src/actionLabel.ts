@@ -14,6 +14,7 @@ export function actionLabel(action: unknown): string {
     retire: '报废',
     manual_note: '补录记录',
     signature_reset: '重置签字',
+    transfer_undo: '撤销调拨',
   }
   return map[a] ?? a
 }

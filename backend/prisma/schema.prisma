@@ -39,6 +39,7 @@ enum AssetRecordAction {
   retire
   manual_note
   signature_reset
+  transfer_undo
 }
 
 enum RepairResult {

@@ -372,6 +372,17 @@
             >
               <el-tag type="warning" effect="light" size="small">未签名确认</el-tag>
             </div>
+            <div v-if="r.action === 'transfer' && isSuperAdmin && canUndoTransfer(r.id)" class="timeline-undo">
+              <el-button
+                type="danger"
+                size="small"
+                plain
+                :loading="submittingTransferUndo"
+                @click="submitTransferUndo(r.id)"
+              >
+                撤销调拨
+              </el-button>
+            </div>
           </div>
           <div class="timeline-body" v-else>
             <div class="timeline-meta">
@@ -785,6 +796,7 @@ const canOperations = computed(() => authStore.can('operations.execute'))
 const canEditAsset = computed(() => authStore.can('assets.write'))
 const canManualRecord = computed(() => canEditAsset.value && canOperations.value)
 const canDeleteAsset = computed(() => authStore.can('assets.delete'))
+const isSuperAdmin = computed(() => authStore.can('assets.delete') || authStore.can('users.write'))
 const manualRecordCount = computed(
   () => records.value.filter((record) => record.action === 'manual_note').length,
 )
@@ -955,7 +967,9 @@ const sortedRecords = computed(() =>
 )
 const timelineItems = computed(() => {
   const purchaseDate = asset.value?.purchaseDate
-  const flow = sortedRecords.value.map((r: any) => ({
+  const flow = sortedRecords.value
+    .filter((r: any) => r.action !== 'transfer_undo')
+    .map((r: any) => ({
     key: `record-${r.id}`,
     id: r.id,
     kind: 'record' as const,
@@ -1068,6 +1082,50 @@ const submittingRepairDone = ref(false)
 const submittingRetire = ref(false)
 const editCoreDialogVisible = ref(false)
 const submittingEditCore = ref(false)
+const submittingTransferUndo = ref(false)
+
+/** 判断某条 transfer 记录是否是最近的、尚未被撤销的调拨 */
+function canUndoTransfer(recordId: number): boolean {
+  const transferRecords = records.value
+    .filter((r: any) => r.action === 'transfer')
+    .sort((a: any, b: any) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime())
+  if (!transferRecords.length) return false
+  const latest = transferRecords[0]
+  if (latest.id !== recordId) return false
+  // 检查是否已有 transfer_undo 撤销了这条记录
+  const undone = records.value.some(
+    (r: any) => r.action === 'transfer_undo' && typeof r.remark === 'string' && r.remark.includes(`原记录#${recordId}`),
+  )
+  return !undone
+}
+
+async function submitTransferUndo(recordId: number) {
+  try {
+    await ElMessageBox.confirm(
+      '确认撤销此调拨操作？资产将恢复为调拨前的状态。',
+      '撤销调拨',
+      { type: 'warning', confirmButtonText: '确认撤销', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  submittingTransferUndo.value = true
+  try {
+    await apiRequest<any>('/api/operations/transfer-undo', {
+      method: 'POST',
+      body: {
+        requestId: `undo-transfer-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        assetId,
+      },
+    })
+    ElMessage.success('调拨已撤销')
+    await reload()
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '撤销调拨失败')
+  } finally {
+    submittingTransferUndo.value = false
+  }
+}
 
 const transferForm = reactive<any>({
   employeeId: null as number | null,
@@ -1597,6 +1655,10 @@ onMounted(async () => {
 }
 
 .timeline-unsigned {
+  margin-top: 8px;
+}
+
+.timeline-undo {
   margin-top: 8px;
 }
 

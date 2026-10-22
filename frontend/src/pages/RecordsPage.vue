@@ -4,13 +4,12 @@
       <div class="ca-page-title">出入库记录</div>
       <div class="ca-page-subtitle">查看所有出入库流转记录，支持按编号、操作类型、使用人和日期范围筛选</div>
       <div class="filter-bar">
-        <el-input v-model="query.assetCode" clearable style="width: 200px" placeholder="电脑编号（模糊）" />
+        <el-input v-model="query.assetCode" clearable style="width: 180px" placeholder="电脑编号（模糊）" />
         <el-select v-model="query.action" clearable style="width: 160px" placeholder="操作类型">
           <el-option label="入库" value="stock_in" />
           <el-option label="待领用" value="assign" />
           <el-option label="取消分配" value="cancel_assign" />
-          <el-option label="领用" value="pick_up" />
-          <el-option label="出库/领用" value="check_out" />
+          <el-option label="出库" value="check_out" />
           <el-option label="借出" value="lend" />
           <el-option label="归还" value="return" />
           <el-option label="调拨" value="transfer" />
@@ -18,7 +17,19 @@
           <el-option label="维修完成" value="repair_done" />
           <el-option label="报废" value="retire" />
         </el-select>
-        <el-input v-model="query.userName" clearable style="width: 160px" placeholder="使用人（可选）" />
+        <el-input v-model="query.userName" clearable style="width: 140px" placeholder="使用人（可选）" />
+        <el-select v-model="query.campusId" clearable placeholder="园区" style="width: 140px" @change="onCampusChange">
+          <el-option v-for="c in campuses" :key="c.id" :label="c.name" :value="c.id" />
+        </el-select>
+        <el-select
+          v-model="query.departmentId"
+          clearable
+          filterable
+          placeholder="部门"
+          style="width: 200px"
+        >
+          <el-option v-for="d in filteredDepartments" :key="d.id" :label="d.name" :value="d.id" />
+        </el-select>
         <el-date-picker v-model="query.startDate" type="date" placeholder="开始日期" value-format="YYYY-MM-DD" />
         <el-date-picker v-model="query.endDate" type="date" placeholder="结束日期" value-format="YYYY-MM-DD" />
         <el-button type="primary" @click="search">搜索</el-button>
@@ -61,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { apiRequest } from '../services/api'
 import { actionLabel } from '../actionLabel'
 import { ElMessage } from 'element-plus'
@@ -69,15 +80,45 @@ import { ElMessage } from 'element-plus'
 const records = ref<any[]>([])
 const loading = ref(false)
 const total = ref(0)
+const campuses = ref<Array<{ id: number; name: string; sortOrder: number }>>([])
+const departments = ref<Array<{ id: number; name: string; campusId: number }>>([])
 const query = reactive({
   assetCode: '',
   action: '',
   userName: '',
+  campusId: null as number | null,
+  departmentId: null as number | null,
   startDate: '',
   endDate: '',
   page: 1,
   pageSize: 20,
 })
+
+const filteredDepartments = computed(() => {
+  if (!query.campusId) return departments.value
+  return departments.value.filter((d) => d.campusId === query.campusId)
+})
+
+function onCampusChange() {
+  query.departmentId = null
+}
+
+async function loadMeta() {
+  try {
+    const d = await apiRequest<{
+      items: any[]
+      campuses: Array<{ id: number; name: string; sortOrder: number }>
+    }>('/api/departments/transfer-targets')
+    departments.value = (d.items ?? []).map((item: any) => ({
+      id: item.id,
+      name: item.displayPath ?? item.name,
+      campusId: item.campusId,
+    }))
+    campuses.value = d.campuses ?? []
+  } catch {
+    // keep empty
+  }
+}
 
 async function load() {
   loading.value = true
@@ -86,6 +127,8 @@ async function load() {
     if (query.assetCode) params.set('assetCode', query.assetCode)
     if (query.action) params.set('action', query.action)
     if (query.userName) params.set('userName', query.userName)
+    if (query.campusId) params.set('campusId', String(query.campusId))
+    if (query.departmentId) params.set('departmentId', String(query.departmentId))
     if (query.startDate) params.set('startDate', query.startDate)
     if (query.endDate) params.set('endDate', query.endDate)
     params.set('page', String(query.page))
@@ -114,6 +157,8 @@ function reset() {
   query.assetCode = ''
   query.action = ''
   query.userName = ''
+  query.campusId = null
+  query.departmentId = null
   query.startDate = ''
   query.endDate = ''
   query.page = 1
@@ -132,7 +177,10 @@ function onSizeChange(s: number) {
   load()
 }
 
-onMounted(load)
+onMounted(async () => {
+  await loadMeta()
+  await load()
+})
 </script>
 
 <style scoped>

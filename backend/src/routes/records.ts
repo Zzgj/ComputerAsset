@@ -31,6 +31,8 @@ recordsRouter.get('/', requireAuth, requirePermission('records.read'), async (re
   const assetCode = typeof req.query.assetCode === 'string' ? req.query.assetCode.trim() : ''
   const action = typeof req.query.action === 'string' ? req.query.action.trim() : ''
   const userName = typeof req.query.userName === 'string' ? req.query.userName.trim() : ''
+  const campusId = toInt(req.query.campusId)
+  const departmentId = toInt(req.query.departmentId)
   const startDate = typeof req.query.startDate === 'string' ? new Date(req.query.startDate) : undefined
   const endDate = typeof req.query.endDate === 'string' ? new Date(req.query.endDate) : undefined
 
@@ -41,8 +43,15 @@ recordsRouter.get('/', requireAuth, requirePermission('records.read'), async (re
   const pageSize = Math.min(100, Math.max(1, toInt(req.query.pageSize) ?? 20))
 
   const where: any = {}
+  // 合并「领用」和「出库/领用」选项：前端传 check_out 时同时查 pick_up
   if (action && Object.values(AssetRecordAction).includes(action as AssetRecordAction)) {
-    where.action = action as AssetRecordAction
+    if (action === 'check_out') {
+      where.action = { in: [AssetRecordAction.check_out, AssetRecordAction.pick_up] }
+    } else if (action === 'pick_up') {
+      where.action = { in: [AssetRecordAction.check_out, AssetRecordAction.pick_up] }
+    } else {
+      where.action = action as AssetRecordAction
+    }
   }
   if (userName) {
     where.userName = { contains: userName }
@@ -56,6 +65,25 @@ recordsRouter.get('/', requireAuth, requirePermission('records.read'), async (re
   if (assetCode) {
     where.asset = {
       assetCode: { contains: assetCode },
+    }
+  }
+
+  // 园区筛选
+  if (campusId) {
+    const existing = where.department
+    if (existing && typeof existing === 'object' && existing !== null && !Array.isArray(existing)) {
+      where.department = { AND: [existing, { campusId }] }
+    } else {
+      where.department = { campusId }
+    }
+  }
+  // 部门筛选
+  if (departmentId) {
+    const existing = where.department
+    if (existing && typeof existing === 'object' && existing !== null && !Array.isArray(existing)) {
+      where.department = { AND: [existing, { id: departmentId }] }
+    } else {
+      where.department = { id: departmentId }
     }
   }
 

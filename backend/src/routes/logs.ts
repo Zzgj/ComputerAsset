@@ -25,10 +25,22 @@ logsRouter.get('/meta', requireAuth, requirePermission('logs.read'), async (_req
 })
 
 logsRouter.get('/', requireAuth, requirePermission('logs.read'), async (req, res) => {
-  const qAction = typeof req.query.action === 'string' ? req.query.action : undefined
   const category = typeof req.query.category === 'string' ? req.query.category : undefined
   const startDate = typeof req.query.startDate === 'string' ? new Date(req.query.startDate) : undefined
   const endDate = typeof req.query.endDate === 'string' ? new Date(req.query.endDate) : undefined
+  const operator = typeof req.query.operator === 'string' ? req.query.operator.trim() : ''
+
+  // 操作类型多选：支持 ?actions=a,b,c 或重复 ?action=a&action=b
+  const rawActions = req.query.actions
+  const actionList: string[] = []
+  if (typeof rawActions === 'string' && rawActions.trim()) {
+    actionList.push(...rawActions.split(',').map((s) => s.trim()).filter(Boolean))
+  } else if (Array.isArray(rawActions)) {
+    actionList.push(...rawActions.filter((s): s is string => typeof s === 'string').map((s) => s.trim()).filter(Boolean))
+  }
+  // 兼容旧的单选 action 参数
+  const singleAction = typeof req.query.action === 'string' ? req.query.action.trim() : ''
+  if (singleAction && !actionList.includes(singleAction)) actionList.push(singleAction)
 
   if (startDate && Number.isNaN(startDate.getTime())) badRequest('startDate is invalid')
   if (endDate && Number.isNaN(endDate.getTime())) badRequest('endDate is invalid')
@@ -39,12 +51,26 @@ logsRouter.get('/', requireAuth, requirePermission('logs.read'), async (req, res
   const parts: Prisma.OperationLogWhereInput[] = []
   const catWhere = operationLogWhereForCategory(category)
   if (catWhere) parts.push(catWhere)
-  if (qAction) parts.push({ action: { contains: qAction } })
+  if (actionList.length === 1) {
+    parts.push({ action: { contains: actionList[0]! } })
+  } else if (actionList.length > 1) {
+    parts.push({ OR: actionList.map((a) => ({ action: { contains: a } })) })
+  }
   if (startDate || endDate) {
     parts.push({
       createdAt: {
         ...(startDate ? { gte: startDate } : {}),
         ...(endDate ? { lte: endDate } : {}),
+      },
+    })
+  }
+  if (operator) {
+    parts.push({
+      operator: {
+        OR: [
+          { username: { contains: operator } },
+          { realName: { contains: operator } },
+        ],
       },
     })
   }

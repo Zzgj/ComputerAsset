@@ -1,0 +1,4 @@
+-- Add transfer_undo to AssetRecordAction enum
+-- SQLite does not enforce enum values at the DB level (stored as text),
+-- so no schema change is needed. This migration exists to keep the
+-- Prisma migration history in sync with the schema.prisma enum change.

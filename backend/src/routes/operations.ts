@@ -891,6 +891,164 @@ operationsRouter.post('/manual-record', requireAuth, requirePermission('assets.w
   res.json(result)
 })
 
+operationsRouter.post('/transfer-undo', requireAuth, requirePermission('operations.execute'), async (req, res) => {
+  const access = req.access!
+  const authUser = req.auth!
+  const body = req.body as any
+  if (typeof body.requestId !== 'string') badRequest('requestId is required')
+  const assetId = toInt(body.assetId)
+  if (!assetId) badRequest('assetId is required')
+
+  const exist = await prisma.assetRecord.findUnique({ where: { requestId: body.requestId } })
+  if (exist) return res.json({ alreadyProcessed: true, assetRecord: exist })
+
+  const now = new Date()
+
+  const result = await prisma.$transaction(async (tx) => {
+    const asset = await tx.asset.findUnique({
+      where: { id: assetId },
+      include: { department: { select: { campusId: true } } },
+    })
+    if (!asset) badNotFound('Asset not found')
+
+    // 找到该资产最近的 transfer 类型 AssetRecord（已签字或待签字都可撤销）
+    const transferRecord = await tx.assetRecord.findFirst({
+      where: {
+        assetId,
+        action: AssetRecordAction.transfer,
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (!transferRecord) badRequest('未找到可撤销的调拨记录')
+    // 不能撤销已被 transfer_undo 撤销过的记录
+    const alreadyUndone = await tx.assetRecord.findFirst({
+      where: {
+        assetId,
+        action: AssetRecordAction.transfer_undo,
+        remark: { contains: `原记录#${transferRecord.id}` },
+      },
+    })
+    if (alreadyUndone) badRequest('该调拨记录已被撤销')
+
+    assertCampusAccess(access, asset.department.campusId)
+
+    if (transferRecord.proofImage) {
+      // 已签字的调拨：资产状态为 in_use，恢复为调拨前的使用人和部门
+      // 调拨前的人/部门信息存储在 OperationLog.detail 中
+      const transferLog = await tx.operationLog.findFirst({
+        where: {
+          targetType: 'Asset',
+          targetId: assetId,
+          action: { in: ['调拨', '在库调拨'] },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+
+      const logDetail = (transferLog?.detail ?? {}) as any
+      const fromUser = logDetail.fromUser ?? asset.currentUserName
+      const fromDept = logDetail.fromDept ?? asset.departmentId
+
+      await updateAssetWithVersion(
+        tx,
+        asset,
+        {
+          status: AssetStatus.in_use,
+          currentUserName: fromUser,
+          currentEmployeeId: asset.currentEmployeeId, // 保持不变，调拨前已有
+          departmentId: fromDept,
+        },
+        AssetStatus.in_use,
+      )
+
+      const undoRecord = await tx.assetRecord.create({
+        data: {
+          assetId,
+          action: AssetRecordAction.transfer_undo,
+          userName: fromUser,
+          employeeId: transferRecord.employeeId,
+          departmentId: fromDept,
+          actionDate: now,
+          remark: `撤销调拨（原记录#${transferRecord.id}）`,
+          operatorId: authUser.id,
+          requestId: body.requestId,
+        },
+      })
+
+      await tx.operationLog.create({
+        data: {
+          operatorId: authUser.id,
+          action: '撤销调拨',
+          targetType: 'Asset',
+          targetId: assetId,
+          detail: {
+            undoneRecordId: transferRecord.id,
+            fromUser: logDetail.toUser ?? transferRecord.userName,
+            toUser: fromUser,
+            fromDept: logDetail.toDept ?? transferRecord.departmentId,
+            toDept: fromDept,
+          },
+          ipAddress: req.ip ?? 'unknown',
+        },
+      })
+
+      return { assetId, assetRecord: undoRecord }
+    } else {
+      // 待签字（pending_confirmation）的调拨：撤销调拨，回到调拨前状态
+      if (asset.status !== AssetStatus.pending_confirmation) {
+        badRequest('该调拨记录尚未签字且资产不在待签字状态，无法撤销')
+      }
+
+      // 调拨时保留了原使用人和原部门（status 改为 pending_confirmation 但未改人/部门）
+      // 恢复为 in_use
+      await updateAssetWithVersion(
+        tx,
+        asset,
+        {
+          status: AssetStatus.in_use,
+        },
+        AssetStatus.pending_confirmation,
+      )
+
+      // 清除调拨通知
+      await tx.assetTransferNotification.deleteMany({
+        where: { recordId: transferRecord.id },
+      })
+
+      const undoRecord = await tx.assetRecord.create({
+        data: {
+          assetId,
+          action: AssetRecordAction.transfer_undo,
+          userName: asset.currentUserName,
+          employeeId: asset.currentEmployeeId,
+          departmentId: asset.departmentId,
+          actionDate: now,
+          remark: `撤销调拨（原记录#${transferRecord.id}，待签字状态撤销）`,
+          operatorId: authUser.id,
+          requestId: body.requestId,
+        },
+      })
+
+      await tx.operationLog.create({
+        data: {
+          operatorId: authUser.id,
+          action: '撤销调拨',
+          targetType: 'Asset',
+          targetId: assetId,
+          detail: {
+            undoneRecordId: transferRecord.id,
+            pendingSignature: true,
+          },
+          ipAddress: req.ip ?? 'unknown',
+        },
+      })
+
+      return { assetId, assetRecord: undoRecord }
+    }
+  })
+
+  res.json(result)
+})
+
 operationsRouter.post('/reset-signature', requireAuth, requirePermission('operations.execute'), validate({ body: ResetSignatureSchema }), async (req, res) => {
   const access = req.access!
   const authUser = req.auth!

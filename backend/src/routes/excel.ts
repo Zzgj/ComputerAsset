@@ -18,6 +18,16 @@ import { getDepartmentPathSnapshot, invalidateDepartmentPathCache } from '../uti
 
 type ImportTx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
 
+/** Excel 单元格最大字符数（32767） */
+const EXCEL_CELL_MAX_CHARS = 32767
+
+/** 截断超长单元格内容，避免 xlsx 写入时报错 */
+function clampCell(value: unknown): string {
+  const s = value === undefined || value === null ? '' : String(value)
+  if (s.length <= EXCEL_CELL_MAX_CHARS) return s
+  return s.slice(0, EXCEL_CELL_MAX_CHARS - 3) + '...'
+}
+
 async function ensureCampusByName(tx: ImportTx, nameRaw: string) {
   const name = (nameRaw || '泰鼎').trim() || '泰鼎'
   let c = await tx.campus.findUnique({ where: { name } })
@@ -531,6 +541,7 @@ const RECORD_EXPORT_ACTION_ZH: Record<string, string> = {
   repair: '送修',
   repair_done: '维修完成',
   retire: '报废',
+  transfer_undo: '撤销调拨',
 }
 
 function pickFirstExistingSheet(sheetNames: string[], candidates: string[]): string | null {
@@ -1452,6 +1463,16 @@ excelRouter.get('/export', requireAuth, requirePermission('excel.export'), async
         orderBy: { id: 'desc' },
         include: { department: { include: { campus: true } }, template: true },
       })
+      if (assets.length === 0) {
+        const wb0 = xlsx.utils.book_new()
+        const emptySheet = xlsx.utils.aoa_to_sheet([['电脑编号', '模板名称', '品牌', '型号', '操作系统', 'CPU', '内存', '存储', '序列号', '设备状态', '现定人', '园区', '部门', '采购日期', '保修到期日', '备注']])
+        xlsx.utils.book_append_sheet(wb0, emptySheet, '资产清单')
+        const buf0 = xlsx.write(wb0, { bookType: 'xlsx', type: 'buffer' }) as Buffer
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        res.setHeader('Content-Disposition', 'attachment; filename="assets.xlsx"')
+        res.end(buf0)
+        return
+      }
     } else {
       const page = Number(pageRaw ?? 1)
       const pageSize = Number(pageSizeRaw ?? 500)
@@ -1482,22 +1503,22 @@ excelRouter.get('/export', requireAuth, requirePermission('excel.export'), async
           部门 = departmentPathWithoutCampus(full) || toNo(a.department.name)
         }
         return {
-          电脑编号: a.assetCode,
-          模板名称: toNo(a.template?.name),
-          品牌: toNo(a.brand),
-          型号: toNo(a.model),
-          操作系统: toNo(a.os),
-          CPU: toNo(a.cpu),
-          内存: toNo(a.memory),
-          存储: toNo(a.storage),
-          序列号: displaySerial(a.serialNumber),
-          设备状态: toNo(a.status),
-          现定人: toNo(a.currentUserName),
-          园区,
-          部门,
-          采购日期: fmtDate(a.purchaseDate ?? null),
-          保修到期日: fmtDate(a.warrantyExpiry ?? null),
-          备注: toNo(a.remark),
+          电脑编号: clampCell(a.assetCode),
+          模板名称: clampCell(toNo(a.template?.name)),
+          品牌: clampCell(toNo(a.brand)),
+          型号: clampCell(toNo(a.model)),
+          操作系统: clampCell(toNo(a.os)),
+          CPU: clampCell(toNo(a.cpu)),
+          内存: clampCell(toNo(a.memory)),
+          存储: clampCell(toNo(a.storage)),
+          序列号: clampCell(displaySerial(a.serialNumber)),
+          设备状态: clampCell(toNo(a.status)),
+          现定人: clampCell(toNo(a.currentUserName)),
+          园区: clampCell(园区),
+          部门: clampCell(部门),
+          采购日期: clampCell(fmtDate(a.purchaseDate ?? null)),
+          保修到期日: clampCell(fmtDate(a.warrantyExpiry ?? null)),
+          备注: clampCell(toNo(a.remark)),
         }
       }),
     )
@@ -1541,22 +1562,22 @@ excelRouter.get('/export', requireAuth, requirePermission('excel.export'), async
           部门 = departmentPathWithoutCampus(full) || toNo(a.department.name)
         }
         return {
-          电脑编号: a.assetCode,
-          模板名称: toNo(a.template?.name),
-          品牌: toNo(a.brand),
-          型号: toNo(a.model),
-          操作系统: toNo(a.os),
-          CPU: toNo(a.cpu),
-          内存: toNo(a.memory),
-          存储: toNo(a.storage),
-          序列号: displaySerial(a.serialNumber),
-          设备状态: toNo(a.status),
-          现定人: toNo(a.currentUserName),
-          园区,
-          部门,
-          采购日期: fmtDate(a.purchaseDate ?? null),
-          保修到期日: fmtDate(a.warrantyExpiry ?? null),
-          备注: toNo(a.remark),
+          电脑编号: clampCell(a.assetCode),
+          模板名称: clampCell(toNo(a.template?.name)),
+          品牌: clampCell(toNo(a.brand)),
+          型号: clampCell(toNo(a.model)),
+          操作系统: clampCell(toNo(a.os)),
+          CPU: clampCell(toNo(a.cpu)),
+          内存: clampCell(toNo(a.memory)),
+          存储: clampCell(toNo(a.storage)),
+          序列号: clampCell(displaySerial(a.serialNumber)),
+          设备状态: clampCell(toNo(a.status)),
+          现定人: clampCell(toNo(a.currentUserName)),
+          园区: clampCell(园区),
+          部门: clampCell(部门),
+          采购日期: clampCell(fmtDate(a.purchaseDate ?? null)),
+          保修到期日: clampCell(fmtDate(a.warrantyExpiry ?? null)),
+          备注: clampCell(toNo(a.remark)),
         }
       }),
     )
@@ -1578,19 +1599,19 @@ excelRouter.get('/export', requireAuth, requirePermission('excel.export'), async
           部门 = departmentPathWithoutCampus(full) || toNo(r.department.name)
         }
         return {
-          requestId: r.requestId,
-          action: r.action,
-          操作时间: r.actionDate ? r.actionDate.toISOString() : '',
-          操作类型: RECORD_EXPORT_ACTION_ZH[String(r.action)] ?? String(r.action),
-          电脑编号: toNo(r.asset?.assetCode),
-          用户: toNo(r.userName),
-          园区,
-          部门,
-          预计归还日期: r.expectedReturnDate ? r.expectedReturnDate.toISOString().slice(0, 10) : '',
-          凭证图片: toNo(r.proofImage),
-          备注: toNo(r.remark),
-          操作人账号: toNo(r.operator?.username),
-          操作人: toNo(r.operator?.realName),
+          requestId: clampCell(r.requestId),
+          action: clampCell(r.action),
+          操作时间: clampCell(r.actionDate ? r.actionDate.toISOString() : ''),
+          操作类型: clampCell(RECORD_EXPORT_ACTION_ZH[String(r.action)] ?? String(r.action)),
+          电脑编号: clampCell(toNo(r.asset?.assetCode)),
+          用户: clampCell(toNo(r.userName)),
+          园区: clampCell(园区),
+          部门: clampCell(部门),
+          预计归还日期: clampCell(r.expectedReturnDate ? r.expectedReturnDate.toISOString().slice(0, 10) : ''),
+          凭证图片: clampCell(toNo(r.proofImage)),
+          备注: clampCell(toNo(r.remark)),
+          操作人账号: clampCell(toNo(r.operator?.username)),
+          操作人: clampCell(toNo(r.operator?.realName)),
         }
       }),
     )
@@ -1637,6 +1658,7 @@ excelRouter.get('/export', requireAuth, requirePermission('excel.export'), async
       repair: '送修',
       repair_done: '维修完成',
       retire: '报废',
+      transfer_undo: '撤销调拨',
     }
 
     const pageRaw = req.query.page
@@ -1686,17 +1708,17 @@ excelRouter.get('/export', requireAuth, requirePermission('excel.export'), async
           部门 = departmentPathWithoutCampus(full) || toNo(r.department.name)
         }
         return {
-        操作时间: r.actionDate ? r.actionDate.toISOString() : '暂无',
-        操作类型: actionMap[String(r.action)] ?? toNo(r.action),
-        电脑编号: toNo(r.asset?.assetCode),
-        用户: toNo(r.userName),
-        园区,
-        部门,
-        预计归还日期: r.expectedReturnDate ? r.expectedReturnDate.toISOString().slice(0, 10) : '暂无',
-        凭证图片: toNo(r.proofImage),
-        备注: toNo(r.remark),
-        操作人: toNo(r.operator?.realName ?? r.operator?.username),
-        IP: '', // 这里我们不额外导出 OperationLog ipAddress，避免冗余
+        操作时间: clampCell(r.actionDate ? r.actionDate.toISOString() : '暂无'),
+        操作类型: clampCell(actionMap[String(r.action)] ?? toNo(r.action)),
+        电脑编号: clampCell(toNo(r.asset?.assetCode)),
+        用户: clampCell(toNo(r.userName)),
+        园区: clampCell(园区),
+        部门: clampCell(部门),
+        预计归还日期: clampCell(r.expectedReturnDate ? r.expectedReturnDate.toISOString().slice(0, 10) : '暂无'),
+        凭证图片: clampCell(toNo(r.proofImage)),
+        备注: clampCell(toNo(r.remark)),
+        操作人: clampCell(toNo(r.operator?.realName ?? r.operator?.username)),
+        IP: '',
         }
       }),
     )

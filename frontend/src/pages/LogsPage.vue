@@ -7,10 +7,22 @@
         <el-select v-model="query.category" placeholder="日志类型" style="width: 200px" @change="onCategoryChange">
           <el-option v-for="c in categoryOptions" :key="c.key" :label="c.label" :value="c.key" />
         </el-select>
+        <el-select
+          v-model="query.actions"
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+          clearable
+          filterable
+          placeholder="操作类型（多选）"
+          style="width: 280px"
+        >
+          <el-option v-for="opt in actionOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+        </el-select>
         <el-input
-          v-model="query.action"
-          placeholder="在当前类型内按关键字筛选"
-          style="width: 240px"
+          v-model="query.operator"
+          placeholder="操作人（姓名/账号）"
+          style="width: 200px"
           clearable
         />
         <el-date-picker v-model="query.startDate" type="date" placeholder="开始日期" value-format="YYYY-MM-DD" />
@@ -91,10 +103,30 @@ const selectedDetailText = ref('')
 const selectedDetailRows = ref<Array<{ label: string; value: string }>>([])
 
 const categoryOptions = ref<Array<{ key: string; label: string }>>([{ key: 'all', label: '全部' }])
+const actionOptions = ref<Array<{ value: string; label: string }>>([
+  { value: '新增资产', label: '新增资产/入库' },
+  { value: '编辑资产', label: '编辑资产关键信息' },
+  { value: '删除资产', label: '删除资产' },
+  { value: '出库', label: '出库（直接领用）' },
+  { value: '分配', label: '分配（待领用）' },
+  { value: '取消分配', label: '取消分配' },
+  { value: '确认领用', label: '确认领用' },
+  { value: '借出', label: '借出' },
+  { value: '归还', label: '归还' },
+  { value: '调拨', label: '调拨' },
+  { value: '在库调拨', label: '在库调拨' },
+  { value: '送修', label: '送修' },
+  { value: '维修完成', label: '维修完成' },
+  { value: '报废', label: '报废' },
+  { value: '手动补录', label: '手动补录流转历史' },
+  { value: '重置签字', label: '重置签字' },
+  { value: '撤销调拨', label: '撤销调拨' },
+])
 
 const query = reactive<any>({
   category: 'all',
-  action: '',
+  actions: [] as string[],
+  operator: '',
   startDate: null,
   endDate: null,
   page: 1,
@@ -111,7 +143,8 @@ async function load() {
   try {
     const params = new URLSearchParams()
     if (query.category && query.category !== 'all') params.set('category', query.category)
-    if (query.action) params.set('action', query.action)
+    if (query.actions && query.actions.length) params.set('actions', query.actions.join(','))
+    if (query.operator) params.set('operator', query.operator)
     if (query.startDate) params.set('startDate', query.startDate)
     if (query.endDate) params.set('endDate', query.endDate)
     params.set('page', String(query.page))
