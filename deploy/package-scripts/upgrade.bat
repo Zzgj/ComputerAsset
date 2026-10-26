@@ -79,10 +79,10 @@ echo.
 
 if exist "%BK_BACKEND%\.env" (
     echo     [OK] .env found
-    for /f "tokens=1,* delims==" %%a in ('findstr /b "PORT=" "%BK_BACKEND%\.env" 2^^>nul') do (
-        set "PORT=%%b"
+    for /f "tokens=2 delims==" %%a in ('findstr /b "PORT=" "%BK_BACKEND%\.env"') do (
+        set "PORT=%%a"
     )
-    for /f "tokens=* delims= " %%x in ("!PORT!") do set "PORT=%%~x"
+    for /f "tokens=* delims= " %%x in ("%PORT%") do set "PORT=%%~x"
 ) else (
     echo     [WARN] .env not found, using default PORT=3000
 )
@@ -108,7 +108,7 @@ if exist "%INSTALL_DIR%\stop.bat" (
 if "%SERVICE_STOPPED%"=="0" (
     echo     [INFO] stop.bat not found, killing process on port %PORT%...
     set "PORT_PID="
-    for /f "tokens=5" %%p in ('netstat -ano 2^^>nul ^^| findstr ":%PORT% " ^^| findstr "LISTENING"') do (
+    for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%PORT% " ^| findstr "LISTENING"') do (
         if not defined PORT_PID set "PORT_PID=%%p"
     )
     if defined PORT_PID (
@@ -123,7 +123,7 @@ if "%SERVICE_STOPPED%"=="0" (
 
 REM Verify port is free
 set "PORT_STILL_BUSY="
-for /f "tokens=5" %%p in ('netstat -ano 2^^>nul ^^| findstr ":%PORT% " ^^| findstr "LISTENING"') do (
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%PORT% " ^| findstr "LISTENING"') do (
     if not defined PORT_STILL_BUSY set "PORT_STILL_BUSY=%%p"
 )
 if defined PORT_STILL_BUSY (
@@ -144,7 +144,7 @@ echo.
 
 REM Build timestamp YYYYMMDD-HHMMSS
 set "BACKUP_TS="
-for /f "tokens=2 delims==" %%a in ('wmic os get localdatetime /value 2^^>nul ^^| findstr "="') do set "_dt=%%a"
+for /f "tokens=2 delims==" %%a in ('wmic os get localdatetime /value ^| findstr "="') do set "_dt=%%a"
 if defined _dt (
     set "BACKUP_TS=!_dt:~0,8!-!_dt:~8,6!"
 ) else (
