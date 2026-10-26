@@ -447,10 +447,15 @@ Before importing, the system performs a pre-validation showing detected count, i
 
 ### v1.6.4
 
+**New Features**
+- Transfer undo: admins can undo the most recent transfer, restoring the asset to its pre-transfer state (undo only recorded in operation logs, not in flow history)
+- Operation logs support multi-select action type filtering and operator search
+- Records page adds campus and department filters; merged "pick_up" and "check_out" into a single "出库" option
+
 **Fixes**
-- Mobile landscape fullscreen signature misalignment: listen for orientation change, reinitialize canvas after rotation
-- Event listener leak after submitting fullscreen signature
-- Canvas width fallback when offsetWidth is 0
+- Export backup/records failing when cell content exceeds 32767 chars: added clampCell truncation
+- Export asset list showing empty sheet with no headers: now returns empty sheet with headers
+- Transfer undo employeeId using transfer target ID instead of original
 
 ### v1.6.3
 
