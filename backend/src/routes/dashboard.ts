@@ -189,6 +189,81 @@ dashboardRouter.get('/stats', requireAuth, requirePermission('dashboard.view'), 
   })
 })
 
+dashboardRouter.get('/monthly-stats', requireAuth, requirePermission('dashboard.view'), async (req, res) => {
+  const access = (req as any).access as AccessAuth
+
+  // 最近 12 个月（含当月）
+  const now = new Date()
+  const months: string[] = []
+  const buckets: { start: Date; end: Date }[] = []
+  for (let i = 11; i >= 0; i--) {
+    const y = now.getFullYear()
+    const m = now.getMonth() - i
+    const d = new Date(y, m, 1)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    months.push(key)
+    buckets.push({ start: d, end: new Date(d.getFullYear(), d.getMonth() + 1, 1) })
+  }
+
+  // 业务动作分组：排除 manual_note / signature_reset / transfer_undo
+  const businessActions: AssetRecordAction[] = [
+    AssetRecordAction.stock_in,
+    AssetRecordAction.check_out,
+    AssetRecordAction.pick_up,
+    AssetRecordAction.transfer,
+    AssetRecordAction.lend,
+    AssetRecordAction.return,
+    AssetRecordAction.repair,
+    AssetRecordAction.repair_done,
+    AssetRecordAction.retire,
+  ]
+
+  const recWhere: Record<string, unknown> = {
+    action: { in: businessActions },
+    actionDate: { gte: buckets[0].start, lt: buckets[buckets.length - 1].end },
+  }
+  applyCampusScopeToRecordWhere(recWhere, access)
+
+  // 取窗口内所有业务记录，按月份+动作在 JS 中归桶（SQLite 不便按月 groupBy）
+  const rows = await prisma.assetRecord.findMany({
+    where: recWhere as any,
+    select: { actionDate: true, action: true },
+  })
+
+  const countByMonthAction = new Map<string, number>()
+  for (const r of rows) {
+    const d = r.actionDate instanceof Date ? r.actionDate : new Date(r.actionDate as any)
+    if (Number.isNaN(d.getTime())) continue
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    if (!months.includes(key)) continue
+    const k = `${key}|${String(r.action)}`
+    countByMonthAction.set(k, (countByMonthAction.get(k) ?? 0) + 1)
+  }
+
+  // 输出分组：入库 / 出库 / 调拨 / 借出 / 归还 / 维修 / 报废
+  const result = months.map((month) => {
+    const get = (...actions: AssetRecordAction[]) =>
+      actions.reduce(
+        (sum, a) => sum + (countByMonthAction.get(`${month}|${a}`) ?? 0),
+        0,
+      )
+    return {
+      month,
+      stockIn: get(AssetRecordAction.stock_in),
+      checkOut:
+        get(AssetRecordAction.check_out) + get(AssetRecordAction.pick_up),
+      transfer: get(AssetRecordAction.transfer),
+      lend: get(AssetRecordAction.lend),
+      return: get(AssetRecordAction.return),
+      repair:
+        get(AssetRecordAction.repair) + get(AssetRecordAction.repair_done),
+      retire: get(AssetRecordAction.retire),
+    }
+  })
+
+  res.json({ months: result })
+})
+
 dashboardRouter.get('/recent-records', requireAuth, requirePermission('dashboard.view'), async (req, res) => {
   const access = (req as any).access as AccessAuth
   const allowed: AssetRecordAction[] = [

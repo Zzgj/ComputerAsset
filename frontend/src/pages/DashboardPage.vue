@@ -90,6 +90,11 @@
       </el-card>
     </div>
 
+    <el-card shadow="never" class="monthly-chart-card">
+      <div class="chart-title">月度流转统计</div>
+      <VChart class="chart monthly-chart" :option="monthlyOption" autoresize />
+    </el-card>
+
     <div class="bottom-grid">
       <el-card shadow="never">
         <div class="chart-title">提醒通知</div>
@@ -263,6 +268,16 @@ function goAssets(status: string) {
 const stats = ref<Stats | null>(null)
 const notifications = ref<any>(null)
 const records = ref<any[]>([])
+const monthlyStats = ref<Array<{
+  month: string
+  stockIn: number
+  checkOut: number
+  transfer: number
+  lend: number
+  return: number
+  repair: number
+  retire: number
+}> | null>(null)
 const pageLoading = ref(true)
 const recordsLoading = ref(true)
 const multiExpanded = ref(false)
@@ -285,14 +300,16 @@ const visibleMultiHolders = computed(() => {
 
 onMounted(async () => {
   try {
-    const [s, n, r] = await Promise.all([
+    const [s, n, r, m] = await Promise.all([
       apiRequest<Stats>('/api/dashboard/stats'),
       apiRequest<any>('/api/dashboard/notifications'),
       apiRequest<any>('/api/dashboard/recent-records'),
+      apiRequest<{ months: any[] }>('/api/dashboard/monthly-stats'),
     ])
     stats.value = s
     notifications.value = n
     records.value = r.records ?? []
+    monthlyStats.value = m.months ?? []
   } catch (e: any) {
     console.error('[Dashboard] 数据加载失败', e)
   } finally {
@@ -433,6 +450,69 @@ const barOption = computed(() => {
       : [],
   }
 })
+
+const monthlyColors: Record<string, string> = {
+  入库: '#4f46e5',
+  出库: '#10b981',
+  调拨: '#f59e0b',
+  借出: '#8b5cf6',
+  归还: '#06b6d4',
+  维修: '#ef4444',
+  报废: '#64748b',
+}
+
+const monthlyOption = computed(() => {
+  const months = monthlyStats.value ?? []
+  const seriesDefs: Array<{ name: string; key: keyof typeof months[number]; color: string }> = [
+    { name: '入库', key: 'stockIn', color: monthlyColors['入库'] },
+    { name: '出库', key: 'checkOut', color: monthlyColors['出库'] },
+    { name: '调拨', key: 'transfer', color: monthlyColors['调拨'] },
+    { name: '借出', key: 'lend', color: monthlyColors['借出'] },
+    { name: '归还', key: 'return', color: monthlyColors['归还'] },
+    { name: '维修', key: 'repair', color: monthlyColors['维修'] },
+    { name: '报废', key: 'retire', color: monthlyColors['报废'] },
+  ]
+  return {
+    grid: {
+      left: 24,
+      right: 20,
+      top: 48,
+      bottom: 44,
+      containLabel: true,
+    },
+    tooltip: { trigger: 'axis', borderRadius: 8 },
+    legend: {
+      data: seriesDefs.map((s) => s.name),
+      textStyle: { color: '#64748b', fontSize: 12 },
+    },
+    animationDuration: 600,
+    animationEasing: 'cubicOut' as const,
+    animationDelay: (idx: number) => idx * 60,
+    xAxis: {
+      type: 'category',
+      data: months.map((m) => m.month),
+      axisTick: { alignWithLabel: true },
+      axisLabel: { color: '#94a3b8' },
+      axisLine: { lineStyle: { color: '#e2e8f0' } },
+    },
+    yAxis: {
+      type: 'value',
+      minInterval: 1,
+      axisLabel: {
+        color: '#94a3b8',
+        formatter: (value: number) => String(Math.round(value)),
+      },
+      splitLine: { lineStyle: { color: '#f1f5f9' } },
+    },
+    series: seriesDefs.map((s) => ({
+      name: s.name,
+      type: 'bar',
+      data: months.map((m) => m[s.key]),
+      itemStyle: { borderRadius: [4, 4, 0, 0], color: s.color },
+      barMaxWidth: 24,
+    })),
+  }
+})
 </script>
 
 <style scoped>
@@ -517,6 +597,17 @@ const barOption = computed(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
+}
+
+.monthly-chart-card {
+  margin-top: 16px;
+  opacity: 0;
+  animation: ca-stagger-in 0.5s var(--ca-ease-out-expo) forwards;
+  animation-delay: 600ms;
+}
+
+.monthly-chart {
+  height: 360px;
 }
 
 .notification-list {

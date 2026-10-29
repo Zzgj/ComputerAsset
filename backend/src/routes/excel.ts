@@ -529,6 +529,20 @@ export function normalizeHeader(h: string): string {
     .replace(/）/g, ')')
 }
 
+/** 电脑类型枚举 -> 中文显示 */
+const DEVICE_TYPE_ZH: Record<string, string> = {
+  laptop: '笔记本',
+  desktop: '台式机',
+  aio: '一体机',
+  server: '服务器',
+  other: '其他',
+}
+
+function deviceTypeZh(raw: unknown): string {
+  const s = raw === undefined || raw === null ? '' : String(raw).trim()
+  return DEVICE_TYPE_ZH[s] ?? (s || '')
+}
+
 const RECORD_EXPORT_ACTION_ZH: Record<string, string> = {
   stock_in: '入库',
   assign: '待领用',
@@ -1604,6 +1618,7 @@ excelRouter.get('/export', requireAuth, requirePermission('excel.export'), async
           操作时间: clampCell(r.actionDate ? r.actionDate.toISOString() : ''),
           操作类型: clampCell(RECORD_EXPORT_ACTION_ZH[String(r.action)] ?? String(r.action)),
           电脑编号: clampCell(toNo(r.asset?.assetCode)),
+          电脑类型: clampCell(deviceTypeZh(r.asset?.deviceType) || '暂无'),
           用户: clampCell(toNo(r.userName)),
           园区: clampCell(园区),
           部门: clampCell(部门),
@@ -1711,6 +1726,7 @@ excelRouter.get('/export', requireAuth, requirePermission('excel.export'), async
         操作时间: clampCell(r.actionDate ? r.actionDate.toISOString() : '暂无'),
         操作类型: clampCell(actionMap[String(r.action)] ?? toNo(r.action)),
         电脑编号: clampCell(toNo(r.asset?.assetCode)),
+        电脑类型: clampCell(deviceTypeZh(r.asset?.deviceType) || '暂无'),
         用户: clampCell(toNo(r.userName)),
         园区: clampCell(园区),
         部门: clampCell(部门),
